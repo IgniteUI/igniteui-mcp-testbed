@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ignite UI · MCP / Skills Testbed</title>
+<!-- Ignite UI design tokens (--ig-* custom properties on :root). The igc-*
+     components' shadow styles read these; without them they render unstyled.
+     Tokens-only — does not touch the page's own element styling below. -->
+<link rel="stylesheet" href="/vendor/igniteui-theme.css" />
+<style>
+  :root {
+    /* Dark Material palette — coheres with the igc-* components' material/dark theme. */
+    --ink:#e7f0ef; --steel:#8ea6a4; --fog:#0a1211; --surface:#10201e;
+    --header:#070d0c; --line:#20342f; --teal:#1aa99e; --teal-dark:#138a80;
+    --green:#2bb368; --amber:#caa23c; --red:#e06a55; --circle:#0c1a18;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  /* Recolor the Ignite UI accent: the whole --ig-secondary ramp (and each shade's
+     auto-computed -contrast text color) derives from --ig-secondary-500 via
+     hsl(from …), so this one override retiles every secondary-based surface —
+     contained-button fill + its hover/focus/active states, checkbox fill, etc. —
+     to teal with readable text. Declared after the theme <link> so it wins. */
+  :root { --ig-secondary-500: var(--teal); }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--fog); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  header {
+    display:flex; align-items:center; gap:.7rem; padding:1rem 1.4rem;
+    background:var(--header); color:#dfeceb; border-bottom:3px solid var(--teal);
+  }
+  header .dot { width:9px; height:9px; border-radius:50%; background:var(--steel); }
+  header .dot.live { background:var(--green); box-shadow:0 0 0 3px rgba(31,157,87,.25); }
+  header h1 { font-size:.95rem; letter-spacing:.14em; text-transform:uppercase; margin:0; font-weight:600; }
+  header .sub { font-family:var(--mono); font-size:.74rem; color:#7fa6a3; margin-left:auto; }
+
+  main { display:grid; grid-template-columns: minmax(320px,420px) 1fr; gap:1px; background:var(--line);
+         min-height:calc(100vh - 60px); }
+  @media (max-width:880px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--surface); padding:1.4rem 1.5rem; }
+
+  .eyebrow { font-family:var(--mono); font-size:.7rem; letter-spacing:.18em; text-transform:uppercase;
+             color:var(--steel); margin:0 0 1.1rem; }
+  fieldset { border:none; padding:0; margin:0 0 1.4rem; }
+  legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
+
+  /* Ignite UI form controls (igc-*) — compact scale to fit the narrow panel */
+  body { --ig-size: 1; }
+  form igc-input { display:block; margin-top:.7rem; }
+  igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+
+  /* framework toggles: smaller, non-uppercase text so all four fit */
+  #fw { margin-bottom:.2rem; max-width:100%; }
+  igc-toggle-button::part(toggle) { font-size:.7rem; text-transform:none; padding-inline:.55rem; }
+  /* "Web Components" is the longest label — shrink just it so it fits */
+  
+
+  /* checkboxes: smaller box + label (fill color comes from the --ig-secondary-500
+     override above). The box size is set by a high-specificity inner
+     [part~=control] rule, so the --size override needs !important to win. */
+  igc-checkbox { display:block; margin:.5rem 0; }
+  igc-checkbox::part(control) { --size:.75rem !important; }
+  igc-checkbox::part(indicator) { --indicator-size:.6rem !important; }
+  igc-checkbox::part(label) { font-size:.75rem; font-weight:500; }
+  igc-checkbox small { display:block; color:var(--steel); font-size:.72rem; font-weight:400; margin-top:.05rem; }
+  igc-checkbox[hidden] { display:none; }
+
+  #go { display:block; margin-top:.6rem; }
+  #go::part(base) { width:100%; justify-content:center; padding-block:.65rem; }
+
+  /* signature: staged pipeline rail */
+  .rail { list-style:none; margin:0 0 1.4rem; padding:0; }
+  .rail li { display:flex; align-items:center; gap:.7rem; padding:.45rem 0; color:var(--steel); font-size:.86rem; }
+  .rail .n {
+    flex:none; width:24px; height:24px; border-radius:50%; border:1.5px solid var(--line);
+    display:grid; place-items:center; font-family:var(--mono); font-size:.72rem; background:var(--circle);
+  }
+  .rail li[data-state=active] { color:var(--ink); font-weight:600; }
+  .rail li[data-state=active] .n { border-color:var(--teal); color:var(--teal); animation:pulse 1.1s infinite; }
+  .rail li[data-state=done] { color:var(--ink); }
+  .rail li[data-state=done] .n { background:var(--green); border-color:var(--green); color:#fff; }
+  .rail li[data-state=error] .n { background:var(--red); border-color:var(--red); color:#fff; }
+  @keyframes pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(14,143,134,.3);} 50%{ box-shadow:0 0 0 5px rgba(14,143,134,0);} }
+  @media (prefers-reduced-motion:reduce){ .rail li .n { animation:none !important; } }
+
+  .console {
+    background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.78rem; line-height:1.45;
+    border-radius:8px; padding:.8rem .9rem; height:min(46vh,420px); overflow:auto; white-space:pre-wrap;
+    border:1px solid #0f3b37;
+  }
+  .console .w { color:#e4b65a; }
+  .console .e { color:#ff9c8a; }
+
+  .result { margin-top:1rem; display:none; }
+  .result.show { display:block; }
+  .result igc-button { margin:.3rem .5rem .3rem 0; }
+  .note { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.6rem; }
+
+  details.switcher { margin-top:1rem; font-size:.84rem; }
+  details.switcher summary { cursor:pointer; color:var(--teal); display:flex; align-items:center; gap:.5rem; }
+  .row { display:flex; gap:.5rem; align-items:flex-end; margin-top:.5rem; }
+  .row > igc-input { flex:1; }
+  .usage { background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.74rem; line-height:1.4;
+           border:1px solid #0f3b37; border-radius:8px; padding:.7rem .8rem; margin:.6rem 0 0;
+           overflow:auto; max-height:340px; white-space:pre; }
+  table.stats { width:100%; border-collapse:collapse; margin:.6rem 0 .2rem; font-family:var(--mono); font-size:.78rem; }
+  table.stats th { text-align:left; font-weight:500; color:var(--steel); padding:.2rem .4rem; }
+  table.stats td { text-align:right; color:var(--ink); padding:.2rem .4rem; font-variant-numeric:tabular-nums; }
+  table.stats tr + tr { border-top:1px solid var(--line); }
+  .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--steel); margin-left:.3rem; }
+  .live-dot.on { background:var(--green); box-shadow:0 0 0 3px rgba(31,157,87,.25); }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="statusDot"></span>
+  <h1>Ignite UI Testbed</h1>
+  <span class="sub">scaffold → configure → launch</span>
+</header>
+
+<main>
+  <!-- left: flight plan -->
+  <section class="panel">
+    <p class="eyebrow">Session setup</p>
+    <form id="form">
+      <fieldset>
+        <legend>Framework</legend>
+        <igc-button-group id="fw" selection="single-required">
+          <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
+          <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
+          <igc-toggle-button value="react">React</igc-toggle-button>
+          <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
+        </igc-button-group>
+        <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav"></igc-input>
+        <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default"></igc-input>
+      </fieldset>
+
+      <fieldset>
+        <legend>MCP servers</legend>
+        <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
+        <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
+        <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+      </fieldset>
+
+      <fieldset>
+        <legend>Agent skills</legend>
+        <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
+      </fieldset>
+
+      <!-- Model fieldset: converted to Ignite UI Web Components (igc-input).
+           Each igc-input exposes a `value` property, so the existing JS that
+           reads $('#model').value / $('#key').value / $('#base').value is unchanged. -->
+      <fieldset class="model-fields">
+        <legend>Model</legend>
+        <igc-input id="model" label="Model id" value="anthropic/claude-sonnet-4-5"></igc-input>
+        <igc-input id="key" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
+        <igc-input id="base" label="Custom base URL (OpenAI-compatible, optional)"
+                   placeholder="http://host.containers.internal:11434/v1"></igc-input>
+        <p class="note">Local model? Prefix the id <code>custom/&lt;model&gt;</code> (e.g. <code>custom/llama3.1</code>),
+        use <code>host.containers.internal</code> — not <code>localhost</code> — to reach the host, and put any
+        non-empty API key. The server must bind <code>0.0.0.0</code>.</p>
+      </fieldset>
+
+      <igc-button type="submit" id="go" variant="contained">Launch session</igc-button>
+    </form>
+  </section>
+
+  <!-- right: pipeline + console -->
+  <section class="panel">
+    <p class="eyebrow">Pipeline</p>
+    <ul class="rail" id="rail">
+      <li data-step="scaffold"><span class="n">1</span> Scaffold project</li>
+      <li data-step="configure"><span class="n">2</span> Configure AI toolchain</li>
+      <li data-step="translate"><span class="n">3</span> Translate MCP config</li>
+      <li data-step="prune"><span class="n">4</span> Prune skills</li>
+      <li data-step="launch-app"><span class="n">5</span> Start app (watch)</li>
+      <li data-step="launch-opencode"><span class="n">6</span> Start opencode web</li>
+    </ul>
+
+    <p class="eyebrow">Console</p>
+    <div class="console" id="log" aria-live="polite"></div>
+
+    <div class="result" id="result">
+      <igc-button id="openOc" href="#" target="_blank" rel="noopener" variant="contained">Open opencode →</igc-button>
+      <igc-button id="openApp" href="#" target="_blank" rel="noopener" variant="outlined">Open app</igc-button>
+      <p class="note" id="redirect"></p>
+
+      <details class="switcher" id="usageBox" open>
+        <summary>Live stats <span class="live-dot" id="statsDot2"></span></summary>
+        <table class="stats" id="statsTable">
+          <tbody>
+            <tr><th>Messages</th><td id="s-messages">—</td></tr>
+            <tr><th>Input tokens</th><td id="s-input">—</td></tr>
+            <tr><th>Output tokens</th><td id="s-output">—</td></tr>
+            <tr><th>Reasoning</th><td id="s-reasoning">—</td></tr>
+            <tr><th>Cache</th><td id="s-cache">—</td></tr>
+            <tr><th>Total tokens</th><td id="s-total">—</td></tr>
+            <tr><th>Cost</th><td id="s-cost">—</td></tr>
+          </tbody>
+        </table>
+        <p class="note" id="s-updated">Waiting for activity — run the agent in opencode.</p>
+
+        <details class="switcher">
+          <summary>Raw <code>opencode stats</code> <igc-button type="button" id="refreshUsage" variant="outlined">Refresh</igc-button></summary>
+          <pre class="usage" id="usage">No stats yet — run the agent, then Refresh.</pre>
+        </details>
+      </details>
+
+      <details class="switcher">
+        <summary>Switch model</summary>
+        <div class="row">
+          <igc-input id="m2" label="Model id"></igc-input>
+          <igc-input id="k2" label="API key" type="password"></igc-input>
+          <igc-button type="button" id="swap" variant="contained">Apply</igc-button>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<!-- Register the Ignite UI Web Components used above. This is a single
+     self-contained bundle (lit + all deps inlined) produced by esbuild at
+     image-build time and served from the wizard's own origin — no CDN requests
+     at page load. It calls configureTheme('material','dark') + defineAllComponents();
+     the matching --ig-* design tokens are linked from <head>. -->
+<script type="module" src="/vendor/igniteui.js"></script>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let framework = 'angular';
+
+// framework button group: igcSelect.detail is the selected toggle's value.
+$('#fw').addEventListener('igcSelect', (e) => {
+  framework = e.detail || framework;
+  $('#ngMcp').hidden = framework !== 'angular';
+});
+// reflect the default selection (angular) into the Angular-MCP toggle's visibility.
+$('#ngMcp').hidden = framework !== 'angular';
+
+function setStep(step, state) {
+  const li = $(`.rail li[data-step="${step}"]`);
+  if (li) li.dataset.state = state;
+}
+function logLine(msg, cls) {
+  const el = $('#log');
+  const span = document.createElement('div');
+  if (cls) span.className = cls;
+  span.textContent = msg;
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+const ORDER = ['scaffold','configure','translate','prune','launch-app','launch-opencode'];
+
+function collect() {
+  // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
+  const mcps = [...document.querySelectorAll('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
+  const excl = $('#excl').value.split(',').map((s) => s.trim()).filter(Boolean);
+  return {
+    framework,
+    projectType: $('#ptype').value.trim(),
+    theme: $('#theme').value.trim(),
+    enabledMcps: mcps,
+    skills: $('#skills').checked,
+    excludedSkills: excl,
+    model: $('#model').value.trim(),
+    apiKey: $('#key').value,
+    customBaseUrl: $('#base').value.trim() || undefined,
+  };
+}
+
+$('#form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#go').disabled = true;
+  $('#fw').disabled = true;
+  sessionLive = false;
+  $('#log').textContent = '';
+  $('#result').classList.remove('show');
+  ORDER.forEach((s) => setStep(s, 'pending'));
+  let activeIdx = -1;
+
+  const res = await fetch('/api/run', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(collect()),
+  });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream:true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+      if (!line.trim()) continue;
+      let ev; try { ev = JSON.parse(line); } catch { continue; }
+      handle(ev, () => activeIdx, (i) => { activeIdx = i; });
+    }
+  }
+  if (!sessionLive) { $('#go').disabled = false; $('#fw').disabled = false; }
+});
+
+function handle(ev, getIdx, setIdx) {
+  if (ev.type === 'step') {
+    // close previous active as done
+    const prev = getIdx();
+    if (prev >= 0) setStep(ORDER[prev], 'done');
+    const i = ORDER.indexOf(ev.step);
+    setIdx(i); setStep(ev.step, 'active');
+  } else if (ev.type === 'log') {
+    logLine(ev.msg, /^warning:/i.test(ev.msg) ? 'w' : '');
+  } else if (ev.type === 'error') {
+    const i = getIdx(); if (i >= 0) setStep(ORDER[i], 'error');
+    logLine('ERROR: ' + ev.msg, 'e');
+  } else if (ev.type === 'done') {
+    const i = getIdx(); if (i >= 0) setStep(ORDER[i], 'done');
+    onDone(ev);
+  }
+}
+
+let sessionLive = false;
+
+// Lock the launch controls and wire up live stats. Shared by a fresh launch and
+// by re-attaching to an already-running session on page load.
+function enterLiveState({ opencodePort, appPort, model }) {
+  sessionLive = true;
+  $('#statusDot').classList.add('live');
+  const host = location.hostname;
+  const ocUrl = `http://${host}:${opencodePort}`;
+  const appUrl = `http://${host}:${appPort}`;
+  $('#openOc').href = ocUrl;
+  $('#openApp').href = appUrl;
+  if (model) { $('#model').value = model; $('#m2').value = model; }
+  $('#result').classList.add('show');
+  $('#go').disabled = true;
+  $('#fw').disabled = true;
+  loadUsage();
+  startStatsStream();
+  return ocUrl;
+}
+
+function onDone(ev) {
+  const ocUrl = enterLiveState({ opencodePort: ev.opencodePort, appPort: ev.appPort, model: $('#model').value });
+  const tab = window.open(ocUrl, '_blank', 'noopener');
+  $('#redirect').textContent = tab
+    ? 'opencode opened in a new tab — this wizard stays open for live stats.'
+    : 'Pop-up blocked — use the “Open opencode →” button above (opens in a new tab).';
+}
+
+// Repaint the pipeline rail + console from a server-side run snapshot.
+// Returns the active step index (or -1).
+function applyRunState(st) {
+  $('#log').textContent = '';
+  (st.logs || []).forEach((m) => logLine(m, /^warning:/i.test(m) ? 'w' : ''));
+  ORDER.forEach((s) => setStep(s, 'pending'));
+  (st.completed || []).forEach((s) => setStep(s, 'done'));
+  let idx = -1;
+  if (st.step) { idx = ORDER.indexOf(st.step); setStep(st.step, st.phase === 'error' ? 'error' : 'active'); }
+  if (st.phase === 'error' && st.error) logLine('ERROR: ' + st.error, 'e');
+  return idx;
+}
+
+// Follow a pipeline run that's already underway to completion.
+function reattachRun(model) {
+  $('#go').disabled = true;
+  $('#fw').disabled = true;
+  sessionLive = false;
+  let activeIdx = -1;
+  const goLive = (r) => enterLiveState({ opencodePort: r.opencodePort, appPort: r.appPort, model });
+  const es = new EventSource('/api/run/stream');
+  es.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev.type === 'state') {
+      activeIdx = applyRunState(ev.state);
+      if (ev.state.phase === 'done' && ev.state.result) { es.close(); goLive(ev.state.result); }
+      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
+      return;
+    }
+    if (ev.type === 'done') { if (activeIdx >= 0) setStep(ORDER[activeIdx], 'done'); es.close(); goLive(ev); $('#redirect').textContent = 'Session ready — opencode is running.'; return; }
+    handle(ev, () => activeIdx, (i) => { activeIdx = i; });
+    if (ev.type === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
+  };
+}
+
+// On (re)load, re-attach to a run that's initializing or to a live session.
+async function checkActive() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    if (!s) return;
+    if (s.phase === 'running') { reattachRun(s.model); return; }
+    if (s.opencode) {
+      enterLiveState({ opencodePort: s.opencodePort, appPort: s.appPort, model: s.model });
+      $('#redirect').textContent = 'Reattached to the active session.';
+    }
+  } catch (_) {}
+}
+// Defer to `load` so every top-level let/const (statsES, etc.) is initialized first.
+window.addEventListener('load', checkActive);
+
+async function loadUsage() {
+  const pre = $('#usage');
+  pre.textContent = 'loading…';
+  try {
+    const r = await fetch('/api/usage');
+    const j = await r.json();
+    pre.textContent = j.ok ? (j.text.trim() || 'No usage data yet.') : `error: ${j.error}`;
+  } catch (e) {
+    pre.textContent = `error: ${e.message}`;
+  }
+}
+$('#refreshUsage').addEventListener('click', (e) => { e.preventDefault(); loadUsage(); });
+
+const fmt = (n) => (n || 0).toLocaleString();
+let statsES = null;
+function startStatsStream() {
+  if (statsES) statsES.close();
+  statsES = new EventSource('/api/stats/stream');
+  statsES.onmessage = (e) => { try { renderStats(JSON.parse(e.data)); } catch {} };
+  statsES.onerror = () => { $('#statsDot2').classList.remove('on'); };
+}
+function renderStats(s) {
+  if (!s) return;
+  $('#statsDot2').classList.add('on');
+  const m = s.messages || {}, t = s.tokens || {}, c = s.cost || {};
+  $('#s-messages').textContent = `${fmt(m.total)} (${fmt(m.user)} user / ${fmt(m.assistant)} assistant)`;
+  $('#s-input').textContent = fmt(t.input);
+  $('#s-output').textContent = fmt(t.output);
+  $('#s-reasoning').textContent = fmt(t.reasoning);
+  $('#s-cache').textContent = fmt(t.cache);
+  $('#s-total').textContent = fmt(t.total);
+  $('#s-cost').textContent = c.available ? `$${(c.amount || 0).toFixed(4)} ${c.currency || ''}`.trim() : 'n/a';
+  if (s.updatedAt) $('#s-updated').textContent = `Updated ${new Date(s.updatedAt).toLocaleTimeString()} · model ${s.model || '—'}`;
+}
+
+$('#swap').addEventListener('click', async () => {
+  const r = await fetch('/api/model', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ model: $('#m2').value.trim(), apiKey: $('#k2').value }),
+  });
+  const j = await r.json();
+  logLine(j.ok ? `model switched to ${j.model}` : `switch failed: ${j.error}`, j.ok ? '' : 'e');
+});
+</script>
+</body>
+</html>
