@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Session artifacts (generated apps, logs, stats)
+sessions/
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
