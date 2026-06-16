@@ -14,10 +14,14 @@ if [[ "${1:-}" == "build" ]]; then
 fi
 
 mkdir -p "$OUT"
+# Run history persists across containers, so it lives in a stable shared dir
+# (not the per-session $OUT). Mounted at /history inside the container.
+HIST="$PWD/sessions/history"
+mkdir -p "$HIST"
 echo "Session artifacts -> $OUT"
-echo "Wizard:   http://localhost:8080"
-echo "opencode: http://localhost:4096  (after launch)"
-echo "App:      http://localhost:5000  (after launch)"
+echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
+echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
+echo "App:                        http://localhost:5000  (after launch in interactive mode)"
 
 # Host interface to publish on. On Windows the podman machine's port forwarder
 # otherwise binds only IPv6 (::1); a browser hitting localhost then connects over
@@ -31,12 +35,13 @@ case "$(uname -s)" in
     # Windows-style path, and drop the Linux-only :Z and --userns flags.
     export MSYS_NO_PATHCONV=1
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
-    VOL=("-v" "${OUT_HOST}:/work")
+    HIST_HOST="$(cygpath -m "$HIST")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z")
     USERNS=("--userns=keep-id")
     ;;
 esac

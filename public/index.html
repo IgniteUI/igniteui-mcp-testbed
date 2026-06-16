@@ -39,6 +39,9 @@
 
   main { display:grid; grid-template-columns: minmax(320px,420px) 1fr; gap:1px; background:var(--line);
          min-height:calc(100vh - 60px); }
+  /* Author `display:grid` above beats the UA `[hidden]{display:none}`, so the tab
+     panels need an explicit hide rule or they stack instead of swapping. */
+  main[hidden] { display:none; }
   @media (max-width:880px){ main { grid-template-columns:1fr; } }
   .panel { background:var(--surface); padding:1.4rem 1.5rem; }
 
@@ -112,16 +115,117 @@
   table.stats tr + tr { border-top:1px solid var(--line); }
   .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--steel); margin-left:.3rem; }
   .live-dot.on { background:var(--green); box-shadow:0 0 0 3px rgba(31,157,87,.25); }
+
+  /* header tabs */
+  header nav.views { display:flex; gap:.2rem; margin-left:1.8rem; align-self:stretch; }
+  .tab { font-family:var(--mono); font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+         background:transparent; color:var(--steel); border:0; border-bottom:2px solid transparent;
+         padding:.2rem .9rem; margin-bottom:-1rem; cursor:pointer; }
+  .tab:hover { color:var(--ink); }
+  .tab.active { color:var(--ink); border-bottom-color:var(--teal); }
+  /* small inline buttons inside the history view (Refresh) keep the boxed look */
+  .viewbtn { font-family:var(--mono); font-size:.7rem; letter-spacing:.08em; text-transform:uppercase;
+             background:transparent; color:var(--steel); border:1px solid var(--line); border-radius:6px;
+             padding:.3rem .7rem; cursor:pointer; }
+  .viewbtn:hover { color:var(--ink); }
+
+  /* history view */
+  .history-view { padding:1.4rem 1.5rem; }
+  .history-view[hidden] { display:none; }
+  .hist-head { display:flex; align-items:center; gap:.8rem; margin:0 0 1.1rem; }
+  table.runs { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.78rem; }
+  table.runs th { text-align:left; color:var(--steel); font-weight:500; padding:.45rem .55rem;
+                  border-bottom:1px solid var(--line); white-space:nowrap; cursor:pointer; user-select:none; }
+  table.runs th[data-sort]::after { content:''; opacity:.5; }
+  table.runs th.sort-asc::after { content:' ▲'; opacity:.8; }
+  table.runs th.sort-desc::after { content:' ▼'; opacity:.8; }
+  table.runs td { padding:.45rem .55rem; border-bottom:1px solid var(--line); vertical-align:top;
+                  font-variant-numeric:tabular-nums; }
+  table.runs td.num { text-align:right; }
+  tr.run-row { cursor:pointer; }
+  tr.run-row:hover td { background:#13312c; }
+  .rcaret { display:inline-block; color:var(--steel); font-size:.7rem; margin-right:.45rem;
+    transition:transform .15s; }
+  tr.run-row[aria-expanded=true] .rcaret { transform:rotate(90deg); }
+  tr.run-row:hover .rcaret { color:var(--teal); }
+  tr.run-row[aria-expanded=true] td { background:#0e2723; }
+  .pill { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem; }
+  .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
+  .pill.error { background:rgba(224,106,85,.16); color:var(--red); }
+  .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
+  .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
+  tr.detail-row[hidden] { display:none; }
+  tr.detail-row > td { background:#07211f; padding:.9rem 1rem; }
+  .detail { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem 1.6rem; }
+  .detail h4 { margin:0 0 .4rem; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--steel); }
+  .detail dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:.15rem .7rem; }
+  .detail dt { color:var(--steel); }
+  .detail dd { margin:0; text-align:right; color:var(--ink); word-break:break-word; }
+  .detail .err { color:#ff9c8a; grid-column:1/-1; text-align:left; }
+  .pill.matrix { background:rgba(26,169,158,.16); color:var(--teal); }
+  .pill.pending, .pill.cancelled, .pill.interrupted { background:rgba(142,166,164,.15); color:var(--steel); }
+  /* per-matrix tag: hue set inline from a hash of the matrixId so same-matrix rows match */
+  .mxtag { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem;
+    border:1px solid currentColor; cursor:pointer; }
+  .mxtag.muted { color:var(--steel); border-color:transparent; cursor:default; }
+  .del { font-family:var(--mono); font-size:.95rem; line-height:1; color:var(--steel);
+    background:none; border:none; cursor:pointer; padding:.1rem .3rem; border-radius:4px; }
+  .del:hover { color:var(--red); background:rgba(224,106,85,.12); }
+  .detail .delgroup { grid-column:1/-1; text-align:left; }
+  .detail .delgroup button { font-family:var(--mono); font-size:.72rem; color:var(--red);
+    background:rgba(224,106,85,.1); border:1px solid rgba(224,106,85,.3); border-radius:6px;
+    padding:.3rem .6rem; cursor:pointer; }
+  /* screenshot thumbnails in run detail */
+  .shots { grid-column:1/-1; }
+  .shot-strip { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.3rem; }
+  .shot { display:block; border:1px solid var(--line); border-radius:6px; overflow:hidden; text-decoration:none; }
+  .shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; }
+  .shot .cap { display:block; font-size:.66rem; color:var(--steel); padding:.2rem .35rem; text-align:left; max-width:150px; }
+  .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
+
+  /* matrix view */
+  .matrix-view { display:grid; grid-template-columns: minmax(340px,480px) 1fr; gap:1px; background:var(--line);
+                 min-height:calc(100vh - 60px); }
+  .matrix-view[hidden] { display:none; }
+  @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
+  #mxPlatforms { display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; }
+  #mxPlatforms igc-checkbox { margin:0; }
+  .ta { width:100%; background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem;
+        border:1px solid #0f3b37; border-radius:8px; padding:.6rem .7rem; margin-top:.5rem; resize:vertical; }
+  #mxGo { display:block; width:100%; margin-top:.6rem; }
+  #mxGo::part(base) { width:100%; justify-content:center; padding-block:.65rem; }
+  .mx-count { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.5rem; }
+  .mx-variant { display:flex; align-items:center; gap:.9rem; flex-wrap:wrap; padding:.5rem .6rem;
+    border:1px solid var(--line); border-radius:8px; margin-bottom:.5rem; }
+  .mx-variant igc-checkbox { margin:0; }
+  .mx-variant .rm { margin-left:auto; font-family:var(--mono); color:var(--steel); background:none;
+    border:none; cursor:pointer; font-size:1rem; padding:.1rem .3rem; border-radius:4px; }
+  .mx-variant .rm:hover { color:var(--red); background:rgba(224,106,85,.12); }
+  .mx-entries { list-style:none; margin:0; padding:0; }
+  .mx-entry { border:1px solid var(--line); border-radius:8px; padding:.6rem .8rem; margin-bottom:.6rem; }
+  .mx-entry .top { display:flex; align-items:center; gap:.6rem; font-size:.84rem; cursor:pointer; }
+  .mx-entry .caret { color:var(--steel); font-size:.7rem; transition:transform .15s; }
+  .mx-entry.open .caret { transform:rotate(90deg); }
+  .mx-entry .who { font-weight:600; }
+  .mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; }
+  .mx-entry .mini { font-family:var(--mono); font-size:.72rem; color:#9fc2bd; margin-top:.4rem;
+                    max-height:0; overflow:hidden; transition:max-height .2s; white-space:pre-wrap; }
+  .mx-entry.open .mini { max-height:200px; overflow:auto; }
 </style>
 </head>
 <body>
 <header>
   <span class="dot" id="statusDot"></span>
   <h1>Ignite UI Testbed</h1>
+  <nav class="views" role="tablist">
+    <button class="tab active" data-view="wizard" role="tab" aria-selected="true">Interactive</button>
+    <button class="tab" data-view="matrix" role="tab" aria-selected="false">Matrix</button>
+    <button class="tab" data-view="history" role="tab" aria-selected="false">History</button>
+  </nav>
   <span class="sub">scaffold → configure → launch</span>
 </header>
 
-<main>
+<main id="wizardMain">
   <!-- left: flight plan -->
   <section class="panel">
     <p class="eyebrow">Session setup</p>
@@ -156,7 +260,7 @@
            reads $('#model').value / $('#key').value / $('#base').value is unchanged. -->
       <fieldset class="model-fields">
         <legend>Model</legend>
-        <igc-input id="model" label="Model id" value="anthropic/claude-sonnet-4-5"></igc-input>
+        <igc-input id="model" label="Model id" value="anthropic/claude-haiku-4-5"></igc-input>
         <igc-input id="key" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
         <igc-input id="base" label="Custom base URL (OpenAI-compatible, optional)"
                    placeholder="http://host.containers.internal:11434/v1"></igc-input>
@@ -166,6 +270,7 @@
       </fieldset>
 
       <igc-button type="submit" id="go" variant="contained">Launch session</igc-button>
+      <p class="note" id="wizBlocked" hidden>A matrix run is in progress — launch is disabled until it finishes.</p>
     </form>
   </section>
 
@@ -222,6 +327,85 @@
   </section>
 </main>
 
+<section class="matrix-view" id="matrix" hidden>
+  <!-- left: matrix setup -->
+  <section class="panel">
+    <p class="eyebrow">Matrix setup</p>
+    <form id="mxForm">
+      <fieldset>
+        <legend>Platforms <small style="color:var(--steel);font-weight:400">(axis)</small></legend>
+        <div id="mxPlatforms">
+          <igc-checkbox value="angular" checked>Angular</igc-checkbox>
+          <igc-checkbox value="blazor">Blazor</igc-checkbox>
+          <igc-checkbox value="react">React</igc-checkbox>
+          <igc-checkbox value="webcomponents">Web Comps</igc-checkbox>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Model <small style="color:var(--steel);font-weight:400">(fixed · one for all)</small></legend>
+        <igc-input id="mxModel" label="Model id" placeholder="anthropic/claude-sonnet-4-5"></igc-input>
+      </fieldset>
+
+      <fieldset>
+        <legend>Prompt <small style="color:var(--steel);font-weight:400">(one-shot, shared)</small></legend>
+        <textarea id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></textarea>
+      </fieldset>
+
+      <fieldset>
+        <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skills per row)</small></legend>
+        <div id="mxVariants"></div>
+        <button type="button" class="viewbtn" id="mxAddVariant" style="margin-top:.5rem">+ add variant</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>API key</legend>
+        <igc-input id="mxKey" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
+        <p class="note">One key applied to every entry. Mixing providers in one matrix needs them to share a key.</p>
+      </fieldset>
+
+      <p class="mx-count" id="mxCount">0 runs</p>
+      <igc-button type="submit" id="mxGo" variant="contained">Run matrix</igc-button>
+    </form>
+  </section>
+
+  <!-- right: matrix progress -->
+  <section class="panel">
+    <p class="eyebrow">Matrix progress <span class="note" id="mxOverall" style="margin:0"></span>
+      <button class="viewbtn" id="mxCancel" hidden style="margin-left:.6rem">Cancel</button></p>
+    <p class="note" id="mxEmpty">Configure platforms × models and a prompt, then Run matrix. Each entry is a one-shot agent run; screenshots land in History.</p>
+    <ul class="mx-entries" id="mxEntries"></ul>
+  </section>
+</section>
+
+<section class="history-view" id="history" hidden>
+  <div class="hist-head">
+    <p class="eyebrow" style="margin:0">Run history</p>
+    <button class="viewbtn" id="histRefresh">Refresh</button>
+    <span class="note" id="histMeta" style="margin:0"></span>
+  </div>
+  <p class="note" id="histEmpty">No runs recorded yet.</p>
+  <table class="runs" id="runsTable" hidden>
+    <thead>
+      <tr>
+        <th data-sort="when">When</th>
+        <th data-sort="matrix">Matrix</th>
+        <th data-sort="framework">Framework</th>
+        <th data-sort="model">Model</th>
+        <th data-sort="skills">Skills</th>
+        <th data-sort="mcps">MCPs</th>
+        <th data-sort="status">Status</th>
+        <th data-sort="msgs" class="num">Msgs</th>
+        <th data-sort="tok" class="num">Tokens</th>
+        <th data-sort="cost" class="num">Cost</th>
+        <th data-sort="dur" class="num">Duration</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="runsBody"></tbody>
+  </table>
+</section>
+
 <!-- Register the Ignite UI Web Components used above. This is a single
      self-contained bundle (lit + all deps inlined) produced by esbuild at
      image-build time and served from the wizard's own origin — no CDN requests
@@ -258,7 +442,8 @@ const ORDER = ['scaffold','configure','translate','prune','launch-app','launch-o
 
 function collect() {
   // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-  const mcps = [...document.querySelectorAll('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
+  // Scope to the interactive view so the matrix variant checkboxes aren't included.
+  const mcps = [...document.querySelectorAll('#wizardMain [data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
   const excl = $('#excl').value.split(',').map((s) => s.trim()).filter(Boolean);
   return {
     framework,
@@ -397,6 +582,11 @@ async function checkActive() {
       $('#redirect').textContent = 'Reattached to the active session.';
     }
   } catch (_) {}
+  // A matrix run may be in progress even while the Wizard tab is shown — lock launch.
+  try {
+    const ms = await (await fetch('/api/matrix/status')).json();
+    if (ms && ms.running) setMatrixActive(true);
+  } catch (_) {}
 }
 // Defer to `load` so every top-level let/const (statsES, etc.) is initialized first.
 window.addEventListener('load', checkActive);
@@ -443,6 +633,404 @@ $('#swap').addEventListener('click', async () => {
   });
   const j = await r.json();
   logLine(j.ok ? `model switched to ${j.model}` : `switch failed: ${j.error}`, j.ok ? '' : 'e');
+});
+
+// ---------- history view ----------
+let runsData = [];
+let sortKey = 'when', sortDir = -1; // newest first
+let matrixFilter = null; // when set, show only entries of this matrixId
+let histTimer = null;
+const expandedRuns = new Set(); // run ids kept open across auto-refresh
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+// Format an ISO timestamp as DD/Mon/YYYY HH:MM:SS in the user's local timezone
+// (24h clock, day-first).
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${MONTHS[d.getMonth()]}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function fmtDur(ms) {
+  if (ms == null) return '—';
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s - m * 60)}s`;
+}
+
+// Flatten a record into the comparable values shown in the table.
+function rowVals(r) {
+  const st = r.stats || {};
+  const cost = st.cost && st.cost.available ? st.cost.amount : null;
+  const xs = (r.config.excludedSkills || []).length;
+  return {
+    when: r.startedAt || '',
+    mode: r.mode || 'interactive',
+    matrix: r.matrixId || '',
+    framework: r.config.framework || '—',
+    model: (r.config.models || []).join(', ') || '—',
+    skills: r.config.skills ? (xs ? `on (−${xs})` : 'on') : 'off',
+    mcps: (r.config.enabledMcps || []).join(', ') || '—',
+    status: r.status || '—',
+    msgs: (st.messages || {}).total || 0,
+    tok: (st.tokens || {}).total || 0,
+    cost,
+  };
+}
+
+// Short, color-stable tag for a matrix submission. The id is mx-<stamp>-<rand>;
+// the trailing rand keeps the label short, and a hash→hue gives every entry of the
+// same matrix the same color so they read as a group.
+function matrixTag(matrixId) {
+  if (!matrixId) return '<span class="mxtag muted">—</span>';
+  let h = 0;
+  for (let i = 0; i < matrixId.length; i++) h = (h * 31 + matrixId.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  const label = matrixId.split('-').pop();
+  return `<span class="mxtag" style="color:hsl(${hue},55%,62%)" data-matrix="${esc(matrixId)}" title="${esc(matrixId)} — click to filter">#${esc(label)}</span>`;
+}
+
+function detailHtml(r) {
+  const c = r.config, st = r.stats, stg = r.stages || {};
+  const timings = Object.entries(stg.timings || {})
+    .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${fmtDur(v)}</dd>`).join('') || '<dt>—</dt><dd></dd>';
+  const completed = (stg.completed || []).join(' → ') || '—';
+  const perModel = st && st.perModel
+    ? Object.entries(st.perModel).map(([m, pm]) =>
+        `<dt>${esc(m)}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`).join('')
+    : '<dt>—</dt><dd></dd>';
+
+  const shots = r.screenshots || [];
+  const art = (file) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
+  const shotHtml = shots.length ? `<div class="shots"><h4>Screenshots (${shots.filter((s) => s.ok).length}/${shots.length})</h4>
+    <div class="shot-strip">${shots.map((s) => s.ok
+      ? `<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${art(s.file)}" alt="${esc(s.route)}"><span class="cap">${esc(s.route)}</span></a>`
+      : `<div class="shot fail">${esc(s.route)}<br><small>failed</small></div>`).join('')}</div></div>` : '';
+  const promptHtml = r.prompt
+    ? `<div class="shots"><h4>Prompt</h4><div class="note" style="margin:0;color:#bfe6df">${esc(r.prompt)}</div></div>` : '';
+  const logsHtml = (r.logs && r.logs.length)
+    ? `<div class="shots"><h4>Log</h4><details><summary style="cursor:pointer;color:var(--steel)">${r.logs.length} lines</summary>
+      <pre class="usage" style="max-height:320px;overflow:auto;white-space:pre-wrap">${esc(r.logs.join('\n'))}</pre></details></div>` : '';
+
+  return `<div class="detail">
+    <div><h4>Config</h4><dl>
+      <dt>Mode</dt><dd>${esc(r.mode || 'interactive')}</dd>
+      <dt>Project type</dt><dd>${esc(c.projectType || '—')}</dd>
+      <dt>Theme</dt><dd>${esc(c.theme || '—')}</dd>
+      <dt>Base URL</dt><dd>${esc(c.customBaseUrl || '—')}</dd>
+      <dt>Excluded skills</dt><dd>${esc((c.excludedSkills || []).join(', ') || '—')}</dd>
+      <dt>Run id</dt><dd>${esc(r.id)}</dd>
+      ${r.matrixId ? `<dt>Matrix</dt><dd>${esc(r.matrixId)}</dd>` : ''}
+    </dl></div>
+    <div><h4>Stages</h4><dl>
+      <dt>Completed</dt><dd>${esc(completed)}</dd>
+      ${timings}
+    </dl></div>
+    <div><h4>Per model</h4><dl>${perModel}</dl></div>
+    ${promptHtml}
+    ${shotHtml}
+    ${logsHtml}
+    ${r.error ? `<div class="err"><strong>Error:</strong> ${esc(r.error)}</div>` : ''}
+    ${r.matrixId ? `<div class="delgroup"><button data-delmatrix="${esc(r.matrixId)}">Delete entire matrix #${esc(r.matrixId.split('-').pop())}</button></div>` : ''}
+  </div>`;
+}
+
+function renderRuns() {
+  const body = $('#runsBody');
+  const empty = $('#histEmpty'), table = $('#runsTable');
+  const data = matrixFilter ? runsData.filter((r) => r.matrixId === matrixFilter) : runsData;
+  updateHistMeta(data.length);
+  if (!data.length) { empty.hidden = false; table.hidden = true; return; }
+  empty.hidden = true; table.hidden = false;
+
+  const rows = data.map((r) => ({ r, v: rowVals(r) }));
+  rows.sort((a, b) => {
+    const x = a.v[sortKey], y = b.v[sortKey];
+    const cmp = (typeof x === 'number' && typeof y === 'number')
+      ? x - y : String(x).localeCompare(String(y));
+    return cmp * sortDir;
+  });
+
+  body.innerHTML = rows.map(({ r, v }) => {
+    const cost = v.cost == null ? 'n/a' : `$${v.cost.toFixed(4)}`;
+    const open = expandedRuns.has(r.id);
+    return `<tr class="run-row" data-id="${esc(r.id)}" aria-expanded="${open}">
+      <td><span class="rcaret">▸</span>${esc(fmtWhen(v.when))}</td>
+      <td>${matrixTag(v.matrix)}</td>
+      <td>${esc(v.framework)}</td>
+      <td>${esc(v.model)}</td>
+      <td>${esc(v.skills)}</td>
+      <td>${esc(v.mcps)}</td>
+      <td><span class="pill ${esc(v.status)}">${esc(v.status)}</span></td>
+      <td class="num">${fmt(v.msgs)}</td>
+      <td class="num">${fmt(v.tok)}</td>
+      <td class="num">${cost}</td>
+      <td class="num">${fmtDur(r.durationMs)}</td>
+      <td><button class="del" data-del="${esc(r.id)}" title="Delete run">✕</button></td>
+    </tr>
+    <tr class="detail-row"${open ? '' : ' hidden'}><td colspan="12">${detailHtml(r)}</td></tr>`;
+  }).join('');
+
+  document.querySelectorAll('#runsTable th[data-sort]').forEach((th) => {
+    th.classList.toggle('sort-asc', th.dataset.sort === sortKey && sortDir === 1);
+    th.classList.toggle('sort-desc', th.dataset.sort === sortKey && sortDir === -1);
+  });
+}
+
+function updateHistMeta(shown) {
+  const meta = $('#histMeta');
+  if (matrixFilter) {
+    meta.innerHTML = `${shown} run${shown === 1 ? '' : 's'} in matrix #${esc(matrixFilter.split('-').pop())} · <a href="#" id="histClear" style="color:var(--teal)">show all</a>`;
+    const c = $('#histClear');
+    if (c) c.onclick = (ev) => { ev.preventDefault(); matrixFilter = null; renderRuns(); };
+  } else {
+    meta.textContent = `${runsData.length} run${runsData.length === 1 ? '' : 's'}`;
+  }
+}
+
+async function loadHistory() {
+  try {
+    const j = await (await fetch('/api/history')).json();
+    runsData = (j && j.runs) || [];
+    if (matrixFilter && !runsData.some((r) => r.matrixId === matrixFilter)) matrixFilter = null;
+    renderRuns();
+  } catch (_) {}
+}
+
+async function deleteRun(id) {
+  if (!confirm('Delete this run and its screenshots?')) return;
+  try {
+    const j = await (await fetch(`/api/history/${encodeURIComponent(id)}`, { method: 'DELETE' })).json();
+    if (!j.ok) { alert(j.error || 'delete failed'); return; }
+    expandedRuns.delete(id);
+    loadHistory();
+  } catch (err) { alert(err.message); }
+}
+
+async function deleteMatrix(matrixId) {
+  if (!confirm(`Delete every run in matrix #${matrixId.split('-').pop()} and its screenshots?`)) return;
+  try {
+    const j = await (await fetch(`/api/history/matrix/${encodeURIComponent(matrixId)}`, { method: 'DELETE' })).json();
+    if (!j.ok) { alert(j.error || 'delete failed'); return; }
+    if (matrixFilter === matrixId) matrixFilter = null;
+    loadHistory();
+  } catch (err) { alert(err.message); }
+}
+
+$('#runsBody').addEventListener('click', (e) => {
+  const del = e.target.closest('[data-del]');
+  if (del) { e.stopPropagation(); deleteRun(del.dataset.del); return; }
+  const delMx = e.target.closest('[data-delmatrix]');
+  if (delMx) { e.stopPropagation(); deleteMatrix(delMx.dataset.delmatrix); return; }
+  const tag = e.target.closest('[data-matrix]');
+  if (tag) { e.stopPropagation(); matrixFilter = (matrixFilter === tag.dataset.matrix) ? null : tag.dataset.matrix; renderRuns(); return; }
+
+  const row = e.target.closest('tr.run-row');
+  if (!row) return;
+  const detail = row.nextElementSibling;
+  const open = detail.hidden;
+  detail.hidden = !open;
+  row.setAttribute('aria-expanded', String(open));
+  if (open) expandedRuns.add(row.dataset.id); else expandedRuns.delete(row.dataset.id);
+});
+
+document.querySelectorAll('#runsTable th[data-sort]').forEach((th) => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+    renderRuns();
+  });
+});
+
+$('#histRefresh').addEventListener('click', loadHistory);
+
+const VIEWS = { wizard: '#wizardMain', matrix: '#matrix', history: '#history' };
+function showView(view) {
+  for (const [v, sel] of Object.entries(VIEWS)) $(sel).hidden = v !== view;
+  document.querySelectorAll('.tab[data-view]').forEach((b) => {
+    const on = b.dataset.view === view;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  if (view === 'history') {
+    loadHistory();
+    if (!histTimer) histTimer = setInterval(loadHistory, 5000);
+  } else if (histTimer) {
+    clearInterval(histTimer); histTimer = null;
+  }
+  if (view === 'matrix') { updateMxCount(); if (!mxES) startMatrixStream(); }
+}
+document.querySelectorAll('.tab[data-view]').forEach((b) =>
+  b.addEventListener('click', () => showView(b.dataset.view)));
+
+// ---------- matrix view ----------
+// igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
+const mxPlatforms = () => [...document.querySelectorAll('#mxPlatforms igc-checkbox')].filter((c) => c.checked).map((c) => c.value);
+
+// Variant builder: each row = which MCPs are enabled + skills on/off (the axis).
+function addVariantRow(preset = { mcps: ['igniteui', 'theming'], skills: true }) {
+  const row = document.createElement('div');
+  row.className = 'mx-variant';
+  const has = (m) => preset.mcps.includes(m) ? 'checked' : '';
+  row.innerHTML = `
+    <igc-checkbox data-mcp="igniteui" ${has('igniteui')}>Ignite UI CLI MCP</igc-checkbox>
+    <igc-checkbox data-mcp="theming" ${has('theming')}>Theming MCP</igc-checkbox>
+    <igc-checkbox data-skills ${preset.skills ? 'checked' : ''}>Skills</igc-checkbox>
+    <button type="button" class="rm" title="Remove variant">✕</button>`;
+  row.querySelector('.rm').addEventListener('click', () => { row.remove(); updateMxCount(); });
+  row.querySelectorAll('igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+  $('#mxVariants').appendChild(row);
+  updateMxCount();
+}
+
+// Read + dedupe the variant rows into [{mcps:[], skills:bool}].
+function mxVariants() {
+  const seen = new Set(), out = [];
+  for (const row of document.querySelectorAll('#mxVariants .mx-variant')) {
+    const mcps = [...row.querySelectorAll('igc-checkbox[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
+    const skills = !!row.querySelector('igc-checkbox[data-skills]').checked;
+    const key = mcps.join(',') + '|' + skills;
+    if (seen.has(key)) continue;
+    seen.add(key); out.push({ mcps, skills });
+  }
+  return out;
+}
+
+function updateMxCount() {
+  const p = mxPlatforms().length, v = mxVariants().length;
+  $('#mxCount').textContent = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
+}
+document.querySelectorAll('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+$('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false }));
+addVariantRow(); // seed one default variant (igniteui+theming, skills on)
+
+let mxES = null;
+let mxTotal = 0, mxDone = 0;
+let matrixActive = false;
+const mxEntryEls = new Map(); // index -> { el, pill, step, mini, log }
+
+// A matrix run drives the same app/opencode processes and fixed ports as an
+// interactive session, so the Wizard "Launch session" button is locked while one runs.
+function setMatrixActive(active) {
+  matrixActive = active;
+  $('#wizBlocked').hidden = !active;
+  $('#mxCancel').hidden = !active;
+  if (active) { $('#go').disabled = true; $('#fw').disabled = true; }
+  else if (!sessionLive) { $('#go').disabled = false; $('#fw').disabled = false; }
+}
+
+$('#mxCancel').addEventListener('click', async () => {
+  $('#mxCancel').disabled = true;
+  try { await fetch('/api/matrix/cancel', { method: 'POST' }); } catch (_) {}
+  $('#mxCancel').disabled = false;
+});
+
+function mxEntry(e) {
+  let rec = mxEntryEls.get(e.index);
+  if (!rec) {
+    const li = document.createElement('li');
+    li.className = 'mx-entry';
+    li.innerHTML = `<div class="top"><span class="caret">▸</span><span class="pill ${e.status || 'pending'}" data-pill>${e.status || 'pending'}</span>
+      <span class="who">${esc(e.platform || '')} · ${esc(e.variantLabel || '')}</span><span class="step" data-step></span></div>
+      <div class="mini" data-mini></div>`;
+    li.querySelector('.top').addEventListener('click', () => {
+      const opened = li.classList.toggle('open');
+      if (opened) { const mini = li.querySelector('[data-mini]'); mini.scrollTop = mini.scrollHeight; }
+    });
+    $('#mxEntries').appendChild(li);
+    rec = { el: li, pill: li.querySelector('[data-pill]'), step: li.querySelector('[data-step]'), mini: li.querySelector('[data-mini]'), log: [] };
+    mxEntryEls.set(e.index, rec);
+  }
+  return rec;
+}
+function mxStatus(rec, status) { rec.pill.className = `pill ${status}`; rec.pill.textContent = status; }
+function mxOverall() { $('#mxOverall').textContent = mxTotal ? `${mxDone}/${mxTotal}` : ''; }
+
+function startMatrixStream() {
+  if (mxES) mxES.close();
+  mxEntryEls.clear();
+  $('#mxEntries').innerHTML = '';
+  mxES = new EventSource('/api/matrix/stream');
+  mxES.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch { return; } handleMx(m); };
+}
+
+function handleMx(m) {
+  if (m.type === 'state') {
+    const s = m.state || {};
+    mxTotal = s.total || 0; mxDone = s.done || 0; mxOverall();
+    (s.entries || []).forEach((e) => {
+      const rec = mxEntry(e);
+      mxStatus(rec, e.status);
+      // Replay retained logs so a reconnect/reload doesn't lose past entries' output.
+      if (Array.isArray(e.logs)) { rec.log = e.logs.slice(); rec.mini.textContent = rec.log.join('\n'); }
+    });
+    if ((s.entries || []).length) $('#mxEmpty').hidden = true;
+    setMatrixActive(!!s.running);
+    if (!s.running) { $('#mxGo').disabled = false; }
+    return;
+  }
+  if (m.type === 'matrix-start') {
+    $('#mxEmpty').hidden = true; mxTotal = m.total; mxDone = 0; mxOverall();
+    (m.entries || []).forEach((e) => mxEntry(e));
+    setMatrixActive(true);
+    return;
+  }
+  if (m.type === 'entry-start') { mxStatus(mxEntry(m), 'running'); return; }
+  if (m.type === 'matrix-done') {
+    mxDone = m.total; mxTotal = m.total; mxOverall();
+    $('#mxGo').disabled = false; setMatrixActive(false);
+    if (mxES) { mxES.close(); mxES = null; }
+    return;
+  }
+  if (m.index != null) {
+    const rec = mxEntry({ index: m.index });
+    const HB = /still running \(\d+s\)/;
+    const appendLog = (line) => {
+      // Collapse consecutive heartbeats into one updating line (mirrors the server).
+      if (HB.test(line) && rec.log.length && HB.test(rec.log[rec.log.length - 1])) {
+        rec.log[rec.log.length - 1] = line;
+      } else {
+        rec.log.push(line);
+        if (rec.log.length > 800) rec.log.shift();
+      }
+      rec.mini.textContent = rec.log.join('\n');
+      // Stick to the newest line unless the user has scrolled up to read history.
+      const nearBottom = rec.mini.scrollHeight - rec.mini.scrollTop - rec.mini.clientHeight < 40;
+      if (nearBottom) rec.mini.scrollTop = rec.mini.scrollHeight;
+    };
+    if (m.type === 'step') { rec.step.textContent = m.step; appendLog(`— ${m.step} —`); }
+    else if (m.type === 'log') appendLog(m.msg);
+    else if (m.type === 'error') appendLog('ERROR: ' + m.msg);
+    else if (m.type === 'entry-done') {
+      mxStatus(rec, m.status);
+      mxDone += 1; mxOverall();
+      if (m.status === 'success') rec.step.textContent = `${(m.screenshots || []).filter((s) => s.ok).length} shots`;
+      else if (m.status === 'build-error') rec.step.textContent = 'build failed';
+    }
+  }
+}
+
+$('#mxForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const platforms = mxPlatforms(), variants = mxVariants();
+  const model = $('#mxModel').value.trim(), prompt = $('#mxPrompt').value.trim();
+  if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
+  if (!model) { alert('Enter a model id.'); return; }
+  if (!prompt) { alert('Enter a prompt.'); return; }
+  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value };
+  $('#mxGo').disabled = true;
+  try {
+    const j = await (await fetch('/api/matrix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+    if (!j.ok) { $('#mxGo').disabled = false; alert(j.error || 'failed to start matrix'); return; }
+    if (j.dropped) $('#mxOverall').textContent = `capped — ${j.dropped} entr${j.dropped === 1 ? 'y' : 'ies'} dropped`;
+    setMatrixActive(true);
+    startMatrixStream();
+  } catch (err) { $('#mxGo').disabled = false; alert(err.message); }
 });
 </script>
 </body>

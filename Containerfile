@@ -26,6 +26,9 @@ RUN dotnet new install IgniteUI.Blazor.Templates
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
+# Headless Chromium for route screenshots in matrix mode. `--with-deps` pulls the
+# OS libraries Chromium needs (apt) on the Debian-based SDK image. Adds notable size.
+RUN npx --yes playwright install --with-deps chromium
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
@@ -47,6 +50,7 @@ RUN npm install --no-save igniteui-webcomponents@7.2.1 esbuild \
 EXPOSE 8080 4096 5000
 
 ENV WORK_DIR=/work \
+    HISTORY_DIR=/history \
     WIZARD_PORT=8080 \
     OPENCODE_PORT=4096 \
     APP_PORT=5000
