@@ -141,7 +141,7 @@ function get(id) {
 }
 
 // Delete a run record. Returns true if a file was removed. Artifacts (screenshots)
-// live outside the history dir, so the caller (server.js) cleans those separately.
+// live outside the history dir, so the caller (src/routes/history.js) cleans those separately.
 function remove(id) {
   try { fs.unlinkSync(recordPath(id)); return true; } catch (_) { return false; }
 }

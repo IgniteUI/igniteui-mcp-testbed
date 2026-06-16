@@ -25,6 +25,22 @@ The generated project and logs live in `./sessions/<timestamp>/` on the host
 (bind-mounted to `/work`), so they survive container teardown even though the
 container is `--rm`.
 
+## Three views
+
+The wizard header switches between three views:
+
+- **Interactive** (default) — the flow above: scaffold one project, wire the
+  config, and hand off to opencode web for a live session with streaming token/
+  cost stats.
+- **Matrix** — run one shared prompt across a grid of **platform × variant**
+  (each variant = a set of MCPs + skills on/off) as sequential one-shot **headless**
+  agent runs. Each entry scaffolds, runs `opencode run "<prompt>"`, then builds the
+  edited app once and screenshots every route. Results land in History.
+- **History** — a persisted, sortable, expandable table of every run (config,
+  stage timings, token/cost stats, screenshots, logs). Records live in
+  `./sessions/history/` on the host (bind-mounted to `/history`), so they persist
+  *across* containers, not just one session.
+
 ## Build & run
 
 ```bash
@@ -59,7 +75,7 @@ the running app is at <http://localhost:5000>.
 These are the spots where I had to assume, because they depend on your exact
 packages and generated scripts:
 
-1. **`lib/frameworks.js`** — the dev-server command per framework. I assumed
+1. **`src/frameworks.js`** — the dev-server command per framework. I assumed
    `npm run start`/`npm run dev` (Angular `ng serve`, React/WC Vite) and
    `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to
    the scripts your scaffolds actually generate.
@@ -68,6 +84,12 @@ packages and generated scripts:
 3. **`ig ai-config` flags** — confirmed non-interactive with
    `--framework --agents --assistants`. If your version adds a `--skills`
    selector, prefer it over the post-generation prune.
+4. **Matrix mode's opencode parsing** — headless runs use `opencode run` and parse
+   the human `opencode stats` report for tokens/cost (`src/capture/usage.js`), then
+   discover routes (`src/capture/route-discovery.js`) and screenshot them with
+   Playwright/Chromium (`src/capture/screenshots.js`). Both the opencode output
+   formats and the route-discovery heuristics are version-dependent — adjust those
+   if a newer opencode changes its `run`/`stats` output.
 
 ## Caveats
 

@@ -29,8 +29,7 @@ RUN npm install --omit=dev
 # Headless Chromium for route screenshots in matrix mode. `--with-deps` pulls the
 # OS libraries Chromium needs (apt) on the Debian-based SDK image. Adds notable size.
 RUN npx --yes playwright install --with-deps chromium
-COPY server.js ./
-COPY lib ./lib
+COPY src ./src
 COPY public ./public
 COPY vendor ./vendor
 
@@ -55,4 +54,4 @@ ENV WORK_DIR=/work \
     OPENCODE_PORT=4096 \
     APP_PORT=5000
 
-CMD ["node", "server.js"]
+CMD ["node", "src/server.js"]
