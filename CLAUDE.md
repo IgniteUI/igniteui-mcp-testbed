@@ -13,8 +13,14 @@ This repo's logic (the MCP translation and server classification) is unit-/synta
 ```bash
 ./run.sh build     # podman build -t localhost/igniteui-testbed:latest .
 ./run.sh           # run a fresh ephemeral container; publishes ports 8080 / 4096 / 5000
+./stop.sh [<sess>] # stop running testbed container(s) (all, or one by session id)
 npm start          # run the wizard backend directly (node src/server.js), for host-side dev
 ```
+
+On Windows, `run.ps1` / `stop.ps1` are PowerShell ports of `run.sh` / `stop.sh` with the
+same arguments (`.\run.ps1 build`, `.\run.ps1`, `.\stop.ps1 [<sess>]`). Keep the two
+implementations in sync — a change to one platform's run/stop logic should be mirrored in
+the other.
 
 There is no test runner, linter, or build step wired into `package.json` — `npm start` is the only script. The wizard backend is plain CommonJS Node under `src/` (entry `src/server.js` → `src/app.js` wiring → `src/routes/*`), with two runtime deps: `express` and `playwright` (the latter only used for matrix screenshots).
 
@@ -62,4 +68,4 @@ These depend on the exact published packages and generated scripts, and are the 
 
 - Plain CommonJS (`'use strict'`, `require`), no build/transpile, no TypeScript — backend only. The frontend under `public/js/*` is the one exception: native **ES modules** (`import`/`export`, loaded via `<script type="module">`), still no bundler.
 - `src/frameworks.js` uses `{{name}}` / `{{type}}` / `{{theme}}` / `{{dir}}` / `{{port}}` placeholders in `argv`, substituted at runtime by `subst()`. Add new framework entries here rather than branching in `src/pipeline/pipeline.js`.
-- `run.sh` handles Git Bash/Windows vs Linux/macOS Podman differences (path conversion via `cygpath`, dropping `:Z` / `--userns` on Windows). Keep platform branches there, not in the Node code.
+- `run.sh` / `stop.sh` (Bash, for Linux/macOS/Git Bash) and `run.ps1` / `stop.ps1` (PowerShell, for Windows) handle the Podman platform differences (path conversion — `cygpath -m` in Bash, `\`→`/` replace in PowerShell — and dropping `:Z` / `--userns` on Windows, plus the explicit `127.0.0.1:` IPv4 publish). Keep these platform branches in the launch scripts, not in the Node code, and keep the Bash and PowerShell ports in sync.

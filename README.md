@@ -1,108 +1,161 @@
 # Ignite UI · MCP / Skills Testbed
 
-A single-container appliance for exercising the Ignite UI AI toolchain (the
-Ignite UI CLI MCP server, the Theming MCP server, and the Agent Skills) against
-**opencode**. Each session runs in a **fresh, ephemeral rootless Podman
-container**. A small web wizard collects your choices, scaffolds a project,
-wires the AI config, and hands you off to the opencode web UI.
+A single-container appliance for trying out the Ignite UI AI toolchain with
+**opencode** (an open-source AI coding agent). It exercises two **MCP servers**
+(Model Context Protocol tools the agent can call — here, live Ignite UI component
+docs / API lookup and theming queries) and the **Agent Skills** (instruction files
+the agent loads automatically).
 
-## Flow
+A small web wizard collects your choices, scaffolds an Ignite UI project, wires the
+AI config, and hands you off to opencode. Every session runs in its own **fresh,
+ephemeral rootless Podman container**, so nothing leaks between runs.
 
+## What you need
+
+- **Podman** (rootless) — the only thing required on your machine. Everything else
+  (Node, .NET, the Ignite UI CLIs, opencode, headless Chromium) is baked into the
+  image. On **Windows** use the PowerShell scripts (`run.ps1` / `stop.ps1`); on
+  **Linux / macOS** (or Windows Git Bash) use the shell scripts (`run.sh` / `stop.sh`).
+  Both handle the Windows-vs-Linux path and flag differences for you.
+- **A model + API key** — e.g. an Anthropic or OpenAI key, or a local
+  OpenAI-compatible endpoint (Ollama, LM Studio, …). You type this into the wizard;
+  it is passed to opencode as an environment variable and **never written to disk**.
+
+## Quick start
+
+**Windows (PowerShell):**
+
+```powershell
+.\run.ps1 build     # build the image (podman build -t localhost/igniteui-testbed:latest .)
+.\run.ps1           # run a fresh container; publishes ports 8080 / 4096 / 5000
 ```
-wizard (8080)
-   │  pick framework / MCPs / skills / model
-   ▼
-scaffold ──▶ ig ai-config ──▶ translate .vscode/mcp.json → opencode.json
-   │              │                     │
-   │              └─ skills → .claude/skills/ (opencode reads natively)
-   ▼
-start app dev server (watch, :5000)   start opencode web (:4096)
-   │                                          │
-   └──────────────── redirect browser ────────┘
-```
 
-The generated project and logs live in `./sessions/<timestamp>/` on the host
-(bind-mounted to `/work`), so they survive container teardown even though the
-container is `--rm`.
-
-## Three views
-
-The wizard header switches between three views:
-
-- **Interactive** (default) — the flow above: scaffold one project, wire the
-  config, and hand off to opencode web for a live session with streaming token/
-  cost stats.
-- **Matrix** — run one shared prompt across a grid of **platform × variant**
-  (each variant = a set of MCPs + skills on/off) as sequential one-shot **headless**
-  agent runs. Each entry scaffolds, runs `opencode run "<prompt>"`, then builds the
-  edited app once and screenshots every route. Results land in History.
-- **History** — a persisted, sortable, expandable table of every run (config,
-  stage timings, token/cost stats, screenshots, logs). Records live in
-  `./sessions/history/` on the host (bind-mounted to `/history`), so they persist
-  *across* containers, not just one session.
-
-## Build & run
+**Linux / macOS / Git Bash:**
 
 ```bash
-./run.sh build          # podman build -t localhost/igniteui-testbed:latest .
-./run.sh                 # fresh container; opens ports 8080 / 4096 / 5000
+./run.sh build      # build the image
+./run.sh            # run a fresh container; publishes ports 8080 / 4096 / 5000
 ```
 
-Then open <http://localhost:8080>, fill in the wizard, and launch. When the
-pipeline finishes it redirects you to opencode web at <http://localhost:4096>;
-the running app is at <http://localhost:5000>.
+Open <http://localhost:8080>, fill in the wizard, and launch. For an interactive
+session, opencode web opens in a new tab (<http://localhost:4096>) and the generated
+app runs at <http://localhost:5000>; the wizard tab stays open to show live stats.
 
-## How the toggles work
+> If PowerShell refuses to run the script ("running scripts is disabled on this
+> system"), either unblock it once with `Unblock-File .\run.ps1` or invoke it as
+> `pwsh -ExecutionPolicy Bypass -File .\run.ps1`.
 
-- **MCP servers** — `ig ai-config --assistants vscode` writes the server
-  definitions to `.vscode/mcp.json`. The wizard translates that into opencode's
-  `mcp` block in `opencode.json` (command+args → single array, `env` →
-  `environment`, `url` → `type:"remote"`, `${env:VAR}` → `{env:VAR}`). Each
-  discovered server is classified (theming / angular / igniteui / other) and
-  enabled per your checkboxes; the console shows exactly what was enabled.
+### Stopping a session
+
+The container runs in the foreground, so **Ctrl-C** in its terminal stops it. To stop
+from a different terminal, use the stop script (the `<session>` is the timestamp printed
+when the container started — omit it to stop every running testbed container):
+
+```powershell
+.\stop.ps1                # PowerShell — stop all
+.\stop.ps1 <session>      #            — stop just one
+```
+
+```bash
+./stop.sh                 # Git Bash / Linux / macOS — stop all
+./stop.sh <session>       #                          — stop just one
+```
+
+Containers run with `--rm`, so stopping also removes them; your session artifacts in
+`./sessions/<timestamp>/` stay on the host, untouched.
+
+## Modes
+
+The header switches between three views:
+
+- **Interactive** (default) — scaffold one project, wire the config, and hand off to
+  opencode web for a live session with streaming token / cost stats. This is the flow
+  in "How a session works" below.
+- **Matrix** — run one shared prompt across a grid of **platform × variant** (a
+  variant = a set of MCPs + skills on/off). Each cell is a one-shot **headless** agent
+  run: it scaffolds, runs `opencode run "<prompt>"`, then builds the edited app once
+  and screenshots every route. Use it to compare, say, "with skills" vs "without"
+  across Angular / React / Blazor / Web Components. Results land in History.
+- **History** — a sortable, expandable table of every run (config, stage timings,
+  token / cost stats, screenshots, logs). It persists in `./sessions/history/` on the
+  host, so it survives *across* containers — not just the current session.
+
+## How a session works
+
+The interactive pipeline runs six stages, streaming progress to the wizard:
+
+```
+wizard (:8080) — pick framework · MCPs · skills · model
+   │
+   ▼
+1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .vscode/mcp.json → opencode.json ─▶ 4 prune skills
+                    │
+                    └─ skills → .claude/skills/   (opencode loads these natively)
+   │
+   ▼
+5 start the app's dev server (watch, :5000)
+   │
+   ▼
+6 start opencode web (:4096) ─▶ opens in a new tab; the wizard stays open for live stats
+```
+
+Matrix mode shares stages 1–4, then differs: instead of launching opencode web it runs
+the agent **headless** once, builds the app, and screenshots the routes (stage 5 runs
+*after* the agent there, not before).
+
+The generated project and logs live in `./sessions/<timestamp>/` on the host
+(bind-mounted to `/work`), so they survive container teardown even though the container
+is `--rm`.
+
+## Configuring a run (the toggles)
+
+- **MCP servers** — `ig ai-config --assistants vscode` writes the server definitions to
+  `.vscode/mcp.json`. The wizard translates that into opencode's `mcp` block in
+  `opencode.json` (command+args → single array, `env` → `environment`, `url` →
+  `type:"remote"`, `${env:VAR}` → `{env:VAR}`). Each discovered server is classified
+  (theming / angular / igniteui / other) and enabled per your checkboxes; the console
+  shows exactly what was turned on.
 - **Skills** — `--agents claude` writes them to `.claude/skills/`, which opencode
-  auto-discovers. The master checkbox switches `--agents claude` vs `--agents
-  none`; the "Exclude skills" field deletes individual skill folders after
-  generation (granular on/off).
-- **Model** — written to `opencode.json`; the API key is passed to the opencode
-  process as an env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) rather than
-  written to disk. A custom OpenAI-compatible base URL declares a provider. You
-  can switch model mid-session from the "Switch model" panel (rewrites config,
-  restarts opencode).
+  auto-discovers. The master checkbox switches `--agents claude` vs `--agents none`; the
+  "Exclude skills" field deletes individual skill folders after generation (granular
+  on/off).
+- **Model** — written to `opencode.json`; the API key is passed to opencode as an env
+  var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) rather than written to disk. A custom
+  OpenAI-compatible base URL declares a provider instead. You can switch model
+  mid-session from the "Switch model" panel (it rewrites the config and restarts
+  opencode).
 
-## What you'll likely need to adjust
+## Adapting it to your packages
 
-These are the spots where I had to assume, because they depend on your exact
-packages and generated scripts:
+These integration points depend on the exact packages and generated scripts in your
+setup, so they're the most likely to need tuning:
 
-1. **`src/frameworks.js`** — the dev-server command per framework. I assumed
-   `npm run start`/`npm run dev` (Angular `ng serve`, React/WC Vite) and
-   `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to
-   the scripts your scaffolds actually generate.
-2. **`Containerfile`** — package names (`opencode-ai`, `igniteui-cli`) and the
-   Blazor template install line (`dotnet new install <YourTemplateId>`).
-3. **`ig ai-config` flags** — confirmed non-interactive with
-   `--framework --agents --assistants`. If your version adds a `--skills`
-   selector, prefer it over the post-generation prune.
-4. **Matrix mode's opencode parsing** — headless runs use `opencode run` and parse
-   the human `opencode stats` report for tokens/cost (`src/capture/usage.js`), then
-   discover routes (`src/capture/route-discovery.js`) and screenshot them with
-   Playwright/Chromium (`src/capture/screenshots.js`). Both the opencode output
-   formats and the route-discovery heuristics are version-dependent — adjust those
-   if a newer opencode changes its `run`/`stats` output.
+1. **`src/frameworks.js`** — the dev-server command per framework. The defaults assume
+   `npm run start` / `npm run dev` (Angular `ng serve`, React / Web Components on Vite)
+   and `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to the
+   scripts your scaffolds actually generate.
+2. **`Containerfile`** — the global package names (`opencode-ai`, `igniteui-cli`,
+   `igniteui-theming`) and the Blazor template install line (`dotnet new install
+   <YourTemplateId>`).
+3. **`ig ai-config` flags** — driven non-interactively via `--framework --agents
+   --assistants`. If your CLI version adds a `--skills` selector, prefer it over the
+   post-generation prune.
+4. **Matrix mode's opencode parsing** — headless runs parse the human `opencode stats`
+   report for tokens / cost (`src/capture/usage.js`), discover routes
+   (`src/capture/route-discovery.js`), and screenshot them with Playwright / Chromium
+   (`src/capture/screenshots.js`). The `opencode` output formats and the route-discovery
+   heuristics are version-dependent — adjust these if a newer opencode changes its
+   `run` / `stats` output.
 
-## Caveats
+## Caveats & limitations
 
-- Ports are fixed at container-create time (Podman can't add published ports
-  later), so the app dev server is forced onto 5000. If a framework refuses a
-  custom port, either change `APP_PORT` or switch to `--network=host` (less
-  isolation).
-- `opencode web` binds localhost by default; the wizard launches it with
-  `--hostname 0.0.0.0` so the published port is reachable. It is unsecured for
-  localhost use — set `OPENCODE_SERVER_PASSWORD` if you expose it beyond your
-  machine.
-- This repo was written and syntax-/unit-tested for the translation and
-  classification logic, but **not** run end-to-end against real
-  `igniteui-cli` / `opencode` / Podman — treat the first build as a shakedown.
-- OSS Ignite UI components only; no private-registry auth is wired in.
-```
+- **Fixed ports.** Podman can't add published ports after a container is created, so the
+  app dev server is pinned to 5000. If a framework refuses a custom port, change
+  `APP_PORT` (env var) or switch to `--network=host` (less isolation).
+- **opencode web is unsecured.** It binds localhost by default; the wizard launches it
+  with `--hostname 0.0.0.0` so the published port is reachable. Fine on your own machine —
+  set `OPENCODE_SERVER_PASSWORD` if you expose it beyond it.
+- **Version-sensitive integration.** The points under "Adapting it to your packages"
+  (CLI package names, `opencode` output formats, generated dev scripts) track specific
+  tool versions. Treat the first build against your exact toolchain as a shakedown.
+- **OSS components only.** No private-registry authentication is wired in.
