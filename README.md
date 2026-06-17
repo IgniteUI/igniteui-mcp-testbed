@@ -136,7 +136,7 @@ is `--rm`.
 These integration points depend on the exact packages and generated scripts in your
 setup, so they're the most likely to need tuning:
 
-1. **`src/frameworks.js`** — the dev-server command per framework. The defaults assume
+1. **`src/frameworks.ts`** — the dev-server command per framework. The defaults assume
    `npm run start` / `npm run dev` (Angular `ng serve`, React / Web Components on Vite)
    and `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to the
    scripts your scaffolds actually generate.
@@ -147,9 +147,9 @@ setup, so they're the most likely to need tuning:
    --assistants`. If your CLI version adds a `--skills` selector, prefer it over the
    post-generation prune.
 4. **Matrix mode's opencode parsing** — headless runs parse the human `opencode stats`
-   report for tokens / cost (`src/capture/usage.js`), discover routes
-   (`src/capture/route-discovery.js`), and screenshot them with Playwright / Chromium
-   (`src/capture/screenshots.js`). The `opencode` output formats and the route-discovery
+   report for tokens / cost (`src/capture/usage.ts`), discover routes
+   (`src/capture/route-discovery.ts`), and screenshot them with Playwright / Chromium
+   (`src/capture/screenshots.ts`). The `opencode` output formats and the route-discovery
    heuristics are version-dependent — adjust these if a newer opencode changes its
    `run` / `stats` output.
 

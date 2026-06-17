@@ -1,0 +1,153 @@
+'use strict';
+
+// Shared backend domain types — the wire/state contracts that were implicit in JS.
+
+export type Emit = (type: string, payload?: any) => void;
+
+export interface RunConfig {
+  framework: string;
+  projectType?: string;
+  theme?: string;
+  enabledMcps?: string[];
+  skills?: boolean;
+  excludedSkills?: string[];
+  model: string;
+  apiKey?: string;
+  customBaseUrl?: string | null;
+}
+
+export interface ScaffoldDef {
+  cmd: string;
+  argv: string[];
+  cwdIsParent?: boolean;
+}
+
+export interface DevDef {
+  cmd: string;
+  argv: string[];
+  env?: Record<string, string>;
+}
+
+export interface FrameworkDef {
+  scaffold: ScaffoldDef;
+  aiFramework: string;
+  dev: DevDef;
+  prepare?: Record<string, string>;
+}
+
+export interface Tokens {
+  input: number;
+  output: number;
+  reasoning: number;
+  cache: number;
+  total: number;
+}
+
+export interface CostInfo {
+  amount: number;
+  currency: string;
+  available: boolean;
+}
+
+// Union of the StatsCollector snapshot and the parseOpencodeStats result.
+export interface Stats {
+  updatedAt?: string;
+  model?: string | null;
+  sessions?: number;
+  messages?: { total: number; user?: number; assistant?: number };
+  tokens: Tokens;
+  cost: CostInfo;
+  perModel?: Record<string, { tokens: Tokens; cost: number }>;
+  parsed?: boolean;
+}
+
+export interface StoredConfig {
+  framework: string | null;
+  projectType: string;
+  theme: string;
+  enabledMcps: string[];
+  skills: boolean;
+  excludedSkills: string[];
+  models: string[];
+  customBaseUrl: string | null;
+}
+
+export interface Screenshot {
+  route: string;
+  file: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface HistoryRecord {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  status: string;
+  error: string | null;
+  mode: 'interactive' | 'matrix';
+  prompt: string | null;
+  matrixId: string | null;
+  config: StoredConfig;
+  stages: { completed: string[]; timings: Record<string, number> };
+  stats: Stats | null;
+  screenshots: Screenshot[];
+  logs: string[];
+}
+
+export interface Variant {
+  mcps: string[];
+  skills: boolean;
+}
+
+export interface Combo {
+  platform: string;
+  variant: Variant;
+  variantLabel: string;
+}
+
+export interface MatrixEntry {
+  index: number;
+  platform: string;
+  variantLabel: string;
+  mcps: string[];
+  skills: boolean;
+  status: string;
+  runId: string | null;
+  logs?: string[];
+}
+
+export interface MatrixState {
+  running: boolean;
+  matrixId: string | null;
+  total: number;
+  done: number;
+  entries: MatrixEntry[];
+}
+
+export interface SkippedRoute {
+  path: string;
+  reason: string;
+}
+
+export interface RouteDiscovery {
+  routes: string[];
+  skipped: SkippedRoute[];
+  sources?: string[];
+}
+
+export interface InteractiveResult {
+  appPort: number;
+  opencodePort: number;
+}
+
+export interface HeadlessResult {
+  appPort: number;
+  stats: Stats | null;
+  screenshots: Screenshot[];
+  routes: string[];
+  skipped: SkippedRoute[];
+  appReady: boolean;
+  appError?: string;
+}

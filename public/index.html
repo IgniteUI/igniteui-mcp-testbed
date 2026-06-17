@@ -210,8 +210,8 @@
      the matching --ig-* design tokens are linked from <head>. -->
 <script type="module" src="/vendor/igniteui.js"></script>
 
-<!-- App logic, split into ES modules (no bundler): main bootstraps view switching
-     and imports the per-view modules (wizard / matrix / history). -->
-<script type="module" src="/js/main.js"></script>
+<!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
+     (main bootstraps view switching and imports wizard / matrix / history). -->
+<script type="module" src="/vendor/app.js"></script>
 </body>
 </html>

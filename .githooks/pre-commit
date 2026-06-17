@@ -1,0 +1,4 @@
+#!/bin/sh
+# Pre-commit gate: block commits that don't type-check.
+# One-time setup per clone:  git config core.hooksPath .githooks
+exec npm run --silent typecheck

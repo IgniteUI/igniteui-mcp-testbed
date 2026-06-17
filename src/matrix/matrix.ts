@@ -1,0 +1,184 @@
+'use strict';
+
+import * as path from 'path';
+import type { ChildProcess } from 'child_process';
+import * as history from '../history.ts';
+import { WORK, ARTIFACT_DIR } from '../config.ts';
+import { killTree } from '../proc/exec.ts';
+import { killWatcher } from '../proc/watcher.ts';
+import { createSSE } from '../stream/sse.ts';
+import { cleanupAppDir } from './cleanup.ts';
+import { entryDirName, newMatrixId } from './variants.ts';
+import { runPipeline } from '../pipeline/pipeline.ts';
+import type { Combo, MatrixEntry, MatrixState, RunConfig } from '../types.ts';
+
+interface Fixed {
+  projectType?: string;
+  theme?: string;
+  model: string;
+  apiKey?: string;
+  customBaseUrl?: string;
+}
+
+// Run the same prompt across platform × variant as one-shot headless runs. Sequential
+// (the app + opencode bind fixed ports, so only one entry can be live at a time).
+export const sse = createSSE();
+const broadcast = (obj: any) => sse.broadcast(obj);
+
+let matrixRunning = false;
+let matrixCancelled = false;
+let currentChild: ChildProcess | null = null; // the in-flight pipeline child (scaffold/agent/…), for cancellation
+let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done: 0, entries: [] };
+
+// Heartbeat lines ("… opencode still running (Ns)") are pure liveness — collapse
+// consecutive ones into a single updating line so they don't flood out real logs.
+const HEARTBEAT_RE = /still running \(\d+s\)/;
+const ENTRY_LOG_CAP = 800;
+
+// Append a streamed line to an entry's retained log buffer (so reconnecting clients
+// and the History record can replay it; the live SSE alone is lost on disconnect).
+function pushEntryLog(entry: MatrixEntry, line: string): void {
+  const logs = entry.logs ?? (entry.logs = []);
+  if (HEARTBEAT_RE.test(line) && logs.length && HEARTBEAT_RE.test(logs[logs.length - 1])) {
+    logs[logs.length - 1] = line;
+  } else {
+    logs.push(line);
+    if (logs.length > ENTRY_LOG_CAP) logs.shift();
+  }
+}
+
+async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt: string; matrixId: string; fixed: Fixed }): Promise<void> {
+  broadcast({ type: 'matrix-start', matrixId, total: combos.length, entries: matrixState.entries });
+  for (let i = 0; i < combos.length; i++) {
+    if (matrixCancelled) {
+      // Mark this and every remaining entry as cancelled and stop.
+      for (let j = i; j < combos.length; j++) {
+        matrixState.entries[j].status = 'cancelled';
+        broadcast({ type: 'entry-done', index: j, status: 'cancelled', runId: matrixState.entries[j].runId });
+      }
+      break;
+    }
+    const c = combos[i];
+    const entry = matrixState.entries[i];
+    entry.status = 'running';
+
+    const cfg: RunConfig = {
+      framework: c.platform,
+      projectType: fixed.projectType || '',
+      theme: fixed.theme || '',
+      enabledMcps: c.variant.mcps,
+      skills: !!c.variant.skills,
+      excludedSkills: [],
+      model: fixed.model,
+      apiKey: fixed.apiKey,
+      customBaseUrl: fixed.customBaseUrl || undefined,
+    };
+    const runId = history.createRecord(cfg, { mode: 'matrix', prompt, matrixId });
+    entry.runId = runId;
+    broadcast({ type: 'entry-start', index: i, platform: c.platform, variantLabel: c.variantLabel, runId });
+
+    // Per-entry stage timings + completed list, surfaced through the matrix SSE.
+    const timings: Record<string, number> = {};
+    const completed: string[] = [];
+    let stepName: string | null = null, stepStart = 0;
+    const markStep = (name: string) => {
+      const now = Date.now();
+      if (stepName) { timings[stepName] = now - stepStart; completed.push(stepName); }
+      stepName = name; stepStart = now;
+    };
+    const closeStep = () => {
+      if (stepName) { timings[stepName] = Date.now() - stepStart; completed.push(stepName); stepName = null; }
+    };
+    const emit = (type: string, payload?: any) => {
+      const obj = typeof payload === 'string' ? { type, msg: payload } : { type, ...payload };
+      if (type === 'step') { markStep(obj.step); pushEntryLog(entry, `— ${obj.step} —`); }
+      else if (type === 'log') pushEntryLog(entry, obj.msg);
+      else if (type === 'error') pushEntryLog(entry, 'ERROR: ' + obj.msg);
+      broadcast({ ...obj, index: i });
+    };
+
+    // Each entry gets its own project dir (and opencode data dir) so a previous
+    // entry's still-dying dev server can't make this one's cleanup throw ENOTEMPTY.
+    const entryDir = path.join(WORK, 'matrix', matrixId, entryDirName(i, c.platform, c.variant));
+    const appDir = path.join(entryDir, 'app');
+    const dataDir = path.join(entryDir, '.opencode-data');
+    const artifactDir = path.join(ARTIFACT_DIR, runId);
+    // Track the current child so Cancel can kill it. If cancellation already
+    // arrived between steps, kill this one immediately so the pipeline aborts now
+    // instead of running the step (e.g. don't start the agent after Cancel).
+    const onChild = (child: ChildProcess) => {
+      currentChild = child;
+      if (matrixCancelled) killTree(child, 'SIGTERM');
+    };
+    try {
+      const result = await runPipeline(cfg, { emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir });
+      closeStep();
+      if (result.stats) history.updateStats(runId, result.stats);
+      // The agent ran fine but the edited app may not compile — flag that distinctly
+      // from a clean success so "0 shots" isn't mistaken for "app had no routes".
+      const status = matrixCancelled ? 'cancelled'
+        : (result.appReady === false ? 'build-error' : 'success');
+      const buildErr = status === 'build-error' ? (result.appError || 'app build failed') : null;
+      history.finish(runId, { status, error: buildErr, completed, timings, screenshots: result.screenshots || [], logs: entry.logs || [] });
+      entry.status = status;
+      broadcast({
+        type: 'entry-done', index: i, status, runId,
+        screenshots: result.screenshots || [], stats: result.stats || null, error: buildErr,
+      });
+    } catch (err: any) {
+      closeStep();
+      // runPipeline threw (cancel / timeout / error) before its own cleanup stage —
+      // free any watcher and reclaim disk here so the kept entry dir isn't left heavy.
+      await killWatcher('app'); await killWatcher('opencode');
+      try { await cleanupAppDir(appDir, emit); } catch (_) {}
+      const status = matrixCancelled ? 'cancelled' : 'error';
+      history.finish(runId, { status, error: matrixCancelled ? 'cancelled' : err.message, completed, timings, logs: entry.logs || [] });
+      entry.status = status;
+      broadcast({ type: 'entry-done', index: i, status, runId, error: status === 'error' ? err.message : null });
+    } finally {
+      currentChild = null;
+    }
+    matrixState.done = i + 1;
+  }
+  killWatcher('app'); killWatcher('opencode');
+  matrixState.running = false;
+  matrixRunning = false;
+  broadcast({ type: 'matrix-done', matrixId, total: combos.length, cancelled: matrixCancelled });
+}
+
+// Set up state for a (validated, already-capped) set of combos and kick off the run
+// in the background. Returns { matrixId, total }; the caller responds immediately and
+// the client follows progress via the matrix SSE stream.
+export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixed: Fixed }): { matrixId: string; total: number } {
+  const matrixId = newMatrixId();
+  matrixRunning = true;
+  matrixCancelled = false;
+  matrixState = {
+    running: true, matrixId, total: combos.length, done: 0,
+    entries: combos.map((c, i) => ({
+      index: i, platform: c.platform, variantLabel: c.variantLabel,
+      mcps: c.variant.mcps, skills: c.variant.skills, status: 'pending', runId: null,
+    })),
+  };
+  runMatrix(combos, { prompt, matrixId, fixed }).catch((e: any) => {
+    matrixRunning = false; matrixState.running = false;
+    broadcast({ type: 'error', msg: e.message });
+  });
+  return { matrixId, total: combos.length };
+}
+
+// Abort the in-progress matrix: kill whatever the current entry is running (whole
+// process group — scaffold/npm-install, ai-config, or the agent) plus app/opencode,
+// which rejects the current entry's pipeline; the loop then sees `matrixCancelled`
+// and skips the rest.
+export function cancel(): { ok: boolean; error?: string } {
+  if (!matrixRunning) return { ok: false, error: 'no matrix run in progress' };
+  matrixCancelled = true;
+  killTree(currentChild, 'SIGTERM');
+  killWatcher('app'); killWatcher('opencode');
+  broadcast({ type: 'log', msg: 'cancellation requested — stopping the current step' });
+  return { ok: true };
+}
+
+export const isRunning = (): boolean => matrixRunning;
+export const getState = (): MatrixState => matrixState;

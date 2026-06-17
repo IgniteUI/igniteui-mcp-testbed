@@ -3,12 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "description": "Wizard that scaffolds an Ignite UI project, wires the AI toolchain, and hands off to opencode web.",
-  "main": "src/server.js",
+  "main": "src/server.ts",
+  "type": "module",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
+    "build:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js",
+    "dev:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js --watch"
   },
   "dependencies": {
     "express": "^4.19.2",
     "playwright": "^1.49.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.2"
   }
 }
