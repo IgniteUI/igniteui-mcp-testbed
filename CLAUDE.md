@@ -11,16 +11,18 @@ This repo's logic (the MCP translation and server classification) is unit-/synta
 ## Commands
 
 ```bash
-./run.sh build     # podman build -t localhost/igniteui-testbed:latest .
-./run.sh           # run a fresh ephemeral container; publishes ports 8080 / 4096 / 5000
-./stop.sh [<sess>] # stop running testbed container(s) (all, or one by session id)
-npm start          # run the wizard backend directly (node src/server.js), for host-side dev
+./run.sh build           # podman build -t localhost/igniteui-testbed:latest .
+./run.sh build --prune   # build, then `podman image prune -f` to drop dangling <none> images
+./run.sh                 # run a fresh ephemeral container; publishes ports 8080 / 4096 / 5000
+./stop.sh [<sess>]       # stop running testbed container(s) (all, or one by session id)
+npm start                # run the wizard backend directly (node src/server.js), for host-side dev
 ```
 
 On Windows, `run.ps1` / `stop.ps1` are PowerShell ports of `run.sh` / `stop.sh` with the
-same arguments (`.\run.ps1 build`, `.\run.ps1`, `.\stop.ps1 [<sess>]`). Keep the two
-implementations in sync — a change to one platform's run/stop logic should be mirrored in
-the other.
+same arguments (`.\run.ps1 build`, `.\run.ps1 build -Prune`, `.\run.ps1`, `.\stop.ps1
+[<sess>]`). The prune step (`--prune` / `-Prune`) only runs after a successful build and
+removes only untagged images. Keep the two implementations in sync — a change to one
+platform's run/stop logic should be mirrored in the other.
 
 There is no test runner, linter, or build step wired into `package.json` — `npm start` is the only script. The wizard backend is plain CommonJS Node under `src/` (entry `src/server.js` → `src/app.js` wiring → `src/routes/*`), with two runtime deps: `express` and `playwright` (the latter only used for matrix screenshots).
 

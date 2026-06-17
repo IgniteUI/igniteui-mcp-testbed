@@ -26,16 +26,22 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 **Windows (PowerShell):**
 
 ```powershell
-.\run.ps1 build     # build the image (podman build -t localhost/igniteui-testbed:latest .)
-.\run.ps1           # run a fresh container; publishes ports 8080 / 4096 / 5000
+.\run.ps1 build           # build the image (podman build -t localhost/igniteui-testbed:latest .)
+.\run.ps1 build -Prune    # build, then delete dangling <none> images the rebuild orphaned
+.\run.ps1                 # run a fresh container; publishes ports 8080 / 4096 / 5000
 ```
 
 **Linux / macOS / Git Bash:**
 
 ```bash
-./run.sh build      # build the image
-./run.sh            # run a fresh container; publishes ports 8080 / 4096 / 5000
+./run.sh build            # build the image
+./run.sh build --prune    # build, then delete dangling <none> images the rebuild orphaned
+./run.sh                  # run a fresh container; publishes ports 8080 / 4096 / 5000
 ```
+
+Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
+each). The `-Prune` / `--prune` flag runs `podman image prune -f` after a successful
+build to reclaim that space; it only touches untagged images, never your tagged ones.
 
 Open <http://localhost:8080>, fill in the wizard, and launch. For an interactive
 session, opencode web opens in a new tab (<http://localhost:4096>) and the generated

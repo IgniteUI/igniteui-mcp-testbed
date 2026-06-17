@@ -2,6 +2,10 @@
 # Build once, then launch a fresh ephemeral container per session.
 # Generated project + logs land in ./sessions/<timestamp> on the host and
 # survive container teardown (the container itself is --rm).
+#
+#   ./run.sh build           build the image
+#   ./run.sh build --prune   build, then remove dangling (<none>) images left behind
+#   ./run.sh                 run a fresh container
 set -euo pipefail
 
 IMAGE=localhost/igniteui-testbed:latest
@@ -10,6 +14,11 @@ OUT="$PWD/sessions/$SESSION"
 
 if [[ "${1:-}" == "build" ]]; then
   podman build -t "$IMAGE" .
+  # Each rebuild orphans the previous image (untagged <none>). Reclaim that space.
+  if [[ "${2:-}" == "--prune" ]]; then
+    echo "Pruning dangling images …"
+    podman image prune -f
+  fi
   exit 0
 fi
 

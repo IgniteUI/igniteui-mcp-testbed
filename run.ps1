@@ -3,17 +3,24 @@
 # of run.sh). Generated project + logs land in .\sessions\<timestamp> on the host and
 # survive container teardown (the container itself is --rm).
 #
-#   .\run.ps1 build     build the image
-#   .\run.ps1           run a fresh container
+#   .\run.ps1 build           build the image
+#   .\run.ps1 build -Prune    build, then remove dangling (<none>) images left behind
+#   .\run.ps1                 run a fresh container
 [CmdletBinding()]
-param([string]$Command)
+param([string]$Command, [switch]$Prune)
 
 $ErrorActionPreference = 'Stop'
 $Image = 'localhost/igniteui-testbed:latest'
 
 if ($Command -eq 'build') {
   podman build -t $Image $PSScriptRoot
-  exit $LASTEXITCODE
+  $buildExit = $LASTEXITCODE
+  # Each rebuild orphans the previous image (untagged <none>). Reclaim that space.
+  if ($buildExit -eq 0 -and $Prune) {
+    Write-Host 'Pruning dangling images ...'
+    podman image prune -f
+  }
+  exit $buildExit
 }
 
 $Session = Get-Date -Format "yyyyMMdd'T'HHmmss"
