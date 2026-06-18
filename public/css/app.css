@@ -173,7 +173,7 @@ tr.detail-row > td { background:#07211f; padding:.9rem 1rem; }
 .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
 
 /* matrix view */
-.matrix-view { display:grid; grid-template-columns: minmax(340px,480px) 1fr; gap:1px; background:var(--line);
+.matrix-view { display:grid; grid-template-columns: minmax(360px,480px) 1fr; gap:1px; background:var(--line);
                min-height:calc(100vh - 60px); }
 .matrix-view[hidden] { display:none; }
 @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
@@ -198,5 +198,6 @@ tr.detail-row > td { background:#07211f; padding:.9rem 1rem; }
 .mx-entry .who { font-weight:600; }
 .mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; }
 .mx-entry .mini { font-family:var(--mono); font-size:.72rem; color:#9fc2bd; margin-top:.4rem;
-                  max-height:0; overflow:hidden; transition:max-height .2s; white-space:pre-wrap; }
+                  max-height:0; overflow:hidden; transition:max-height .2s;
+                  white-space:pre-wrap; overflow-wrap:anywhere; }
 .mx-entry.open .mini { max-height:200px; overflow:auto; }
