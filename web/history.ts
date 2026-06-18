@@ -25,10 +25,10 @@ interface HistoryGridRow {
 let runsData: any[] = [];
 let matrixFilter: string | null = null; // when set, show only entries of this matrixId
 let historyTimer: number | null = null;
-const expandedRuns = new Set<string>(); // run ids kept open across auto-refresh
 const runById = new Map<string, any>();
 let templatesBound = false;
 let defaultSortApplied = false;
+let gridDataBound = false;
 
 const grid = () => $('#runsGrid') as any;
 const html = (...args: any[]) => {
@@ -102,6 +102,17 @@ function getCellRow(ctx: any): HistoryGridRow {
 
 function isRateable(status: string): boolean {
   return !['running', 'pending'].includes(status);
+}
+
+function sameValue(a: any, b: any): boolean {
+  if (a instanceof Date || b instanceof Date) {
+    return new Date(a || 0).getTime() === new Date(b || 0).getTime();
+  }
+  return a === b;
+}
+
+function rowsEqual(a: HistoryGridRow, b: HistoryGridRow): boolean {
+  return Object.keys(a).every((key) => sameValue((a as any)[key], (b as any)[key]));
 }
 
 function bindGridTemplates() {
@@ -216,26 +227,6 @@ function bindGridTemplates() {
         @click=${(ev: Event) => { ev.stopPropagation(); deleteRun(row.id); }}>X</button>
     </span>`;
   };
-
-  g.addEventListener('expansionStatesChange', (e: any) => syncExpandedRuns(e.detail));
-}
-
-function syncExpandedRuns(states?: any) {
-  const stateMap = states || grid().expansionStates;
-  if (!(stateMap instanceof Map)) return;
-  expandedRuns.clear();
-  for (const [id, expanded] of stateMap.entries()) {
-    if (expanded) expandedRuns.add(String(id));
-  }
-}
-
-function restoreExpandedRows() {
-  const g = grid();
-  for (const id of expandedRuns) {
-    if (runById.has(id)) {
-      try { g.expandRow(id); } catch (_) {}
-    }
-  }
 }
 
 function applyDefaultSort() {
@@ -244,6 +235,33 @@ function applyDefaultSort() {
   // SortingDirection.Desc is 2 in Ignite UI grid. Keep this as a plain value so
   // the app bundle does not need an additional runtime import.
   try { grid().sortingExpressions = [{ fieldName: 'whenDate', dir: 2, ignoreCase: true }]; } catch (_) {}
+}
+
+function reconcileGridRows(nextRows: HistoryGridRow[]) {
+  const g = grid();
+  if (!gridDataBound) {
+    g.data = nextRows;
+    gridDataBound = true;
+    applyDefaultSort();
+    return;
+  }
+
+  const currentRows = Array.isArray(g.data) ? g.data as HistoryGridRow[] : [];
+  const currentById = new Map(currentRows.map((row) => [row.id, row]));
+  const nextIds = new Set(nextRows.map((row) => row.id));
+
+  for (const row of currentRows) {
+    if (!nextIds.has(row.id)) g.deleteRow(row.id);
+  }
+
+  for (const row of nextRows) {
+    const current = currentById.get(row.id);
+    if (!current) {
+      g.addRow(row);
+    } else if (!rowsEqual(current, row)) {
+      g.updateRow(row, row.id);
+    }
+  }
 }
 
 function renderRuns() {
@@ -255,17 +273,15 @@ function renderRuns() {
   for (const r of data) runById.set(r.id, r);
 
   if (!data.length) {
+    reconcileGridRows([]);
     g.hidden = true;
     setHistoryMessage(matrixFilter ? 'No runs match this matrix filter.' : 'No runs recorded yet.', true);
-    g.data = [];
     return;
   }
 
   setHistoryMessage('', false);
   g.hidden = false;
-  g.data = data.map(rowVals);
-  applyDefaultSort();
-  setTimeout(restoreExpandedRows, 0);
+  reconcileGridRows(data.map(rowVals));
 }
 
 export async function loadHistory() {
@@ -298,7 +314,6 @@ async function deleteRun(id: string) {
   try {
     const j = await del(`/api/history/${encodeURIComponent(id)}`);
     if (!j.ok) { alert(j.error || 'delete failed'); return; }
-    expandedRuns.delete(id);
     loadHistory();
   } catch (err: any) { alert(err.message); }
 }
