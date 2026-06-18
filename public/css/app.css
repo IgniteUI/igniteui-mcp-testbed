@@ -267,8 +267,13 @@ igc-grid.runs-grid::part(cell) { color:var(--ink); }
 }
 
 /* matrix view */
+<<<<<<< ganastasov/table-to-igc-grid
 .matrix-view { display:grid; grid-template-columns: minmax(340px,480px) minmax(0,1fr); gap:1px; background:var(--line);
                width:100%; max-width:100vw; min-height:calc(100vh - 60px); overflow:hidden; }
+=======
+.matrix-view { display:grid; grid-template-columns: minmax(360px,480px) 1fr; gap:1px; background:var(--line);
+               min-height:calc(100vh - 60px); }
+>>>>>>> master
 .matrix-view[hidden] { display:none; }
 @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
 .matrix-view > .panel { min-width:0; overflow:hidden; }
@@ -294,6 +299,11 @@ igc-grid.runs-grid::part(cell) { color:var(--ink); }
 .mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; min-width:0;
                   max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mx-entry .mini { font-family:var(--mono); font-size:.72rem; color:#9fc2bd; margin-top:.4rem;
+<<<<<<< ganastasov/table-to-igc-grid
                   max-height:0; max-width:100%; overflow:hidden; transition:max-height .2s; white-space:pre-wrap;
                   overflow-wrap:anywhere; }
+=======
+                  max-height:0; overflow:hidden; transition:max-height .2s;
+                  white-space:pre-wrap; overflow-wrap:anywhere; }
+>>>>>>> master
 .mx-entry.open .mini { max-height:200px; overflow:auto; }
