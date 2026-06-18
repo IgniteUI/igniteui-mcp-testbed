@@ -88,6 +88,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     durationMs: null,
     status: 'running',
     error: null,
+    rating: null,
     mode: opts.mode || 'interactive', // 'interactive' | 'matrix'
     prompt: opts.prompt || null, // the one-shot instruction (matrix mode)
     matrixId: opts.matrixId || null, // groups entries of one matrix submission
@@ -134,6 +135,10 @@ export function addModel(id: string | null, model: string): HistoryRecord | null
   return update(id, (r) => {
     if (!r.config.models.includes(model)) r.config.models.push(model);
   });
+}
+
+export function updateRating(id: string, rating: number | null): HistoryRecord | null {
+  return update(id, (r) => { r.rating = rating; });
 }
 
 export function list(): HistoryRecord[] {

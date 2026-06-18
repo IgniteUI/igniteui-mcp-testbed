@@ -19,6 +19,17 @@ export default function registerHistoryRoutes(app: Express): void {
     res.json({ ok: true, run });
   });
 
+  app.post('/api/history/:id/rating', (req, res) => {
+    const raw = req.body && req.body.rating;
+    const rating = raw == null || raw === '' ? null : Number(raw);
+    if (rating != null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      return res.status(400).json({ ok: false, error: 'rating must be an integer from 1 to 5' });
+    }
+    const run = history.updateRating(req.params.id, rating);
+    if (!run) return res.status(404).json({ ok: false, error: 'not found' });
+    res.json({ ok: true, run });
+  });
+
   // Delete every record of one matrix submission (and its screenshot artifacts).
   // Registered before /:id so "matrix" isn't captured as an id.
   app.delete('/api/history/matrix/:matrixId', async (req, res) => {

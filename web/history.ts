@@ -1,6 +1,6 @@
 // History view: sortable Ignite UI grid with master-detail run inspection.
 import { $, fmt, fmtWhen, fmtDur } from './util.ts';
-import { getJSON, del } from './api.ts';
+import { getJSON, postJSON, del } from './api.ts';
 
 interface HistoryGridRow {
   id: string;
@@ -12,6 +12,7 @@ interface HistoryGridRow {
   skills: string;
   mcps: string;
   status: string;
+  rating: number;
   msgs: number;
   tok: number;
   costSort: number | null;
@@ -51,6 +52,7 @@ function rowVals(r: any): HistoryGridRow {
     skills: r.config.skills ? (xs ? `on (-${xs})` : 'on') : 'off',
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
     status: r.status || '—',
+    rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
     msgs: (st.messages || {}).total || 0,
     tok: (st.tokens || {}).total || 0,
     costSort: cost,
@@ -98,11 +100,21 @@ function getCellRow(ctx: any): HistoryGridRow {
   return ctx?.cell?.row?.data || {};
 }
 
+function isRateable(status: string): boolean {
+  return !['running', 'pending'].includes(status);
+}
+
 function bindGridTemplates() {
   if (templatesBound) return;
   templatesBound = true;
 
   const g = grid();
+  const exporter = $('#historyExcelExporter');
+  exporter.exportCSV = false;
+  exporter.exportPDF = false;
+  exporter.exportExcel = true;
+  exporter.filename = 'ignite-ui-run-history';
+
   g.detailTemplate = (ctx: any) => {
     const row = ctx.implicit as HistoryGridRow;
     const r = runById.get(row.id);
@@ -181,6 +193,18 @@ function bindGridTemplates() {
         }}>#${tag.label}</span>`;
   };
   $('#historyStatus').bodyTemplate = (ctx: any) => html`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  $('#historyRating').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    const readonly = !isRateable(row.status);
+    return html`<igc-rating class="history-rating ${readonly ? 'is-readonly' : ''}" max="5" step="1"
+      .value=${row.rating}
+      .readOnly=${readonly}
+      @click=${(ev: Event) => ev.stopPropagation()}
+      @igcChange=${(ev: CustomEvent<number>) => {
+        ev.stopPropagation();
+        saveRating(row.id, Number(ev.detail || 0));
+      }}></igc-rating>`;
+  };
   $('#historyMsgs').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
   $('#historyTokens').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
   $('#historyCost').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
@@ -287,6 +311,27 @@ async function deleteMatrix(matrixId: string) {
     if (matrixFilter === matrixId) matrixFilter = null;
     loadHistory();
   } catch (err: any) { alert(err.message); }
+}
+
+async function saveRating(id: string, rating: number) {
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return;
+  const run = runsData.find((r) => r.id === id);
+  const previous = run ? run.rating : null;
+  if (run) run.rating = rating;
+  const mapped = runById.get(id);
+  if (mapped) mapped.rating = rating;
+
+  try {
+    const j = await postJSON(`/api/history/${encodeURIComponent(id)}/rating`, { rating });
+    if (!j.ok) throw new Error(j.error || 'failed to save rating');
+    if (j.run && run) run.rating = j.run.rating;
+  } catch (err: any) {
+    if (run) run.rating = previous;
+    const current = runById.get(id);
+    if (current) current.rating = previous;
+    renderRuns();
+    alert(err.message);
+  }
 }
 
 $('#historyRefresh').addEventListener('click', loadHistory);

@@ -86,6 +86,7 @@ export interface HistoryRecord {
   durationMs: number | null;
   status: string;
   error: string | null;
+  rating: number | null;
   mode: 'interactive' | 'matrix';
   prompt: string | null;
   matrixId: string | null;
