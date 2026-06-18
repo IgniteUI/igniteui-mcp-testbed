@@ -43,16 +43,17 @@ COPY tsconfig.base.json tsconfig.json ./
 #     that can fail behind a proxy and leave <igc-*> unregistered; esbuild inlines all.
 #   - public/vendor/app.js: our web/*.ts bundled to one ESM file the browser runs.
 # The backend itself ships no build output — Node strips types from src/*.ts at load.
-RUN npm install --no-save igniteui-webcomponents@7.2.1 esbuild typescript @types/node @types/express \
+RUN npm install --no-save igniteui-webcomponents@7.2.1 igniteui-webcomponents-grids esbuild typescript @types/node @types/express \
  && npx tsc -p tsconfig.json \
  && npx tsc -p web/tsconfig.json \
  && ./node_modules/.bin/esbuild vendor/entry.js \
       --bundle --format=esm --minify --outfile=public/vendor/igniteui.js \
  && ./node_modules/.bin/esbuild web/main.ts \
       --bundle --format=esm --outfile=public/vendor/app.js \
- && cp node_modules/igniteui-webcomponents/themes/dark/material.css \
-       public/vendor/igniteui-theme.css \
- && npm uninstall --no-save igniteui-webcomponents esbuild typescript @types/node @types/express
+ && cat node_modules/igniteui-webcomponents/themes/dark/material.css \
+        node_modules/igniteui-webcomponents-grids/grids/themes/dark/material.css \
+       > public/vendor/igniteui-theme.css \
+ && npm uninstall --no-save igniteui-webcomponents igniteui-webcomponents-grids esbuild typescript @types/node @types/express
 
 # Wizard UI, opencode web, and the generated app's dev server.
 EXPOSE 8080 4096 5000
