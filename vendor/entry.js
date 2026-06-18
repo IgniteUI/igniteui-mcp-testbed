@@ -7,6 +7,8 @@
 // bundle size ever matters, swap to `defineComponents(IgcInputComponent, ...)`
 // with just the components actually used.
 import { defineAllComponents, configureTheme } from 'igniteui-webcomponents';
+import 'igniteui-webcomponents-grids/grids/combined.js';
+import { html } from 'lit';
 
 // Select which compiled shadow-DOM styles the components adopt. The matching
 // design tokens (--ig-* custom properties) are supplied by the global
@@ -15,3 +17,8 @@ import { defineAllComponents, configureTheme } from 'igniteui-webcomponents';
 // components render unstyled (no borders/box).
 configureTheme('material', 'dark');
 defineAllComponents();
+
+// Grid cell and master-detail templates are assigned from web/history.ts. Expose
+// Lit's template tag from this already-loaded vendor bundle so the app bundle
+// does not need another browser module request or a duplicate Lit dependency.
+window.igniteuiHtml = html;

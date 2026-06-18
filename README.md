@@ -43,6 +43,25 @@ Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (
 each). The `-Prune` / `--prune` flag runs `podman image prune -f` after a successful
 build to reclaim that space; it only touches untagged images, never your tagged ones.
 
+### Licensed grid (optional)
+
+The History tab uses a commercial Ignite UI grid, so by default it builds the
+**watermarked trial**. To build with the licensed package, copy `.env.example` to `.env`
+and set `IG_NPM_TOKEN` to an Infragistics private-feed access token (generate one at
+<https://account.infragistics.com/access-tokens>), along with `IG_NPM_USERNAME` and
+`IG_NPM_EMAIL` (your Infragistics account login and email — the feed needs all three):
+
+```bash
+cp .env.example .env   # then edit .env and fill in the token, username, and email
+```
+
+`run.sh` / `run.ps1` write these into a temporary `.npmrc` that the build bind-mounts to
+install the licensed `@infragistics/*` packages — no watermark — then delete it after the
+build. The credentials are used **only at build time** (the grid is bundled into the
+image); the runtime container never sees them, and a bind-mounted file never lands in an
+image layer. Both `.env` and `.npmrc` are gitignored — **never commit your credentials**.
+Leave `IG_NPM_TOKEN` unset to keep the trial build.
+
 Open <http://localhost:8080>, fill in the wizard, and launch. For an interactive
 session, opencode web opens in a new tab (<http://localhost:4096>) and the generated
 app runs at <http://localhost:5000>; the wizard tab stays open to show live stats.
@@ -82,9 +101,10 @@ The header switches between three views:
   run: it scaffolds, runs `opencode run "<prompt>"`, then builds the edited app once
   and screenshots every route. Use it to compare, say, "with skills" vs "without"
   across Angular / React / Blazor / Web Components. Results land in History.
-- **History** — a sortable, expandable table of every run (config, stage timings,
-  token / cost stats, screenshots, logs). It persists in `./sessions/history/` on the
-  host, so it survives *across* containers — not just the current session.
+- **History** — a sortable Ignite UI grid of every run (config, stage timings,
+  token / cost stats, screenshots, logs), with expandable detail rows, a 1–5★ rating
+  per run, and Excel export. It persists in `./sessions/history/` on the host, so it
+  survives *across* containers — not just the current session.
 
 ## How a session works
 
@@ -164,4 +184,7 @@ setup, so they're the most likely to need tuning:
 - **Version-sensitive integration.** The points under "Adapting it to your packages"
   (CLI package names, `opencode` output formats, generated dev scripts) track specific
   tool versions. Treat the first build against your exact toolchain as a shakedown.
-- **OSS components only.** No private-registry authentication is wired in.
+- **Licensed vs trial grid.** The History grid is a commercial Ignite UI component, so
+  builds default to the **watermarked trial**. Set `IG_NPM_TOKEN` (plus `IG_NPM_USERNAME`
+  / `IG_NPM_EMAIL`) in `.env` to build the licensed package instead — see "Licensed grid
+  (optional)" above. No other private-registry authentication is wired in.

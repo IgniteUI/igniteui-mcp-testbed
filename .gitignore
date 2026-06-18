@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Generated frontend bundles (esbuild output: vendored igniteui + our app bundle)
+public/vendor/
+
 # Session artifacts (generated apps, logs, stats)
 sessions/
 
@@ -10,7 +13,12 @@ sessions/
 # Environment / secrets
 .env
 .env.*
+!.env.example
+# npm auth (private feed token) — never commit
+.npmrc
 
 # OS files
 .DS_Store
 Thumbs.db
+
+docs/

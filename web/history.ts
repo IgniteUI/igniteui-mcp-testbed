@@ -1,157 +1,389 @@
-// History view: sortable, expandable run table with screenshots + delete actions.
-import { $, esc, fmt, fmtWhen, fmtDur } from './util.ts';
-import { getJSON, del } from './api.ts';
+// History view: sortable Ignite UI grid with master-detail run inspection.
+import { $, fmt, fmtWhen, fmtDur } from './util.ts';
+import { getJSON, postJSON, del } from './api.ts';
+
+interface HistoryGridRow {
+  id: string;
+  whenTs: number;
+  whenDisplay: string;
+  matrixId: string;
+  framework: string;
+  model: string;
+  skills: string;
+  mcps: string;
+  status: string;
+  rating: number;
+  msgs: number;
+  tok: number;
+  costSort: number | null;
+  costDisplay: string;
+  durationMs: number | null;
+  durationDisplay: string;
+  actions: string;
+}
 
 let runsData: any[] = [];
-let sortKey = 'when', sortDir = -1; // newest first
 let matrixFilter: string | null = null; // when set, show only entries of this matrixId
-let histTimer: number | null = null;
-const expandedRuns = new Set<string>(); // run ids kept open across auto-refresh
+let historyTimer: number | null = null;
+const runById = new Map<string, any>();
+let templatesBound = false;
+let defaultSortApplied = false;
+let gridDataBound = false;
 
-// Flatten a record into the comparable values shown in the table.
-function rowVals(r: any): any {
+const grid = () => $('#runsGrid') as any;
+const html = (...args: any[]) => {
+  const tag = (window as any).igniteuiHtml;
+  if (!tag) throw new Error('Ignite UI template helper is not loaded');
+  return tag(...args);
+};
+
+// Flatten a record into the comparable values shown in the grid.
+function rowVals(r: any): HistoryGridRow {
   const st = r.stats || {};
   const cost = st.cost && st.cost.available ? st.cost.amount : null;
   const xs = (r.config.excludedSkills || []).length;
   return {
-    when: r.startedAt || '',
-    mode: r.mode || 'interactive',
-    matrix: r.matrixId || '',
+    id: r.id,
+    whenTs: Date.parse(r.startedAt) || 0,
+    whenDisplay: fmtWhen(r.startedAt || ''),
+    matrixId: r.matrixId || '',
     framework: r.config.framework || '—',
     model: (r.config.models || []).join(', ') || '—',
-    skills: r.config.skills ? (xs ? `on (−${xs})` : 'on') : 'off',
+    skills: r.config.skills ? (xs ? `on (-${xs})` : 'on') : 'off',
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
     status: r.status || '—',
+    rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
     msgs: (st.messages || {}).total || 0,
     tok: (st.tokens || {}).total || 0,
-    cost,
+    costSort: cost,
+    costDisplay: cost == null ? 'n/a' : `$${cost.toFixed(4)}`,
+    durationMs: r.durationMs,
+    durationDisplay: fmtDur(r.durationMs),
+    actions: '',
   };
 }
 
-// Short, color-stable tag for a matrix submission. The id is mx-<stamp>-<rand>;
-// the trailing rand keeps the label short, and a hash→hue gives every entry of the
-// same matrix the same color so they read as a group.
-function matrixTag(matrixId: any): string {
-  if (!matrixId) return '<span class="mxtag muted">—</span>';
+function matrixTagInfo(matrixId: string): { label: string; color: string } | null {
+  if (!matrixId) return null;
   let h = 0;
   for (let i = 0; i < matrixId.length; i++) h = (h * 31 + matrixId.charCodeAt(i)) >>> 0;
-  const hue = h % 360;
-  const label = matrixId.split('-').pop();
-  return `<span class="mxtag" style="color:hsl(${hue},55%,62%)" data-matrix="${esc(matrixId)}" title="${esc(matrixId)} — click to filter">#${esc(label)}</span>`;
-}
-
-function detailHtml(r: any): string {
-  const c = r.config, st = r.stats, stg = r.stages || {};
-  const timings = Object.entries(stg.timings || {})
-    .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${fmtDur(v as number)}</dd>`).join('') || '<dt>—</dt><dd></dd>';
-  const completed = (stg.completed || []).join(' → ') || '—';
-  const perModel = st && st.perModel
-    ? Object.entries(st.perModel).map(([m, pm]: [string, any]) =>
-        `<dt>${esc(m)}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`).join('')
-    : '<dt>—</dt><dd></dd>';
-
-  const shots = r.screenshots || [];
-  const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
-  const shotHtml = shots.length ? `<div class="shots"><h4>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</h4>
-    <div class="shot-strip">${shots.map((s: any) => s.ok
-      ? `<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${art(s.file)}" alt="${esc(s.route)}"><span class="cap">${esc(s.route)}</span></a>`
-      : `<div class="shot fail">${esc(s.route)}<br><small>failed</small></div>`).join('')}</div></div>` : '';
-  const promptHtml = r.prompt
-    ? `<div class="shots"><h4>Prompt</h4><div class="note" style="margin:0;color:#bfe6df">${esc(r.prompt)}</div></div>` : '';
-  const logsHtml = (r.logs && r.logs.length)
-    ? `<div class="shots"><h4>Log</h4><details><summary style="cursor:pointer;color:var(--steel)">${r.logs.length} lines</summary>
-      <pre class="usage" style="max-height:320px;overflow:auto;white-space:pre-wrap">${esc(r.logs.join('\n'))}</pre></details></div>` : '';
-
-  return `<div class="detail">
-    <div><h4>Config</h4><dl>
-      <dt>Mode</dt><dd>${esc(r.mode || 'interactive')}</dd>
-      <dt>Project type</dt><dd>${esc(c.projectType || '—')}</dd>
-      <dt>Theme</dt><dd>${esc(c.theme || '—')}</dd>
-      <dt>Base URL</dt><dd>${esc(c.customBaseUrl || '—')}</dd>
-      <dt>Excluded skills</dt><dd>${esc((c.excludedSkills || []).join(', ') || '—')}</dd>
-      <dt>Run id</dt><dd>${esc(r.id)}</dd>
-      ${r.matrixId ? `<dt>Matrix</dt><dd>${esc(r.matrixId)}</dd>` : ''}
-    </dl></div>
-    <div><h4>Stages</h4><dl>
-      <dt>Completed</dt><dd>${esc(completed)}</dd>
-      ${timings}
-    </dl></div>
-    <div><h4>Per model</h4><dl>${perModel}</dl></div>
-    ${promptHtml}
-    ${shotHtml}
-    ${logsHtml}
-    ${r.error ? `<div class="err"><strong>Error:</strong> ${esc(r.error)}</div>` : ''}
-    ${r.matrixId ? `<div class="delgroup"><button data-delmatrix="${esc(r.matrixId)}">Delete entire matrix #${esc(r.matrixId.split('-').pop())}</button></div>` : ''}
-  </div>`;
-}
-
-function renderRuns() {
-  const body = $('#runsBody');
-  const empty = $('#histEmpty'), table = $('#runsTable');
-  const data = matrixFilter ? runsData.filter((r) => r.matrixId === matrixFilter) : runsData;
-  updateHistMeta(data.length);
-  if (!data.length) { empty.hidden = false; table.hidden = true; return; }
-  empty.hidden = true; table.hidden = false;
-
-  const rows = data.map((r) => ({ r, v: rowVals(r) }));
-  rows.sort((a, b) => {
-    const x = a.v[sortKey], y = b.v[sortKey];
-    const cmp = (typeof x === 'number' && typeof y === 'number')
-      ? x - y : String(x).localeCompare(String(y));
-    return cmp * sortDir;
-  });
-
-  body.innerHTML = rows.map(({ r, v }) => {
-    const cost = v.cost == null ? 'n/a' : `$${v.cost.toFixed(4)}`;
-    const open = expandedRuns.has(r.id);
-    return `<tr class="run-row" data-id="${esc(r.id)}" aria-expanded="${open}">
-      <td><span class="rcaret">▸</span>${esc(fmtWhen(v.when))}</td>
-      <td>${matrixTag(v.matrix)}</td>
-      <td>${esc(v.framework)}</td>
-      <td>${esc(v.model)}</td>
-      <td>${esc(v.skills)}</td>
-      <td>${esc(v.mcps)}</td>
-      <td><span class="pill ${esc(v.status)}">${esc(v.status)}</span></td>
-      <td class="num">${fmt(v.msgs)}</td>
-      <td class="num">${fmt(v.tok)}</td>
-      <td class="num">${cost}</td>
-      <td class="num">${fmtDur(r.durationMs)}</td>
-      <td><button class="del" data-del="${esc(r.id)}" title="Delete run">✕</button></td>
-    </tr>
-    <tr class="detail-row"${open ? '' : ' hidden'}><td colspan="12">${detailHtml(r)}</td></tr>`;
-  }).join('');
-
-  document.querySelectorAll<any>('#runsTable th[data-sort]').forEach((th) => {
-    th.classList.toggle('sort-asc', th.dataset.sort === sortKey && sortDir === 1);
-    th.classList.toggle('sort-desc', th.dataset.sort === sortKey && sortDir === -1);
-  });
+  return { label: matrixId.split('-').pop() || matrixId, color: `hsl(${h % 360},55%,62%)` };
 }
 
 function updateHistMeta(shown: number) {
-  const meta = $('#histMeta');
+  const meta = $('#historyMeta');
   if (matrixFilter) {
-    meta.innerHTML = `${shown} run${shown === 1 ? '' : 's'} in matrix #${esc(matrixFilter.split('-').pop())} · <a href="#" id="histClear" style="color:var(--teal)">show all</a>`;
-    const c = $('#histClear');
-    if (c) c.onclick = (ev: any) => { ev.preventDefault(); matrixFilter = null; renderRuns(); };
+    const label = matrixFilter.split('-').pop();
+    meta.textContent = '';
+    meta.append(
+      document.createTextNode(`${shown} run${shown === 1 ? '' : 's'} in matrix #${label} · `),
+    );
+    const clear = document.createElement('a');
+    clear.href = '#';
+    clear.id = 'historyClear';
+    clear.style.color = 'var(--teal)';
+    clear.textContent = 'show all';
+    clear.onclick = (ev: any) => { ev.preventDefault(); matrixFilter = null; renderRuns(); };
+    meta.append(clear);
   } else {
     meta.textContent = `${runsData.length} run${runsData.length === 1 ? '' : 's'}`;
   }
 }
 
+function setHistoryMessage(message: string, visible: boolean) {
+  const empty = $('#historyEmpty');
+  empty.textContent = message;
+  empty.hidden = !visible;
+}
+
+function getCellRow(ctx: any): HistoryGridRow {
+  return ctx?.cell?.row?.data || {};
+}
+
+function isRateable(status: string): boolean {
+  return !['running', 'pending'].includes(status);
+}
+
+function sameValue(a: any, b: any): boolean {
+  return a === b;
+}
+
+function rowsEqual(a: HistoryGridRow, b: HistoryGridRow): boolean {
+  return Object.keys(a).every((key) => sameValue((a as any)[key], (b as any)[key]));
+}
+
+function bindGridTemplates() {
+  if (templatesBound) return;
+  templatesBound = true;
+
+  const g = grid();
+  const exporter = $('#historyExcelExporter');
+  exporter.exportCSV = false;
+  exporter.exportPDF = false;
+  exporter.exportExcel = true;
+  exporter.filename = 'ignite-ui-run-history';
+
+  g.detailTemplate = (ctx: any) => {
+    const row = ctx.implicit as HistoryGridRow;
+    const r = runById.get(row.id);
+    if (!r) return html``;
+
+    const c = r.config, st = r.stats, stg = r.stages || {};
+    const timings = Object.entries(stg.timings || {});
+    const completed = (stg.completed || []).join(' → ') || '—';
+    const perModel = st && st.perModel ? Object.entries(st.perModel) : [];
+    const shots = r.screenshots || [];
+    const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
+
+    return html`
+      <div class="detail" data-run-id=${row.id}>
+        <div><h4>Config</h4><dl>
+          <dt>Mode</dt><dd>${r.mode || 'interactive'}</dd>
+          <dt>Project type</dt><dd>${c.projectType || '—'}</dd>
+          <dt>Theme</dt><dd>${c.theme || '—'}</dd>
+          <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
+          <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          <dt>Run id</dt><dd>${r.id}</dd>
+          ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : html``}
+        </dl></div>
+        <div><h4>Stages</h4><dl>
+          <dt>Completed</dt><dd>${completed}</dd>
+          ${timings.length
+            ? timings.map(([k, v]) => html`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
+            : html`<dt>—</dt><dd></dd>`}
+        </dl></div>
+        <div><h4>Per model</h4><dl>
+          ${perModel.length
+            ? perModel.map(([m, pm]: [string, any]) =>
+                html`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
+            : html`<dt>—</dt><dd></dd>`}
+        </dl></div>
+        ${r.prompt
+          ? html`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
+          : html``}
+        ${shots.length ? html`
+          <div class="shots">
+            <details class="shot-details">
+              <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
+              <div class="shot-strip">${shots.map((s: any) => s.ok
+                ? html`<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener">
+                    <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
+                      src="${art(s.file)}" alt="${s.route}">
+                    <span class="cap">${s.route}</span>
+                  </a>`
+                : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
+              </div>
+            </details>
+          </div>` : html``}
+        ${r.logs && r.logs.length ? html`
+          <div class="shots"><h4>Log</h4><details>
+            <summary class="log-summary">${r.logs.length} lines</summary>
+            <pre class="usage detail-log">${r.logs.join('\n')}</pre>
+          </details></div>` : html``}
+        ${r.error ? html`<div class="err"><strong>Error:</strong> ${r.error}</div>` : html``}
+        ${r.matrixId ? html`
+          <div class="delgroup">
+            <igc-button class="danger-button" variant="contained"
+              @click=${(ev: Event) => { ev.stopPropagation(); deleteMatrix(r.matrixId); }}>
+              Delete entire matrix #${r.matrixId.split('-').pop()}
+            </igc-button>
+          </div>` : html``}
+      </div>`;
+  };
+
+  $('#historyWhen').bodyTemplate = (ctx: any) => html`<span class="history-when">${getCellRow(ctx).whenDisplay}</span>`;
+  // The grid shows whenDisplay via the template above, but the Excel exporter ignores
+  // body templates and exports the raw field value — which for the numeric whenTs column
+  // would be a bare epoch number. The exporter does honour the column formatter, so map
+  // the epoch back to the same human-readable timestamp for the exported cell.
+  $('#historyWhen').formatter = (value: number) => (value ? fmtWhen(new Date(value).toISOString()) : '—');
+  $('#historyMatrix').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    const tag = matrixTagInfo(row.matrixId);
+    if (!tag) return html`<span class="mxtag muted">—</span>`;
+    return html`
+      <span class="mxtag" style="color:${tag.color}" title="${row.matrixId} — click to filter"
+        @click=${(ev: Event) => {
+          ev.stopPropagation();
+          matrixFilter = matrixFilter === row.matrixId ? null : row.matrixId;
+          renderRuns();
+        }}>#${tag.label}</span>`;
+  };
+  $('#historyStatus').bodyTemplate = (ctx: any) => html`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  $('#historyRating').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    const readonly = !isRateable(row.status);
+    return html`<igc-rating class="history-rating ${readonly ? 'is-readonly' : ''}" max="5" step="1"
+      .value=${row.rating}
+      .readOnly=${readonly}
+      @click=${(ev: Event) => ev.stopPropagation()}
+      @igcChange=${(ev: CustomEvent<number>) => {
+        ev.stopPropagation();
+        saveRating(row.id, Number(ev.detail || 0));
+      }}></igc-rating>`;
+  };
+  $('#historyMsgs').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
+  $('#historyTokens').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
+  $('#historyCost').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
+  $('#historyDuration').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
+  // Export the same human-readable duration as the cell shows, not the raw millisecond
+  // field value (the exporter ignores the body template but honours the formatter).
+  $('#historyDuration').formatter = (value: number | null) => fmtDur(value);
+  $('#historyActions').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    return html`<span class="history-actions-cell">
+      <button class="del" title="Delete run"
+        @click=${(ev: Event) => { ev.stopPropagation(); deleteRun(row.id); }}>X</button>
+    </span>`;
+  };
+
+  // Expand/collapse a row when any of its cells is clicked (not just the chevron).
+  // Interactive cells (rating, matrix tag, delete) call stopPropagation in their own
+  // handlers, so the grid's cellClick never fires for them and they don't toggle.
+  g.addEventListener('cellClick', (event: any) => {
+    const id = getCellRow(event.detail).id;
+    if (id != null) g.toggleRow(id);
+  });
+
+  g.addEventListener('rowToggle', (event: any) => {
+    const detail = event.detail;
+    if (!detail || detail.expanded) return;
+    closeNestedDetailToggles(detail.rowKey ?? detail.rowID);
+  });
+  document.addEventListener('selectionchange', syncHistoryClipboardOptions);
+  document.addEventListener('focusin', syncHistoryClipboardOptions);
+  document.addEventListener('pointerdown', syncHistoryClipboardOptions, true);
+  document.addEventListener('keydown', syncHistoryClipboardOptions, true);
+}
+
+function closeNestedDetailToggles(rowId: any) {
+  const id = String(rowId);
+  document.querySelectorAll<HTMLElement>('.detail[data-run-id]').forEach((detail) => {
+    if (detail.dataset.runId !== id) return;
+    detail.querySelectorAll<HTMLDetailsElement>('details[open]').forEach((toggle) => {
+      toggle.open = false;
+    });
+  });
+}
+
+function syncHistoryClipboardOptions() {
+  const g = grid();
+  const options = g.clipboardOptions || {};
+  const enabled = !isHistoryDetailActive();
+  if (options.enabled === enabled) return;
+  g.clipboardOptions = { ...options, enabled };
+}
+
+function isHistoryDetailActive(): boolean {
+  if (selectionTouchesHistoryDetail()) return true;
+  return !!nodeHistoryDetail(document.activeElement);
+}
+
+function selectionTouchesHistoryDetail(): boolean {
+  const selection = document.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    if (
+      nodeHistoryDetail(range.startContainer) ||
+      nodeHistoryDetail(range.endContainer) ||
+      nodeHistoryDetail(range.commonAncestorContainer)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function nodeHistoryDetail(node: Node | null): HTMLElement | null {
+  if (!node) return null;
+  const el = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  return (el?.closest('.detail') as HTMLElement | null) || null;
+}
+
+function applyDefaultSort() {
+  if (defaultSortApplied) return;
+  defaultSortApplied = true;
+  // SortingDirection.Desc is 2 in Ignite UI grid. Keep this as a plain value so
+  // the app bundle does not need an additional runtime import. Sort on the numeric
+  // whenTs (epoch ms) rather than a Date column: the grid's `date` type sorts by
+  // calendar day only (same-day runs tie and fall back to data order) and Date
+  // objects compare inconsistently, so a plain number is unambiguous.
+  try { grid().sortingExpressions = [{ fieldName: 'whenTs', dir: 2 }]; } catch (_) {}
+}
+
+function reconcileGridRows(nextRows: HistoryGridRow[]) {
+  const g = grid();
+  if (!gridDataBound) {
+    g.data = nextRows;
+    gridDataBound = true;
+    applyDefaultSort();
+    return;
+  }
+
+  const currentRows = Array.isArray(g.data) ? g.data as HistoryGridRow[] : [];
+  const currentById = new Map(currentRows.map((row) => [row.id, row]));
+  const nextIds = new Set(nextRows.map((row) => row.id));
+
+  for (const row of currentRows) {
+    if (!nextIds.has(row.id)) g.deleteRow(row.id);
+  }
+
+  for (const row of nextRows) {
+    const current = currentById.get(row.id);
+    if (!current) {
+      g.addRow(row);
+    } else if (!rowsEqual(current, row)) {
+      g.updateRow(row, row.id);
+    }
+  }
+}
+
+function renderRuns() {
+  bindGridTemplates();
+  const g = grid();
+  const data = matrixFilter ? runsData.filter((r) => r.matrixId === matrixFilter) : runsData;
+  updateHistMeta(data.length);
+  runById.clear();
+  for (const r of data) runById.set(r.id, r);
+
+  if (!data.length) {
+    reconcileGridRows([]);
+    g.hidden = true;
+    setHistoryMessage(matrixFilter ? 'No runs match this matrix filter.' : 'No runs recorded yet.', true);
+    return;
+  }
+
+  setHistoryMessage('', false);
+  g.hidden = false;
+  reconcileGridRows(data.map(rowVals));
+}
+
 export async function loadHistory() {
+  const hadData = runsData.length > 0;
+  if (!hadData) {
+    grid().hidden = true;
+    setHistoryMessage('Loading run history...', true);
+  }
   try {
     const j = await getJSON('/api/history');
-    runsData = (j && j.runs) || [];
+    if (!j || !j.ok) throw new Error(j && j.error ? j.error : 'failed to load history');
+    runsData = j.runs || [];
     if (matrixFilter && !runsData.some((r) => r.matrixId === matrixFilter)) matrixFilter = null;
     renderRuns();
-  } catch (_) {}
+  } catch (err: any) {
+    grid().hidden = true;
+    setHistoryMessage(`Could not load run history: ${err.message}`, true);
+  }
 }
 
 export function startHistoryPolling() {
-  if (!histTimer) histTimer = setInterval(loadHistory, 5000);
+  if (!historyTimer) historyTimer = setInterval(loadHistory, 5000);
 }
 export function stopHistoryPolling() {
-  if (histTimer) { clearInterval(histTimer); histTimer = null; }
+  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
 }
 
 async function deleteRun(id: string) {
@@ -159,7 +391,6 @@ async function deleteRun(id: string) {
   try {
     const j = await del(`/api/history/${encodeURIComponent(id)}`);
     if (!j.ok) { alert(j.error || 'delete failed'); return; }
-    expandedRuns.delete(id);
     loadHistory();
   } catch (err: any) { alert(err.message); }
 }
@@ -174,29 +405,25 @@ async function deleteMatrix(matrixId: string) {
   } catch (err: any) { alert(err.message); }
 }
 
-$('#runsBody').addEventListener('click', (e: any) => {
-  const delBtn = e.target.closest('[data-del]');
-  if (delBtn) { e.stopPropagation(); deleteRun(delBtn.dataset.del); return; }
-  const delMx = e.target.closest('[data-delmatrix]');
-  if (delMx) { e.stopPropagation(); deleteMatrix(delMx.dataset.delmatrix); return; }
-  const tag = e.target.closest('[data-matrix]');
-  if (tag) { e.stopPropagation(); matrixFilter = (matrixFilter === tag.dataset.matrix) ? null : tag.dataset.matrix; renderRuns(); return; }
+async function saveRating(id: string, rating: number) {
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return;
+  const run = runsData.find((r) => r.id === id);
+  const previous = run ? run.rating : null;
+  if (run) run.rating = rating;
+  const mapped = runById.get(id);
+  if (mapped) mapped.rating = rating;
 
-  const row = e.target.closest('tr.run-row');
-  if (!row) return;
-  const detail = row.nextElementSibling;
-  const open = detail.hidden;
-  detail.hidden = !open;
-  row.setAttribute('aria-expanded', String(open));
-  if (open) expandedRuns.add(row.dataset.id); else expandedRuns.delete(row.dataset.id);
-});
-
-document.querySelectorAll<any>('#runsTable th[data-sort]').forEach((th) => {
-  th.addEventListener('click', () => {
-    const k = th.dataset.sort;
-    if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+  try {
+    const j = await postJSON(`/api/history/${encodeURIComponent(id)}/rating`, { rating });
+    if (!j.ok) throw new Error(j.error || 'failed to save rating');
+    if (j.run && run) run.rating = j.run.rating;
+  } catch (err: any) {
+    if (run) run.rating = previous;
+    const current = runById.get(id);
+    if (current) current.rating = previous;
     renderRuns();
-  });
-});
+    alert(err.message);
+  }
+}
 
-$('#histRefresh').addEventListener('click', loadHistory);
+$('#historyRefresh').addEventListener('click', loadHistory);

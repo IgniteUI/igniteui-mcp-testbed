@@ -14,7 +14,22 @@ export default function registerHistoryRoutes(app: Express): void {
   });
 
   app.get('/api/history/:id', (req, res) => {
-    const run = history.get(req.params.id);
+    const id = history.parseRunId(req.params.id);
+    if (!id) return res.status(400).json({ ok: false, error: 'invalid id' });
+    const run = history.get(id);
+    if (!run) return res.status(404).json({ ok: false, error: 'not found' });
+    res.json({ ok: true, run });
+  });
+
+  app.post('/api/history/:id/rating', (req, res) => {
+    const id = history.parseRunId(req.params.id);
+    if (!id) return res.status(400).json({ ok: false, error: 'invalid id' });
+    const raw = req.body && req.body.rating;
+    const rating = raw == null || raw === '' ? null : Number(raw);
+    if (rating != null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      return res.status(400).json({ ok: false, error: 'rating must be an integer from 1 to 5' });
+    }
+    const run = history.updateRating(id, rating);
     if (!run) return res.status(404).json({ ok: false, error: 'not found' });
     res.json({ ok: true, run });
   });
@@ -33,7 +48,8 @@ export default function registerHistoryRoutes(app: Express): void {
 
   // Delete a single run record and its screenshot artifacts.
   app.delete('/api/history/:id', async (req, res) => {
-    const id = req.params.id;
+    const id = history.parseRunId(req.params.id);
+    if (!id) return res.status(400).json({ ok: false, error: 'invalid id' });
     if (id === session.getCurrentRunId() && session.getRunState().phase === 'running') {
       return res.status(409).json({ ok: false, error: 'run is still in progress' });
     }

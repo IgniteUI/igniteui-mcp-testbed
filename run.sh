@@ -13,6 +13,28 @@ SESSION="$(date +%Y%m%dT%H%M%S)"
 OUT="$PWD/sessions/$SESSION"
 
 if [[ "${1:-}" == "build" ]]; then
+  # Optional licensed Ignite UI build: write a .npmrc into the build context from the
+  # private-feed credentials in .env (an empty file when there are none) so the grid
+  # bundles without a watermark. The Containerfile bind-mounts it (never into an image
+  # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
+  # than `podman build --secret` because podman's build-secret temp file has a broken
+  # path on Windows (containers/podman#23815), which fails the build.
+  [[ -f "$PWD/.env" ]] && { set -a; . "$PWD/.env"; set +a; }
+  NPMRC="$PWD/.npmrc"
+  : > "$NPMRC"                       # always present (empty = trial) so the bind mount resolves
+  trap 'rm -f "$NPMRC"' EXIT
+  if [[ -n "${IG_NPM_TOKEN:-}" ]]; then
+    FEED="//packages.infragistics.com/npm/js-licensed/"
+    {
+      echo "@infragistics:registry=https://packages.infragistics.com/npm/js-licensed/"
+      echo "${FEED}:_auth=${IG_NPM_TOKEN}"
+      [[ -n "${IG_NPM_USERNAME:-}" ]] && echo "${FEED}:username=${IG_NPM_USERNAME}"
+      [[ -n "${IG_NPM_EMAIL:-}" ]] && echo "${FEED}:email=${IG_NPM_EMAIL}"
+    } > "$NPMRC"
+    echo "Ignite UI: licensed build (IG_NPM_TOKEN found)."
+  else
+    echo "Ignite UI: trial build (no IG_NPM_TOKEN)."
+  fi
   podman build -t "$IMAGE" .
   # Each rebuild orphans the previous image (untagged <none>). Reclaim that space.
   if [[ "${2:-}" == "--prune" ]]; then

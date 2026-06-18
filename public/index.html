@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ignite UI · MCP / Skills Testbed</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
 <!-- Ignite UI design tokens (--ig-* custom properties on :root). The igc-*
      components' shadow styles read these; without them they render unstyled.
      Tokens-only — does not touch the page's own element styling below. -->
@@ -176,31 +177,32 @@
 </section>
 
 <section class="history-view" id="history" hidden>
-  <div class="hist-head">
+  <div class="history-head">
     <p class="eyebrow" style="margin:0">Run history</p>
-    <button class="viewbtn" id="histRefresh">Refresh</button>
-    <span class="note" id="histMeta" style="margin:0"></span>
+    <igc-button type="button" id="historyRefresh" class="history-refresh" variant="outlined">Refresh</igc-button>
+    <span class="note" id="historyMeta" style="margin:0"></span>
   </div>
-  <p class="note" id="histEmpty">No runs recorded yet.</p>
-  <table class="runs" id="runsTable" hidden>
-    <thead>
-      <tr>
-        <th data-sort="when">When</th>
-        <th data-sort="matrix">Matrix</th>
-        <th data-sort="framework">Framework</th>
-        <th data-sort="model">Model</th>
-        <th data-sort="skills">Skills</th>
-        <th data-sort="mcps">MCPs</th>
-        <th data-sort="status">Status</th>
-        <th data-sort="msgs" class="num">Msgs</th>
-        <th data-sort="tok" class="num">Tokens</th>
-        <th data-sort="cost" class="num">Cost</th>
-        <th data-sort="dur" class="num">Duration</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="runsBody"></tbody>
-  </table>
+  <p class="note" id="historyEmpty">No runs recorded yet.</p>
+  <igc-grid id="runsGrid" class="runs-grid" auto-generate="false" primary-key="id" cell-selection="none" hidden>
+    <igc-grid-toolbar>
+      <igc-grid-toolbar-actions>
+        <igc-grid-toolbar-exporter id="historyExcelExporter"></igc-grid-toolbar-exporter>
+      </igc-grid-toolbar-actions>
+    </igc-grid-toolbar>
+    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="13%" min-width="0"></igc-column>
+    <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="7%" min-width="0"></igc-column>
+    <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="9%" min-width="0"></igc-column>
+    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="13%" min-width="0"></igc-column>
+    <igc-column id="historySkills" field="skills" header="Skills" sortable="true" resizable="true" width="5%" min-width="0"></igc-column>
+    <igc-column id="historyMcps" field="mcps" header="MCPs" sortable="true" resizable="true" width="10%" min-width="0"></igc-column>
+    <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="8%" min-width="0"></igc-column>
+    <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="8%" min-width="0"></igc-column>
+    <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%" min-width="0"></igc-column>
+    <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>
+    <igc-column id="historyCost" field="costSort" header="Cost (USD)" data-type="number" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>
+    <igc-column id="historyDuration" field="durationMs" header="Duration" data-type="number" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>
+    <igc-column id="historyActions" field="actions" header="Actions" resizable="true" width="4%" min-width="0"></igc-column>
+  </igc-grid>
 </section>
 
 <!-- Register the Ignite UI Web Components used above. This is a single
