@@ -237,6 +237,10 @@ function bindGridTemplates() {
     if (!detail || detail.expanded) return;
     closeNestedDetailToggles(detail.rowKey ?? detail.rowID);
   });
+  document.addEventListener('selectionchange', syncHistoryClipboardOptions);
+  document.addEventListener('focusin', syncHistoryClipboardOptions);
+  document.addEventListener('pointerdown', syncHistoryClipboardOptions, true);
+  document.addEventListener('keydown', syncHistoryClipboardOptions, true);
 }
 
 function closeNestedDetailToggles(rowId: any) {
@@ -247,6 +251,43 @@ function closeNestedDetailToggles(rowId: any) {
       toggle.open = false;
     });
   });
+}
+
+function syncHistoryClipboardOptions() {
+  const g = grid();
+  const options = g.clipboardOptions || {};
+  const enabled = !isHistoryDetailActive();
+  if (options.enabled === enabled) return;
+  g.clipboardOptions = { ...options, enabled };
+}
+
+function isHistoryDetailActive(): boolean {
+  if (selectionTouchesHistoryDetail()) return true;
+  return !!nodeHistoryDetail(document.activeElement);
+}
+
+function selectionTouchesHistoryDetail(): boolean {
+  const selection = document.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    if (
+      nodeHistoryDetail(range.startContainer) ||
+      nodeHistoryDetail(range.endContainer) ||
+      nodeHistoryDetail(range.commonAncestorContainer)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function nodeHistoryDetail(node: Node | null): HTMLElement | null {
+  if (!node) return null;
+  const el = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  return (el?.closest('.detail') as HTMLElement | null) || null;
 }
 
 function applyDefaultSort() {
