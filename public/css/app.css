@@ -267,10 +267,11 @@ igc-grid.runs-grid::part(cell) { color:var(--ink); }
 }
 
 /* matrix view */
-.matrix-view { display:grid; grid-template-columns: minmax(340px,480px) 1fr; gap:1px; background:var(--line);
-               min-height:calc(100vh - 60px); }
+.matrix-view { display:grid; grid-template-columns: minmax(340px,480px) minmax(0,1fr); gap:1px; background:var(--line);
+               width:100%; max-width:100vw; min-height:calc(100vh - 60px); overflow:hidden; }
 .matrix-view[hidden] { display:none; }
 @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
+.matrix-view > .panel { min-width:0; overflow:hidden; }
 #mxPlatforms { display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; }
 #mxPlatforms igc-checkbox { margin:0; }
 .ta { width:100%; background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem;
@@ -284,13 +285,15 @@ igc-grid.runs-grid::part(cell) { color:var(--ink); }
 .mx-variant .rm { margin-left:auto; font-family:var(--mono); color:var(--steel); background:none;
   border:none; cursor:pointer; font-size:1rem; padding:.1rem .3rem; border-radius:4px; }
 .mx-variant .rm:hover { color:var(--red); background:rgba(224,106,85,.12); }
-.mx-entries { list-style:none; margin:0; padding:0; }
-.mx-entry { border:1px solid var(--line); border-radius:8px; padding:.6rem .8rem; margin-bottom:.6rem; }
+.mx-entries { list-style:none; margin:0; padding:0; min-width:0; max-width:100%; }
+.mx-entry { border:1px solid var(--line); border-radius:8px; padding:.6rem .8rem; margin-bottom:.6rem; min-width:0; max-width:100%; overflow:hidden; }
 .mx-entry .top { display:flex; align-items:center; gap:.6rem; font-size:.84rem; cursor:pointer; }
 .mx-entry .caret { color:var(--steel); font-size:.7rem; transition:transform .15s; }
 .mx-entry.open .caret { transform:rotate(90deg); }
-.mx-entry .who { font-weight:600; }
-.mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; }
+.mx-entry .who { font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; min-width:0;
+                  max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mx-entry .mini { font-family:var(--mono); font-size:.72rem; color:#9fc2bd; margin-top:.4rem;
-                  max-height:0; overflow:hidden; transition:max-height .2s; white-space:pre-wrap; }
+                  max-height:0; max-width:100%; overflow:hidden; transition:max-height .2s; white-space:pre-wrap;
+                  overflow-wrap:anywhere; }
 .mx-entry.open .mini { max-height:200px; overflow:auto; }
