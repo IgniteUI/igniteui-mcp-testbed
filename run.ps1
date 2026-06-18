@@ -13,8 +13,39 @@ $ErrorActionPreference = 'Stop'
 $Image = 'localhost/igniteui-testbed:latest'
 
 if ($Command -eq 'build') {
-  podman build -t $Image $PSScriptRoot
-  $buildExit = $LASTEXITCODE
+  # Optional licensed Ignite UI build: write a .npmrc into the build context from the
+  # private-feed credentials in .env (an empty file when there are none) so the grid
+  # bundles without a watermark. The Containerfile bind-mounts it (never into an image
+  # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
+  # than `podman build --secret` because podman's build-secret temp file has a broken
+  # path on Windows (containers/podman#23815), which fails the build.
+  if (Test-Path "$PSScriptRoot/.env") {
+    Get-Content "$PSScriptRoot/.env" | ForEach-Object {
+      if ($_ -match '^\s*(IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL)\s*=\s*(.+)$') {
+        Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim()
+      }
+    }
+  }
+  $lines = @()
+  if ($env:IG_NPM_TOKEN) {
+    $feed = '//packages.infragistics.com/npm/js-licensed/'
+    $lines += '@infragistics:registry=https://packages.infragistics.com/npm/js-licensed/'
+    $lines += "${feed}:_auth=$($env:IG_NPM_TOKEN)"
+    if ($env:IG_NPM_USERNAME) { $lines += "${feed}:username=$($env:IG_NPM_USERNAME)" }
+    if ($env:IG_NPM_EMAIL)    { $lines += "${feed}:email=$($env:IG_NPM_EMAIL)" }
+    Write-Host 'Ignite UI: licensed build (IG_NPM_TOKEN found).'
+  } else {
+    Write-Host 'Ignite UI: trial build (no IG_NPM_TOKEN).'
+  }
+  # Always (re)create .npmrc so the Containerfile bind mount resolves; empty => trial.
+  $npmrc = Join-Path $PSScriptRoot '.npmrc'
+  Set-Content -Path $npmrc -Value ($lines -join "`n") -NoNewline -Encoding ascii
+  try {
+    podman build -t $Image $PSScriptRoot
+    $buildExit = $LASTEXITCODE
+  } finally {
+    Remove-Item -Path $npmrc -Force -ErrorAction SilentlyContinue
+  }
   # Each rebuild orphans the previous image (untagged <none>). Reclaim that space.
   if ($buildExit -eq 0 -and $Prune) {
     Write-Host 'Pruning dangling images ...'

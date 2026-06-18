@@ -4,7 +4,7 @@ import { getJSON, postJSON, del } from './api.ts';
 
 interface HistoryGridRow {
   id: string;
-  whenDate: Date;
+  whenTs: number;
   whenDisplay: string;
   matrixId: string;
   framework: string;
@@ -44,7 +44,7 @@ function rowVals(r: any): HistoryGridRow {
   const xs = (r.config.excludedSkills || []).length;
   return {
     id: r.id,
-    whenDate: new Date(r.startedAt || 0),
+    whenTs: Date.parse(r.startedAt) || 0,
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
     framework: r.config.framework || '—',
@@ -105,9 +105,6 @@ function isRateable(status: string): boolean {
 }
 
 function sameValue(a: any, b: any): boolean {
-  if (a instanceof Date || b instanceof Date) {
-    return new Date(a || 0).getTime() === new Date(b || 0).getTime();
-  }
   return a === b;
 }
 
@@ -195,6 +192,11 @@ function bindGridTemplates() {
   };
 
   $('#historyWhen').bodyTemplate = (ctx: any) => html`<span class="history-when">${getCellRow(ctx).whenDisplay}</span>`;
+  // The grid shows whenDisplay via the template above, but the Excel exporter ignores
+  // body templates and exports the raw field value — which for the numeric whenTs column
+  // would be a bare epoch number. The exporter does honour the column formatter, so map
+  // the epoch back to the same human-readable timestamp for the exported cell.
+  $('#historyWhen').formatter = (value: number) => (value ? fmtWhen(new Date(value).toISOString()) : '—');
   $('#historyMatrix').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     const tag = matrixTagInfo(row.matrixId);
@@ -224,6 +226,9 @@ function bindGridTemplates() {
   $('#historyTokens').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
   $('#historyCost').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
   $('#historyDuration').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
+  // Export the same human-readable duration as the cell shows, not the raw millisecond
+  // field value (the exporter ignores the body template but honours the formatter).
+  $('#historyDuration').formatter = (value: number | null) => fmtDur(value);
   $('#historyActions').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     return html`<span class="history-actions-cell">
@@ -231,6 +236,14 @@ function bindGridTemplates() {
         @click=${(ev: Event) => { ev.stopPropagation(); deleteRun(row.id); }}>X</button>
     </span>`;
   };
+
+  // Expand/collapse a row when any of its cells is clicked (not just the chevron).
+  // Interactive cells (rating, matrix tag, delete) call stopPropagation in their own
+  // handlers, so the grid's cellClick never fires for them and they don't toggle.
+  g.addEventListener('cellClick', (event: any) => {
+    const id = getCellRow(event.detail).id;
+    if (id != null) g.toggleRow(id);
+  });
 
   g.addEventListener('rowToggle', (event: any) => {
     const detail = event.detail;
@@ -253,8 +266,11 @@ function applyDefaultSort() {
   if (defaultSortApplied) return;
   defaultSortApplied = true;
   // SortingDirection.Desc is 2 in Ignite UI grid. Keep this as a plain value so
-  // the app bundle does not need an additional runtime import.
-  try { grid().sortingExpressions = [{ fieldName: 'whenDate', dir: 2, ignoreCase: true }]; } catch (_) {}
+  // the app bundle does not need an additional runtime import. Sort on the numeric
+  // whenTs (epoch ms) rather than a Date column: the grid's `date` type sorts by
+  // calendar day only (same-day runs tie and fall back to data order) and Date
+  // objects compare inconsistently, so a plain number is unambiguous.
+  try { grid().sortingExpressions = [{ fieldName: 'whenTs', dir: 2 }]; } catch (_) {}
 }
 
 function reconcileGridRows(nextRows: HistoryGridRow[]) {
