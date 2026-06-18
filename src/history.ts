@@ -8,6 +8,7 @@ import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot } from '
 // per-session bind mount) so records survive container teardown — see run.sh's second
 // mount. Each run is one JSON file, written atomically (tmp + rename).
 let HISTORY_DIR = process.env.HISTORY_DIR || path.join(process.env.WORK_DIR || '/work', 'history');
+const RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export function setDir(dir: string): void { HISTORY_DIR = dir; }
 
@@ -15,8 +16,16 @@ function ensureDir(): void {
   fs.mkdirSync(HISTORY_DIR, { recursive: true });
 }
 
-function recordPath(id: string): string {
-  return path.join(HISTORY_DIR, `run-${id}.json`);
+export function parseRunId(id: string | null | undefined): string | null {
+  if (typeof id !== 'string') return null;
+  const match = RUN_ID_RE.exec(id);
+  return match && match[0] === id ? match[0] : null;
+}
+
+function recordPath(id: string): string | null {
+  const safeId = parseRunId(id);
+  if (!safeId) return null;
+  return path.join(HISTORY_DIR, `run-${safeId}.json`);
 }
 
 function compactStamp(iso: string): string {
@@ -48,6 +57,7 @@ function writeAtomic(id: string, record: HistoryRecord): void {
   try {
     ensureDir();
     const p = recordPath(id);
+    if (!p) return;
     const tmp = p + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(record, null, 2));
     fs.renameSync(tmp, p);
@@ -56,7 +66,9 @@ function writeAtomic(id: string, record: HistoryRecord): void {
 
 function read(id: string): HistoryRecord | null {
   try {
-    return JSON.parse(fs.readFileSync(recordPath(id), 'utf8'));
+    const p = recordPath(id);
+    if (!p) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch (_) {
     return null;
   }
@@ -166,7 +178,9 @@ export function get(id: string): HistoryRecord | null {
 // Delete a run record. Returns true if a file was removed. Artifacts (screenshots)
 // live outside the history dir, so the caller (src/routes/history.js) cleans those separately.
 export function remove(id: string): boolean {
-  try { fs.unlinkSync(recordPath(id)); return true; } catch (_) { return false; }
+  const p = recordPath(id);
+  if (!p) return false;
+  try { fs.unlinkSync(p); return true; } catch (_) { return false; }
 }
 
 // A record left as 'running' can only be stale once the process that owned it is
