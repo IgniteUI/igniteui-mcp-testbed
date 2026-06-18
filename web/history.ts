@@ -139,7 +139,7 @@ function bindGridTemplates() {
     const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
 
     return html`
-      <div class="detail">
+      <div class="detail" data-run-id=${row.id}>
         <div><h4>Config</h4><dl>
           <dt>Mode</dt><dd>${r.mode || 'interactive'}</dd>
           <dt>Project type</dt><dd>${c.projectType || '—'}</dd>
@@ -165,14 +165,18 @@ function bindGridTemplates() {
           ? html`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
           : html``}
         ${shots.length ? html`
-          <div class="shots"><h4>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</h4>
-            <div class="shot-strip">${shots.map((s: any) => s.ok
-              ? html`<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener">
-                  <img loading="lazy" src="${art(s.file)}" alt="${s.route}">
-                  <span class="cap">${s.route}</span>
-                </a>`
-              : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
-            </div>
+          <div class="shots">
+            <details class="shot-details">
+              <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
+              <div class="shot-strip">${shots.map((s: any) => s.ok
+                ? html`<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener">
+                    <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
+                      src="${art(s.file)}" alt="${s.route}">
+                    <span class="cap">${s.route}</span>
+                  </a>`
+                : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
+              </div>
+            </details>
           </div>` : html``}
         ${r.logs && r.logs.length ? html`
           <div class="shots"><h4>Log</h4><details>
@@ -227,6 +231,22 @@ function bindGridTemplates() {
         @click=${(ev: Event) => { ev.stopPropagation(); deleteRun(row.id); }}>X</button>
     </span>`;
   };
+
+  g.addEventListener('rowToggle', (event: any) => {
+    const detail = event.detail;
+    if (!detail || detail.expanded) return;
+    closeNestedDetailToggles(detail.rowKey ?? detail.rowID);
+  });
+}
+
+function closeNestedDetailToggles(rowId: any) {
+  const id = String(rowId);
+  document.querySelectorAll<HTMLElement>('.detail[data-run-id]').forEach((detail) => {
+    if (detail.dataset.runId !== id) return;
+    detail.querySelectorAll<HTMLDetailsElement>('details[open]').forEach((toggle) => {
+      toggle.open = false;
+    });
+  });
 }
 
 function applyDefaultSort() {

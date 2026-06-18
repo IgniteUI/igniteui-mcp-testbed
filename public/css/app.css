@@ -226,6 +226,7 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
 .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
 .detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem 1.6rem;
+  contain:layout paint style;
   background:#07211f; padding:.9rem 1rem; color:var(--ink); font-family:var(--mono); font-size:.78rem; }
 .detail > div:not(.shots):not(.err):not(.delgroup) { min-width:0; }
 .detail h4 { margin:0 0 .4rem; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--steel); }
@@ -276,10 +277,13 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
   text-transform:none;
 }
 /* screenshot thumbnails in run detail */
-.shots { grid-column:1/-1; }
-.shot-strip { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.3rem; }
+.shots { grid-column:1/-1; min-width:0; contain:content; }
+.shot-details { margin:0; }
+.shot-details > summary { cursor:pointer; color:var(--steel); font-family:var(--mono); font-size:.72rem;
+  letter-spacing:.1em; text-transform:uppercase; }
+.shot-strip { display:flex; flex-wrap:wrap; gap:.5rem; align-content:flex-start; margin-top:.5rem; }
 .shot { display:block; border:1px solid var(--line); border-radius:6px; overflow:hidden; text-decoration:none; }
-.shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; }
+.shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; contain:paint; }
 .shot .cap { display:block; font-size:.66rem; color:var(--steel); padding:.2rem .35rem; text-align:left; max-width:150px; }
 .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
 @media (max-width:980px){
@@ -287,13 +291,8 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 }
 
 /* matrix view */
-<<<<<<< ganastasov/table-to-igc-grid
 .matrix-view { display:grid; grid-template-columns: minmax(340px,480px) minmax(0,1fr); gap:1px; background:var(--line);
                width:100%; max-width:100vw; min-height:calc(100vh - 60px); overflow:hidden; }
-=======
-.matrix-view { display:grid; grid-template-columns: minmax(360px,480px) 1fr; gap:1px; background:var(--line);
-               min-height:calc(100vh - 60px); }
->>>>>>> master
 .matrix-view[hidden] { display:none; }
 @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
 .matrix-view > .panel { min-width:0; overflow:hidden; }
@@ -319,11 +318,6 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .mx-entry .step { font-family:var(--mono); font-size:.72rem; color:var(--steel); margin-left:auto; min-width:0;
                   max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mx-entry .mini { font-family:var(--mono); font-size:.72rem; color:#9fc2bd; margin-top:.4rem;
-<<<<<<< ganastasov/table-to-igc-grid
                   max-height:0; max-width:100%; overflow:hidden; transition:max-height .2s; white-space:pre-wrap;
                   overflow-wrap:anywhere; }
-=======
-                  max-height:0; overflow:hidden; transition:max-height .2s;
-                  white-space:pre-wrap; overflow-wrap:anywhere; }
->>>>>>> master
 .mx-entry.open .mini { max-height:200px; overflow:auto; }
