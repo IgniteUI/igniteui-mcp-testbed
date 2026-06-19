@@ -231,7 +231,19 @@ function bindGridTemplates() {
   $('#historyDuration').formatter = (value: number | null) => fmtDur(value);
   $('#historyActions').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
+    const isMatrix = !!row.matrixId;
+    const active = row.status === 'running' || row.status === 'pending';
+    const playDisabled = !isMatrix || active;
+    const stopDisabled = !isMatrix || !active;
+    const playTitle = !isMatrix ? 'Re-run is only available for matrix runs'
+      : active ? 'Run is still in progress' : 'Re-run this configuration';
+    const stopTitle = !isMatrix ? 'Cancel is only available for matrix runs'
+      : active ? 'Cancel this run' : 'Run is not in progress';
     return html`<span class="history-actions-cell">
+      <button class="play material-icons" title=${playTitle} ?disabled=${playDisabled}
+        @click=${(ev: Event) => { ev.stopPropagation(); rerunRun(row.id); }}>play_arrow</button>
+      <button class="stop material-icons" title=${stopTitle} ?disabled=${stopDisabled}
+        @click=${(ev: Event) => { ev.stopPropagation(); stopRun(row.id); }}>stop</button>
       <button class="del" title="Delete run"
         @click=${(ev: Event) => { ev.stopPropagation(); deleteRun(row.id); }}>X</button>
     </span>`;
@@ -395,6 +407,56 @@ async function deleteRun(id: string) {
   } catch (err: any) { alert(err.message); }
 }
 
+// Re-run a matrix configuration: copy the stored config + prompt into a fresh
+// single-entry matrix submission, prompting for the (never-stored) API key first.
+let pendingRerun: any = null;
+
+function rerunRun(id: string) {
+  const r = runById.get(id);
+  if (!r || !r.matrixId) return;
+  pendingRerun = r;
+  const c = r.config || {};
+  const prompt = (r.prompt || '').trim();
+  const snippet = prompt.length > 80 ? prompt.slice(0, 80) + '…' : prompt;
+  $('#rerunSummary').textContent =
+    `${c.framework || '—'} · ${(c.models || [])[0] || '—'}${snippet ? ` · "${snippet}"` : ''}`;
+  ($('#rerunKey') as any).value = '';
+  ($('#rerunDialog') as any).show();
+}
+
+async function confirmRerun() {
+  const r = pendingRerun;
+  if (!r) return;
+  const c = r.config || {};
+  const apiKey = ($('#rerunKey') as any).value;
+  const body = {
+    platforms: [c.framework],
+    variants: [{ mcps: c.enabledMcps || [], skills: !!c.skills }],
+    model: (c.models || [])[0],
+    prompt: r.prompt,
+    apiKey,
+    customBaseUrl: c.customBaseUrl || undefined,
+  };
+  try {
+    const j = await postJSON('/api/matrix', body);
+    if (!j.ok) { alert(j.error || 'failed to start re-run'); return; }
+    ($('#rerunDialog') as any).hide();
+    pendingRerun = null;
+    loadHistory();
+  } catch (err: any) { alert(err.message); }
+}
+
+async function stopRun(id: string) {
+  const r = runById.get(id);
+  if (!r || !r.matrixId || (r.status !== 'running' && r.status !== 'pending')) return;
+  if (!confirm('Cancel this run?')) return;
+  try {
+    const j = await postJSON(`/api/matrix/cancel/${encodeURIComponent(id)}`, {});
+    if (!j.ok) { alert(j.error || 'cancel failed'); return; }
+    loadHistory();
+  } catch (err: any) { alert(err.message); }
+}
+
 async function deleteMatrix(matrixId: string) {
   if (!confirm(`Delete every run in matrix #${matrixId.split('-').pop()} and its screenshots?`)) return;
   try {
@@ -427,3 +489,5 @@ async function saveRating(id: string, rating: number) {
 }
 
 $('#historyRefresh').addEventListener('click', loadHistory);
+$('#rerunConfirm').addEventListener('click', confirmRerun);
+$('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });

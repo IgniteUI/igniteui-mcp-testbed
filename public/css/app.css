@@ -243,10 +243,17 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .mxtag { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem;
   border:1px solid currentColor; cursor:pointer; }
 .mxtag.muted { color:var(--steel); border-color:transparent; cursor:default; }
-.history-actions-cell { display:flex; justify-content:center; width:100%; }
+.history-actions-cell { display:flex; justify-content:center; gap:.1rem; width:100%; }
 .del { font-family:var(--mono); font-size:.95rem; line-height:1; color:var(--steel);
   background:none; border:none; cursor:pointer; padding:.1rem .3rem; border-radius:4px; }
 .del:hover { color:var(--red); background:rgba(224,106,85,.12); }
+.play, .stop { font-size:1.05rem; line-height:1; color:var(--steel);
+  background:none; border:none; cursor:pointer; padding:.1rem .2rem; border-radius:4px; }
+.play:hover:not(:disabled) { color:#5fbf7f; background:rgba(95,191,127,.14); }
+.stop:hover:not(:disabled) { color:var(--red); background:rgba(224,106,85,.12); }
+.history-actions-cell button:disabled { opacity:.3; cursor:not-allowed; }
+#rerunKey { width:100%; }
+#rerunSummary { margin:0 0 .6rem; }
 .detail .delgroup { grid-column:1/-1; text-align:left; }
 .detail .delgroup .danger-button {
   --ig-size: 1;

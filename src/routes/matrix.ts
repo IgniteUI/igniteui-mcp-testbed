@@ -48,6 +48,13 @@ export default function registerMatrixRoutes(app: Express): void {
     res.json({ ok: true });
   });
 
+  // Cancel a single entry (by history runId) without aborting the rest of the matrix.
+  app.post('/api/matrix/cancel/:runId', (req, res) => {
+    const r = matrix.cancelEntry(req.params.runId);
+    if (!r.ok) return res.status(400).json(r);
+    res.json({ ok: true });
+  });
+
   app.get('/api/matrix/stream', (req, res) => {
     matrix.sse.attach(req, res, { type: 'state', state: matrix.getState() });
   });

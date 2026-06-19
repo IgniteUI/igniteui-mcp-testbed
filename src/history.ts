@@ -88,6 +88,7 @@ export interface CreateOpts {
   mode?: HistoryRecord['mode'];
   prompt?: string | null;
   matrixId?: string | null;
+  status?: string;
 }
 
 export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts = {}): string {
@@ -98,7 +99,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     startedAt,
     finishedAt: null,
     durationMs: null,
-    status: 'running',
+    status: opts.status || 'running',
     error: null,
     rating: null,
     mode: opts.mode || 'interactive', // 'interactive' | 'matrix'
@@ -135,6 +136,13 @@ export function finish(id: string, { status, error, completed, timings, finished
     if (Array.isArray(screenshots)) r.screenshots = screenshots;
     if (Array.isArray(logs)) r.logs = logs.slice();
   });
+}
+
+// Flip a queued ('pending') record to 'running' and reset its clock to the real
+// start, so its duration reflects execution time, not time spent waiting in the queue.
+export function markRunning(id: string | null): HistoryRecord | null {
+  if (!id) return null;
+  return update(id, (r) => { r.status = 'running'; r.startedAt = new Date().toISOString(); });
 }
 
 export function updateStats(id: string | null, snapshot: Stats | null): HistoryRecord | null {
@@ -190,7 +198,7 @@ export function reapStale(): number {
   const now = new Date().toISOString();
   let reaped = 0;
   for (const r of list()) {
-    if (r.status !== 'running') continue;
+    if (r.status !== 'running' && r.status !== 'pending') continue;
     update(r.id, (rec) => {
       rec.status = 'interrupted';
       rec.error = rec.error || 'interrupted — container stopped or run aborted before completion';

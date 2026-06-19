@@ -29,6 +29,23 @@ let matrixRunning = false;
 let matrixCancelled = false;
 let currentChild: ChildProcess | null = null; // the in-flight pipeline child (scaffold/agent/…), for cancellation
 let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done: 0, entries: [] };
+// runIds individually cancelled from the History tab — a per-entry cancel that
+// (unlike the whole-matrix `cancel()`) only aborts that one entry and lets the rest run.
+const cancelledEntries = new Set<string>();
+
+function buildCfg(c: Combo, fixed: Fixed): RunConfig {
+  return {
+    framework: c.platform,
+    projectType: fixed.projectType || '',
+    theme: fixed.theme || '',
+    enabledMcps: c.variant.mcps,
+    skills: !!c.variant.skills,
+    excludedSkills: [],
+    model: fixed.model,
+    apiKey: fixed.apiKey,
+    customBaseUrl: fixed.customBaseUrl || undefined,
+  };
+}
 
 // Heartbeat lines ("… opencode still running (Ns)") are pure liveness — collapse
 // consecutive ones into a single updating line so they don't flood out real logs.
@@ -50,31 +67,34 @@ function pushEntryLog(entry: MatrixEntry, line: string): void {
 async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt: string; matrixId: string; fixed: Fixed }): Promise<void> {
   broadcast({ type: 'matrix-start', matrixId, total: combos.length, entries: matrixState.entries });
   for (let i = 0; i < combos.length; i++) {
+    const c = combos[i];
+    const entry = matrixState.entries[i];
+    const runId = entry.runId as string; // history record created up-front in begin()
+
     if (matrixCancelled) {
-      // Mark this and every remaining entry as cancelled and stop.
+      // Whole-matrix cancel: settle this + every remaining entry and stop.
       for (let j = i; j < combos.length; j++) {
-        matrixState.entries[j].status = 'cancelled';
-        broadcast({ type: 'entry-done', index: j, status: 'cancelled', runId: matrixState.entries[j].runId });
+        const e = matrixState.entries[j];
+        if (e.runId && (e.status === 'pending' || e.status === 'running')) {
+          e.status = 'cancelled';
+          history.finish(e.runId, { status: 'cancelled', error: 'cancelled' });
+          broadcast({ type: 'entry-done', index: j, status: 'cancelled', runId: e.runId });
+        }
       }
       break;
     }
-    const c = combos[i];
-    const entry = matrixState.entries[i];
-    entry.status = 'running';
+    // Per-entry cancel of a still-queued entry: skip it without running.
+    if (cancelledEntries.has(runId)) {
+      entry.status = 'cancelled';
+      history.finish(runId, { status: 'cancelled', error: 'cancelled' });
+      broadcast({ type: 'entry-done', index: i, status: 'cancelled', runId });
+      matrixState.done = i + 1;
+      continue;
+    }
 
-    const cfg: RunConfig = {
-      framework: c.platform,
-      projectType: fixed.projectType || '',
-      theme: fixed.theme || '',
-      enabledMcps: c.variant.mcps,
-      skills: !!c.variant.skills,
-      excludedSkills: [],
-      model: fixed.model,
-      apiKey: fixed.apiKey,
-      customBaseUrl: fixed.customBaseUrl || undefined,
-    };
-    const runId = history.createRecord(cfg, { mode: 'matrix', prompt, matrixId });
-    entry.runId = runId;
+    entry.status = 'running';
+    history.markRunning(runId);
+    const cfg = buildCfg(c, fixed);
     broadcast({ type: 'entry-start', index: i, platform: c.platform, variantLabel: c.variantLabel, runId });
 
     // Per-entry stage timings + completed list, surfaced through the matrix SSE.
@@ -108,7 +128,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
     // instead of running the step (e.g. don't start the agent after Cancel).
     const onChild = (child: ChildProcess) => {
       currentChild = child;
-      if (matrixCancelled) killTree(child, 'SIGTERM');
+      if (matrixCancelled || cancelledEntries.has(runId)) killTree(child, 'SIGTERM');
     };
     try {
       const result = await runPipeline(cfg, { emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir });
@@ -116,7 +136,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
       if (result.stats) history.updateStats(runId, result.stats);
       // The agent ran fine but the edited app may not compile — flag that distinctly
       // from a clean success so "0 shots" isn't mistaken for "app had no routes".
-      const status = matrixCancelled ? 'cancelled'
+      const status = (matrixCancelled || cancelledEntries.has(runId)) ? 'cancelled'
         : (result.appReady === false ? 'build-error' : 'success');
       const buildErr = status === 'build-error' ? (result.appError || 'app build failed') : null;
       history.finish(runId, { status, error: buildErr, completed, timings, screenshots: result.screenshots || [], logs: entry.logs || [] });
@@ -131,8 +151,9 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
       // free any watcher and reclaim disk here so the kept entry dir isn't left heavy.
       await killWatcher('app'); await killWatcher('opencode');
       try { await cleanupAppDir(appDir, emit); } catch (_) {}
-      const status = matrixCancelled ? 'cancelled' : 'error';
-      history.finish(runId, { status, error: matrixCancelled ? 'cancelled' : err.message, completed, timings, logs: entry.logs || [] });
+      const cancelled = matrixCancelled || cancelledEntries.has(runId);
+      const status = cancelled ? 'cancelled' : 'error';
+      history.finish(runId, { status, error: cancelled ? 'cancelled' : err.message, completed, timings, logs: entry.logs || [] });
       entry.status = status;
       broadcast({ type: 'entry-done', index: i, status, runId, error: status === 'error' ? err.message : null });
     } finally {
@@ -153,11 +174,15 @@ export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixe
   const matrixId = newMatrixId();
   matrixRunning = true;
   matrixCancelled = false;
+  cancelledEntries.clear();
   matrixState = {
     running: true, matrixId, total: combos.length, done: 0,
+    // Create every entry's history record up-front (status 'pending') so the whole
+    // matrix shows in History the moment it's submitted, not one row at a time.
     entries: combos.map((c, i) => ({
       index: i, platform: c.platform, variantLabel: c.variantLabel,
-      mcps: c.variant.mcps, skills: c.variant.skills, status: 'pending', runId: null,
+      mcps: c.variant.mcps, skills: c.variant.skills, status: 'pending',
+      runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, status: 'pending' }),
     })),
   };
   runMatrix(combos, { prompt, matrixId, fixed }).catch((e: any) => {
@@ -177,6 +202,26 @@ export function cancel(): { ok: boolean; error?: string } {
   killTree(currentChild, 'SIGTERM');
   killWatcher('app'); killWatcher('opencode');
   broadcast({ type: 'log', msg: 'cancellation requested — stopping the current step' });
+  return { ok: true };
+}
+
+// Cancel a single entry by its history runId (from the History tab). A still-pending
+// entry is just skipped when the loop reaches it; the currently-running entry has its
+// child + watchers killed so its pipeline rejects — but the loop continues with the
+// rest of the matrix (unlike the whole-matrix `cancel()` above).
+export function cancelEntry(runId: string): { ok: boolean; error?: string } {
+  if (!matrixRunning) return { ok: false, error: 'no matrix run in progress' };
+  const entry = matrixState.entries.find((e) => e.runId === runId);
+  if (!entry) return { ok: false, error: 'run is not part of the active matrix' };
+  if (entry.status !== 'pending' && entry.status !== 'running') {
+    return { ok: false, error: 'run is not pending or running' };
+  }
+  cancelledEntries.add(runId);
+  if (entry.status === 'running') {
+    killTree(currentChild, 'SIGTERM');
+    killWatcher('app'); killWatcher('opencode');
+    broadcast({ type: 'log', index: entry.index, msg: 'entry cancellation requested — stopping this run' });
+  }
   return { ok: true };
 }
 
