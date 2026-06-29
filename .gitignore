@@ -7,6 +7,18 @@ public/vendor/
 # Session artifacts (generated apps, logs, stats)
 sessions/
 
+# User-supplied local skills (bind-mounted at /local-skills) — preserve the per-platform
+# skeleton (README + empty angular/react/webcomponents/blazor dirs) but ignore the actual
+# skill folders a user drops in.
+local-skills/*
+!local-skills/README.md
+!local-skills/angular/
+!local-skills/react/
+!local-skills/webcomponents/
+!local-skills/blazor/
+local-skills/*/*
+!local-skills/*/.gitkeep
+
 # Logs
 *.log
 

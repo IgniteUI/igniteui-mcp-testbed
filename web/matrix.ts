@@ -6,31 +6,54 @@ import { isSessionLive } from './wizard.ts';
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
 const mxPlatforms = () => [...document.querySelectorAll<any>('#mxPlatforms igc-checkbox')].filter((c) => c.checked).map((c) => c.value);
 
-// Variant builder: each row = which MCPs are enabled + skills on/off (the axis).
-function addVariantRow(preset: { mcps: string[]; skills: boolean } = { mcps: ['igniteui', 'theming'], skills: true }) {
+// Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
+// local = local-only (generated wiped); merge = generated + local overlaid.
+function skillModeOf(v: { skills: boolean; localSkills: boolean }): string {
+  if (v.localSkills) return v.skills ? 'merge' : 'local';
+  return v.skills ? 'default' : 'off';
+}
+function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } {
+  switch (mode) {
+    case 'default': return { skills: true, localSkills: false };
+    case 'local': return { skills: false, localSkills: true };
+    case 'merge': return { skills: true, localSkills: true };
+    default: return { skills: false, localSkills: false };
+  }
+}
+
+// Variant builder: each row = which MCPs are enabled + a skill mode (the axis).
+function addVariantRow(preset: { mcps: string[]; skills: boolean; localSkills: boolean } = { mcps: ['igniteui', 'theming'], skills: true, localSkills: false }) {
   const row: any = document.createElement('div');
   row.className = 'mx-variant';
   const has = (m: string) => preset.mcps.includes(m) ? 'checked' : '';
+  const mode = skillModeOf(preset);
+  const sel = (m: string) => mode === m ? 'selected' : '';
   row.innerHTML = `
     <igc-checkbox data-mcp="igniteui" ${has('igniteui')}>Ignite UI CLI MCP</igc-checkbox>
     <igc-checkbox data-mcp="theming" ${has('theming')}>Theming MCP</igc-checkbox>
-    <igc-checkbox data-skills ${preset.skills ? 'checked' : ''}>Skills</igc-checkbox>
+    <select data-skills title="Skills" class="mx-skills">
+      <option value="off" ${sel('off')}>No skills</option>
+      <option value="default" ${sel('default')}>Default skills</option>
+      <option value="local" ${sel('local')}>Local skills</option>
+      <option value="merge" ${sel('merge')}>Default + local</option>
+    </select>
     <button type="button" class="rm" title="Remove variant">✕</button>`;
   row.querySelector('.rm').addEventListener('click', () => { row.remove(); updateMxCount(); });
   row.querySelectorAll('igc-checkbox').forEach((c: any) => c.addEventListener('igcChange', updateMxCount));
+  row.querySelector('select[data-skills]').addEventListener('change', updateMxCount);
   $('#mxVariants').appendChild(row);
   updateMxCount();
 }
 
-// Read + dedupe the variant rows into [{mcps:[], skills:bool}].
+// Read + dedupe the variant rows into [{mcps:[], skills:bool, localSkills:bool}].
 function mxVariants() {
-  const seen = new Set<string>(), out: { mcps: string[]; skills: boolean }[] = [];
+  const seen = new Set<string>(), out: { mcps: string[]; skills: boolean; localSkills: boolean }[] = [];
   for (const row of document.querySelectorAll<any>('#mxVariants .mx-variant')) {
     const mcps = [...row.querySelectorAll('igc-checkbox[data-mcp]')].filter((c: any) => c.checked).map((c: any) => c.dataset.mcp);
-    const skills = !!row.querySelector('igc-checkbox[data-skills]').checked;
-    const key = mcps.join(',') + '|' + skills;
+    const { skills, localSkills } = flagsFromMode(row.querySelector('select[data-skills]').value);
+    const key = mcps.join(',') + '|' + skills + '|' + localSkills;
     if (seen.has(key)) continue;
-    seen.add(key); out.push({ mcps, skills });
+    seen.add(key); out.push({ mcps, skills, localSkills });
   }
   return out;
 }
@@ -38,10 +61,32 @@ function mxVariants() {
 export function updateMxCount() {
   const p = mxPlatforms().length, v = mxVariants().length;
   $('#mxCount').textContent = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
+  refreshMxLocalSkills();
+}
+
+// Show which local skills are available per selected platform — but only when a variant
+// actually uses local skills (local/merge mode), since each entry overlays only its own
+// platform's ./local-skills/<fw> folder.
+async function refreshMxLocalSkills() {
+  const note = $('#mxLocalSkills');
+  const platforms = mxPlatforms();
+  if (!platforms.length || !mxVariants().some((v) => v.localSkills)) { note.hidden = true; return; }
+  try {
+    const j = await getJSON('/api/local-skills');
+    const map = j.byPlatform || {};
+    const lines = platforms.map((p) => {
+      const valid = (map[p] || []).filter((s: any) => s.valid).map((s: any) => s.name);
+      return `${p}: ${valid.length ? valid.join(', ') : 'none'}`;
+    });
+    note.textContent = `Local skills — ${lines.join(' · ')}`;
+  } catch {
+    note.textContent = 'Could not list local skills.';
+  }
+  note.hidden = false;
 }
 document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
-$('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false }));
-addVariantRow(); // seed one default variant (igniteui+theming, skills on)
+$('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
+addVariantRow(); // seed one default variant (igniteui+theming, default skills)
 
 let mxES: EventSource | null = null;
 let mxTotal = 0, mxDone = 0;

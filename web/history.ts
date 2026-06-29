@@ -37,11 +37,21 @@ const html = (...args: any[]) => {
   return tag(...args);
 };
 
+// One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
+function skillSummary(c: any): string {
+  const xs = (c.excludedSkills || []).length;
+  const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
+  if (c.overrideSkills) {
+    if (c.localSkillsOnly || !c.skills) return 'local';
+    return `${gen} + local`;
+  }
+  return gen || 'off';
+}
+
 // Flatten a record into the comparable values shown in the grid.
 function rowVals(r: any): HistoryGridRow {
   const st = r.stats || {};
   const cost = st.cost && st.cost.available ? st.cost.amount : null;
-  const xs = (r.config.excludedSkills || []).length;
   return {
     id: r.id,
     whenTs: Date.parse(r.startedAt) || 0,
@@ -49,7 +59,7 @@ function rowVals(r: any): HistoryGridRow {
     matrixId: r.matrixId || '',
     framework: r.config.framework || '—',
     model: (r.config.models || []).join(', ') || '—',
-    skills: r.config.skills ? (xs ? `on (-${xs})` : 'on') : 'off',
+    skills: skillSummary(r.config),
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
     status: r.status || '—',
     rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
@@ -142,6 +152,7 @@ function bindGridTemplates() {
           <dt>Project type</dt><dd>${c.projectType || '—'}</dd>
           <dt>Theme</dt><dd>${c.theme || '—'}</dd>
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
+          <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : html``}
@@ -431,7 +442,7 @@ async function confirmRerun() {
   const apiKey = ($('#rerunKey') as any).value;
   const body = {
     platforms: [c.framework],
-    variants: [{ mcps: c.enabledMcps || [], skills: !!c.skills }],
+    variants: [{ mcps: c.enabledMcps || [], skills: !!c.skills, localSkills: !!c.overrideSkills }],
     model: (c.models || [])[0],
     prompt: r.prompt,
     apiKey,

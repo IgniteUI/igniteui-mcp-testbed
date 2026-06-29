@@ -59,7 +59,11 @@ $Out  = Join-Path $PSScriptRoot "sessions/$Session"
 # Run history persists across containers, so it lives in a stable shared dir
 # (not the per-session $Out). Mounted at /history inside the container.
 $Hist = Join-Path $PSScriptRoot 'sessions/history'
-New-Item -ItemType Directory -Force -Path $Out, $Hist | Out-Null
+# Host-supplied skills overlaid onto the generated .claude/skills/ (see the wizard's
+# "use local skills" toggle / matrix variants). Created empty so the bind mount always
+# resolves; drop skill folders (each a SKILL.md + resources) here to override.
+$Skills = Join-Path $PSScriptRoot 'local-skills'
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills | Out-Null
 
 Write-Host "Session artifacts -> $Out"
 Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
@@ -74,14 +78,15 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z")
   $userns = @('--userns=keep-id')
 }
 else {
   # Windows: give Podman a forward-slash path and drop the Linux-only :Z / --userns.
-  $outHost  = $Out  -replace '\\', '/'
-  $histHost = $Hist -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history")
+  $outHost    = $Out    -replace '\\', '/'
+  $histHost   = $Hist   -replace '\\', '/'
+  $skillsHost = $Skills -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro")
   $userns = @()
 }
 

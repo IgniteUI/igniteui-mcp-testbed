@@ -13,6 +13,7 @@ export const isSessionLive = () => sessionLive;
 $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
   $('#ngMcp').hidden = framework !== 'angular';
+  refreshLocalSkills();
 });
 // reflect the default selection (angular) into the Angular-MCP toggle's visibility.
 $('#ngMcp').hidden = framework !== 'angular';
@@ -30,7 +31,7 @@ function logLine(msg: string, cls?: string) {
   el.scrollTop = el.scrollHeight;
 }
 
-const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'launch-app', 'launch-opencode'];
+const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'overlay-skills', 'launch-app', 'launch-opencode'];
 
 function collect() {
   // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
@@ -44,11 +45,35 @@ function collect() {
     enabledMcps: mcps,
     skills: $('#skills').checked,
     excludedSkills: excl,
+    overrideSkills: $('#overrideSkills').checked,
+    localSkillsOnly: $('#overrideSkills').checked && $('#localSkillsOnly').checked,
     model: $('#model').value.trim(),
     apiKey: $('#key').value,
     customBaseUrl: $('#base').value.trim() || undefined,
   };
 }
+
+// "Replace generated skills" only makes sense when local skills are in use. Disable it
+// (and show what's available for the selected platform under ./local-skills/<fw>) when
+// the override toggle is off.
+async function refreshLocalSkills() {
+  const on = $('#overrideSkills').checked;
+  $('#localSkillsOnly').disabled = !on;
+  const note = $('#localSkillsList');
+  if (!on) { note.hidden = true; return; }
+  try {
+    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(framework)}`);
+    const valid = (j.skills || []).filter((s: any) => s.valid).map((s: any) => s.name);
+    note.textContent = valid.length
+      ? `Local ${framework} skills: ${valid.join(', ')}`
+      : `No skills found under ${j.dir} — add folders (each with a SKILL.md) before launching.`;
+  } catch {
+    note.textContent = 'Could not list local skills.';
+  }
+  note.hidden = false;
+}
+$('#overrideSkills').addEventListener('igcChange', refreshLocalSkills);
+refreshLocalSkills();
 
 $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();

@@ -10,6 +10,7 @@ import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
 import {
   APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, MCP_COMMAND_BY_CLASS,
+  LOCAL_SKILLS_DIR,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
@@ -17,7 +18,7 @@ import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts'
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
-import { pruneSkills } from './skills.ts';
+import { pruneSkills, overlaySkills } from './skills.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
 
@@ -31,8 +32,8 @@ export interface PipelineOpts {
   appDir?: string;
 }
 
-// Stages 1–5 are identical for an interactive session and a headless matrix entry.
-// Stage 6 branches: interactive launches `opencode web` (long-lived); headless runs
+// Stages 1–4b are identical for an interactive session and a headless matrix entry.
+// Stage 5+ branches: interactive launches `opencode web` (long-lived); headless runs
 // `opencode run "<prompt>"` once, parses usage, then screenshots every route.
 // Returns interactive: { appPort, opencodePort }
 //         headless:    { appPort, stats, screenshots, routes, skipped }
@@ -125,6 +126,14 @@ export async function runPipeline(
   if (cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
+  }
+
+  // 4b. Overlay host-supplied local skills onto the generated set (after prune so an
+  // override can't be pruned away). Local skills are organized per-platform, so only
+  // this run's framework subfolder is used. replaceAll wipes the generated skills first.
+  if (cfg.overrideSkills) {
+    emit('step', { step: 'overlay-skills' });
+    overlaySkills(path.join(LOCAL_SKILLS_DIR, cfg.framework), appDir, emit, { replaceAll: !!cfg.localSkillsOnly });
   }
 
   // 5. Interactive only: launch the app dev server now (watch) and hand off the

@@ -51,6 +51,37 @@
         <legend>Agent skills</legend>
         <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
         <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
+        <igc-checkbox id="overrideSkills">Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
+        <igc-checkbox id="localSkillsOnly">Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
+        <p class="note" id="localSkillsList" hidden></p>
+        <details class="help">
+          <summary>How local skills work</summary>
+          <div class="help-body">
+            <p>A “skill” is just a folder with a <code>SKILL.md</code> inside (plus any
+            files it references). opencode auto-loads every folder under the project’s
+            <code>.claude/skills/</code>. <strong>You can drop in <em>any</em> skill you
+            want</strong> — not only Ignite UI ones: a coding-style guide, a domain
+            cheat-sheet, a “always write tests” rule, anything. The agent picks them up
+            automatically.</p>
+            <p>Put each skill on the host under the matching framework folder
+            (the selected platform is used for this run):</p>
+            <ul>
+              <li><code>local-skills/angular/&lt;your-skill&gt;/SKILL.md</code></li>
+              <li><code>local-skills/react/…</code>, <code>local-skills/webcomponents/…</code>,
+              <code>local-skills/blazor/…</code></li>
+            </ul>
+            <p>When you enable <strong>Use local skills</strong>:</p>
+            <ul>
+              <li><strong>Merge</strong> (default): your local skills are copied on top of
+              the generated ones. A local folder with the <em>same name</em> as a generated
+              skill <strong>replaces</strong> it; new names are simply added.</li>
+              <li><strong>Replace generated skills</strong>: the generated set is wiped
+              first, so the agent sees <em>only</em> your local skills.</li>
+            </ul>
+            <p>Folders without a <code>SKILL.md</code> are skipped. The line above lists
+            what’s currently found for the selected framework.</p>
+          </div>
+        </details>
       </fieldset>
 
       <!-- Model fieldset: converted to Ignite UI Web Components (igc-input).
@@ -80,8 +111,9 @@
       <li data-step="configure"><span class="n">2</span> Configure AI toolchain</li>
       <li data-step="translate"><span class="n">3</span> Translate MCP config</li>
       <li data-step="prune"><span class="n">4</span> Prune skills</li>
-      <li data-step="launch-app"><span class="n">5</span> Start app (watch)</li>
-      <li data-step="launch-opencode"><span class="n">6</span> Start opencode web</li>
+      <li data-step="overlay-skills"><span class="n">5</span> Overlay local skills</li>
+      <li data-step="launch-app"><span class="n">6</span> Start app (watch)</li>
+      <li data-step="launch-opencode"><span class="n">7</span> Start opencode web</li>
     </ul>
 
     <p class="eyebrow">Console</p>
@@ -151,9 +183,29 @@
       </fieldset>
 
       <fieldset>
-        <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skills per row)</small></legend>
+        <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skill mode per row)</small></legend>
         <div id="mxVariants"></div>
         <button type="button" class="viewbtn" id="mxAddVariant" style="margin-top:.5rem">+ add variant</button>
+        <p class="note" id="mxLocalSkills" hidden></p>
+        <details class="help">
+          <summary>Skill modes &amp; local skills</summary>
+          <div class="help-body">
+            <p>Each variant row picks a skill mode, run against every selected platform:</p>
+            <ul>
+              <li><strong>No skills</strong> — agent runs with no skills.</li>
+              <li><strong>Default skills</strong> — the generated Ignite UI skills only.</li>
+              <li><strong>Local skills</strong> — only <em>your</em> skills (the generated
+              set is wiped).</li>
+              <li><strong>Default + local</strong> — generated skills with your local ones
+              overlaid (same-named local folders replace generated ones; new names add).</li>
+            </ul>
+            <p>Local skills are <em>any</em> folder with a <code>SKILL.md</code> you drop on
+            the host under that platform — <code>local-skills/&lt;framework&gt;/&lt;your-skill&gt;/</code>.
+            Each entry only uses its own platform’s folder. Add the same skill under several
+            framework folders to compare them across platforms. The line above lists what’s
+            found for the selected platforms when a row uses local skills.</p>
+          </div>
+        </details>
       </fieldset>
 
       <fieldset>

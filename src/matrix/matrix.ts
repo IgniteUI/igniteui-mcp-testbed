@@ -34,6 +34,8 @@ let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done:
 const cancelledEntries = new Set<string>();
 
 function buildCfg(c: Combo, fixed: Fixed): RunConfig {
+  // {skills, localSkills} → the three pipeline flags. localSkills without skills means
+  // local-only (wipe the generated set); with skills it merges (local overlaid on top).
   return {
     framework: c.platform,
     projectType: fixed.projectType || '',
@@ -41,6 +43,8 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     enabledMcps: c.variant.mcps,
     skills: !!c.variant.skills,
     excludedSkills: [],
+    overrideSkills: !!c.variant.localSkills,
+    localSkillsOnly: !!c.variant.localSkills && !c.variant.skills,
     model: fixed.model,
     apiKey: fixed.apiKey,
     customBaseUrl: fixed.customBaseUrl || undefined,
@@ -181,7 +185,7 @@ export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixe
     // matrix shows in History the moment it's submitted, not one row at a time.
     entries: combos.map((c, i) => ({
       index: i, platform: c.platform, variantLabel: c.variantLabel,
-      mcps: c.variant.mcps, skills: c.variant.skills, status: 'pending',
+      mcps: c.variant.mcps, skills: c.variant.skills, localSkills: c.variant.localSkills, status: 'pending',
       runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, status: 'pending' }),
     })),
   };

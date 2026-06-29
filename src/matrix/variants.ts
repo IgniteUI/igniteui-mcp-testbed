@@ -6,17 +6,33 @@ import type { Variant } from '../types.ts';
 // here — it's never enabled). Used to sanitize incoming variant definitions.
 export const MATRIX_MCP_CLASSES = ['igniteui', 'theming'];
 
-// Short, human label for a variant: which MCPs + skills on/off.
+// The four skill modes a variant can express, from {skills, localSkills}:
+//   skills  local  → mode
+//     ✗      ✗     → no-skills
+//     ✓      ✗     → skills           (generated only)
+//     ✗      ✓     → local-skills     (local only — generated wiped)
+//     ✓      ✓     → skills+local     (generated + local overlaid)
+function skillMode(v: Variant): string {
+  if (v.localSkills) return v.skills ? 'skills+local' : 'local-skills';
+  return v.skills ? 'skills' : 'no-skills';
+}
+// Compact, filesystem-safe form of the same (for entry dir names).
+function skillSlug(v: Variant): string {
+  if (v.localSkills) return v.skills ? 'skills+local' : 'localonly';
+  return v.skills ? 'skills' : 'noskills';
+}
+
+// Short, human label for a variant: which MCPs + skill mode.
 export function variantLabel(v: Variant): string {
   const mcps = (v.mcps && v.mcps.length) ? v.mcps.join('+') : 'none';
-  return `${mcps} · ${v.skills ? 'skills' : 'no-skills'}`;
+  return `${mcps} · ${skillMode(v)}`;
 }
 
 // Filesystem-safe, self-describing dir name for a matrix entry so the per-entry
 // app/data dirs are findable at a glance (e.g. entry-0-angular-igniteui+theming-skills).
 export function entryDirName(i: number, platform: string, v: Variant): string {
   const mcps = (v.mcps && v.mcps.length) ? v.mcps.join('+') : 'none';
-  return `entry-${i}-${platform}-${mcps}-${v.skills ? 'skills' : 'noskills'}`;
+  return `entry-${i}-${platform}-${mcps}-${skillSlug(v)}`;
 }
 
 // Normalize + dedupe the variant rows from the request.
@@ -26,10 +42,11 @@ export function parseVariants(raw: any): Variant[] {
   for (const v of Array.isArray(raw) ? raw : []) {
     const mcps = MATRIX_MCP_CLASSES.filter((c) => Array.isArray(v && v.mcps) && v.mcps.includes(c));
     const skills = !!(v && v.skills);
-    const key = mcps.join(',') + '|' + skills;
+    const localSkills = !!(v && v.localSkills);
+    const key = mcps.join(',') + '|' + skills + '|' + localSkills;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ mcps, skills });
+    out.push({ mcps, skills, localSkills });
   }
   return out;
 }

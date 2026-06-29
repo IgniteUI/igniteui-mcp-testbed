@@ -48,6 +48,8 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     enabledMcps: Array.isArray(c.enabledMcps) ? c.enabledMcps.slice() : [],
     skills: !!c.skills,
     excludedSkills: Array.isArray(c.excludedSkills) ? c.excludedSkills.slice() : [],
+    overrideSkills: !!c.overrideSkills,
+    localSkillsOnly: !!c.localSkillsOnly,
     models: c.model ? [c.model] : [],
     customBaseUrl: c.customBaseUrl || null,
   };

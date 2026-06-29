@@ -93,6 +93,13 @@ igc-checkbox[hidden] { display:none; }
 
 details.switcher { margin-top:1rem; font-size:.84rem; }
 details.switcher summary { cursor:pointer; color:var(--teal); display:flex; align-items:center; gap:.5rem; }
+details.help { margin-top:.6rem; }
+details.help > summary { cursor:pointer; color:var(--teal); font-family:var(--mono); font-size:.74rem; }
+details.help .help-body { color:var(--steel); font-size:.78rem; line-height:1.55; margin:.5rem 0 0; }
+details.help .help-body p { margin:.4rem 0; }
+details.help .help-body ul { margin:.4rem 0; padding-left:1.1rem; }
+details.help .help-body li { margin:.25rem 0; }
+details.help .help-body code { font-family:var(--mono); font-size:.92em; color:var(--ink); }
 .row { display:flex; gap:.5rem; align-items:flex-end; margin-top:.5rem; }
 .row > igc-input { flex:1; }
 .usage { background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.74rem; line-height:1.4;
@@ -313,6 +320,8 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .mx-variant { display:flex; align-items:center; gap:.9rem; flex-wrap:wrap; padding:.5rem .6rem;
   border:1px solid var(--line); border-radius:8px; margin-bottom:.5rem; }
 .mx-variant igc-checkbox { margin:0; }
+.mx-variant .mx-skills { font-family:var(--mono); font-size:.74rem; color:var(--ink); background:var(--surface);
+  border:1px solid var(--line); border-radius:6px; padding:.25rem .4rem; cursor:pointer; }
 .mx-variant .rm { margin-left:auto; font-family:var(--mono); color:var(--steel); background:none;
   border:none; cursor:pointer; font-size:1rem; padding:.1rem .3rem; border-radius:4px; }
 .mx-variant .rm:hover { color:var(--red); background:rgba(224,106,85,.12); }

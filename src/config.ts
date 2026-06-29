@@ -12,6 +12,10 @@ export const LOG_DIR = path.join(WORK, 'logs');
 export const HISTORY_DIR = process.env.HISTORY_DIR || path.join(WORK, 'history');
 export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
 
+// Host-supplied skills, bind-mounted in (see run.sh/run.ps1). Each subfolder is one
+// skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
+export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
+
 // Matrix-mode tunables.
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);

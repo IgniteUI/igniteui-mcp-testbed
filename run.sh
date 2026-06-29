@@ -49,6 +49,11 @@ mkdir -p "$OUT"
 # (not the per-session $OUT). Mounted at /history inside the container.
 HIST="$PWD/sessions/history"
 mkdir -p "$HIST"
+# Host-supplied skills overlaid onto the generated .claude/skills/ (see the wizard's
+# "use local skills" toggle / matrix variants). Created empty so the bind mount always
+# resolves; drop skill folders (each a SKILL.md + resources) here to override.
+SKILLS="$PWD/local-skills"
+mkdir -p "$SKILLS"
 echo "Session artifacts -> $OUT"
 echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
 echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
@@ -67,12 +72,13 @@ case "$(uname -s)" in
     export MSYS_NO_PATHCONV=1
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
     HIST_HOST="$(cygpath -m "$HIST")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history")
+    SKILLS_HOST="$(cygpath -m "$SKILLS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z")
     USERNS=("--userns=keep-id")
     ;;
 esac

@@ -11,6 +11,8 @@ export interface RunConfig {
   enabledMcps?: string[];
   skills?: boolean;
   excludedSkills?: string[];
+  overrideSkills?: boolean;
+  localSkillsOnly?: boolean;
   model: string;
   apiKey?: string;
   customBaseUrl?: string | null;
@@ -68,6 +70,8 @@ export interface StoredConfig {
   enabledMcps: string[];
   skills: boolean;
   excludedSkills: string[];
+  overrideSkills: boolean;
+  localSkillsOnly: boolean;
   models: string[];
   customBaseUrl: string | null;
 }
@@ -100,6 +104,7 @@ export interface HistoryRecord {
 export interface Variant {
   mcps: string[];
   skills: boolean;
+  localSkills: boolean;
 }
 
 export interface Combo {
@@ -114,6 +119,7 @@ export interface MatrixEntry {
   variantLabel: string;
   mcps: string[];
   skills: boolean;
+  localSkills: boolean;
   status: string;
   runId: string | null;
   logs?: string[];
