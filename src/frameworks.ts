@@ -80,9 +80,11 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
     // <output>/<name>/, so we scaffold from WORK with `-o .` and `-n {{name}}`
     // to land it directly at WORK/<name> (= APP_DIR), matching the other
     // frameworks — keeps ai-config / dev-server cwd on APP_DIR with no nesting.
+    // `--IncludeWeatherSample false`: skip the generated Weather page (IgbGridLite +
+    // ApexCharts demo) and its model/service so the scaffold is a clean baseline.
     scaffold: {
       cmd: 'dotnet',
-      argv: ['new', TEMPLATE, '-o', '.', '-n', '{{name}}', '--force'],
+      argv: ['new', TEMPLATE, '-o', '.', '-n', '{{name}}', '--force', '--IncludeWeatherSample', 'false'],
       cwdIsParent: true,
     },
     aiFramework: 'blazor',

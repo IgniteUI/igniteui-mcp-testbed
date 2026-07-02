@@ -123,6 +123,7 @@ export interface MatrixEntry {
   status: string;
   runId: string | null;
   logs?: string[];
+  step?: string;
 }
 
 export interface MatrixState {

@@ -150,6 +150,8 @@ function handleMx(m: any) {
     (s.entries || []).forEach((e: any) => {
       const rec = mxEntry(e);
       mxStatus(rec, e.status);
+      // Restore the step label (current step while running, or the outcome summary).
+      if (e.step != null) rec.step.textContent = e.step;
       // Replay retained logs so a reconnect/reload doesn't lose past entries' output.
       if (Array.isArray(e.logs)) { rec.log = e.logs.slice(); rec.mini.textContent = rec.log.join('\n'); }
     });

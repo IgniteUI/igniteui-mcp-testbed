@@ -109,6 +109,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
       const now = Date.now();
       if (stepName) { timings[stepName] = now - stepStart; completed.push(stepName); }
       stepName = name; stepStart = now;
+      entry.step = name; // retained so a reconnect/reload can restore the step label
     };
     const closeStep = () => {
       if (stepName) { timings[stepName] = Date.now() - stepStart; completed.push(stepName); stepName = null; }
@@ -145,6 +146,9 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
       const buildErr = status === 'build-error' ? (result.appError || 'app build failed') : null;
       history.finish(runId, { status, error: buildErr, completed, timings, screenshots: result.screenshots || [], logs: entry.logs || [] });
       entry.status = status;
+      // Retain the summary label so a reload shows the outcome, not the last live step.
+      if (status === 'success') entry.step = `${(result.screenshots || []).filter((s) => s.ok).length} shots`;
+      else if (status === 'build-error') entry.step = 'build failed';
       broadcast({
         type: 'entry-done', index: i, status, runId,
         screenshots: result.screenshots || [], stats: result.stats || null, error: buildErr,
