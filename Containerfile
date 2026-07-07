@@ -8,10 +8,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends nodejs \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# --- Agent + Ignite UI CLI + Theming MCP (adjust versions/names to your packages) ---
+# --- Agent + Ignite UI CLI + Theming MCP + ag-grid MCP (adjust versions/names to your packages) ---
 # These are installed globally so the MCP servers launch from local bins (`ig mcp`,
-# `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
-RUN npm install -g opencode-ai igniteui-cli igniteui-theming
+# `igniteui-theming-mcp`, `ag-mcp`) with no per-session npx network fetch in the --rm container.
+RUN npm install -g opencode-ai igniteui-cli igniteui-theming ag-mcp
 
 # `opencode web` always tries to open a browser via xdg-open; in a headless
 # container that throws ENOENT. A no-op stub on PATH makes the open silently

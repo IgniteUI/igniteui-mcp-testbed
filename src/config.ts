@@ -29,12 +29,14 @@ export const APP_READY_TIMEOUT_MS = Number(process.env.APP_READY_TIMEOUT_MS || 6
 // ephemeral container. opencode honours XDG_DATA_HOME for its storage location.
 process.env.XDG_DATA_HOME = process.env.XDG_DATA_HOME || path.join(WORK, '.opencode-data');
 
-// Reliable launch commands for the known Ignite UI MCP servers, run from the
-// globally-installed packages (see Containerfile) instead of the broken/network
-// `npx` invocations ig ai-config writes. Keyed by the wizard's server class.
+// Reliable launch commands for the known MCP servers, run from globally-installed
+// packages (see Containerfile) instead of the `npx` invocations that cold-fetch
+// from npm on each run. Keyed by the wizard's server class.
 export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = {
   igniteui: ['ig', 'mcp'],
   theming: ['igniteui-theming-mcp'],
+  // ag-grid MCP server — installed globally in the image as `ag-mcp`.
+  aggrid: ['ag-mcp'],
 };
 
 // Which env var carries the API key, keyed by the provider prefix of the model id.

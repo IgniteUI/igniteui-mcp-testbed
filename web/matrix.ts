@@ -3,8 +3,14 @@ import { $, esc } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
 
+let mxProvider = 'igniteui'; // 'igniteui' | 'aggrid'
+
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-const mxPlatforms = () => [...document.querySelectorAll<any>('#mxPlatforms igc-checkbox')].filter((c) => c.checked).map((c) => c.value);
+// Read only from the currently-visible platform group so hidden entries are excluded.
+const mxPlatforms = () => {
+  const id = mxProvider === 'aggrid' ? '#mxPlatformsAg' : '#mxPlatformsIg';
+  return [...document.querySelectorAll<any>(`${id} igc-checkbox`)].filter((c) => c.checked).map((c) => c.value);
+};
 
 // Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
 // local = local-only (generated wiped); merge = generated + local overlaid.
@@ -22,15 +28,32 @@ function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } 
 }
 
 // Variant builder: each row = which MCPs are enabled + a skill mode (the axis).
-function addVariantRow(preset: { mcps: string[]; skills: boolean; localSkills: boolean } = { mcps: ['igniteui', 'theming'], skills: true, localSkills: false }) {
+// MCP checkboxes are provider-dependent.
+function variantMcpHtml(preset: { mcps: string[] }): string {
+  if (mxProvider === 'aggrid') {
+    const chk = preset.mcps.includes('aggrid') ? 'checked' : '';
+    return `<igc-checkbox data-mcp="aggrid" ${chk}>AG Grid MCP</igc-checkbox>`;
+  }
+  const hasIg = preset.mcps.includes('igniteui') ? 'checked' : '';
+  const hasTh = preset.mcps.includes('theming') ? 'checked' : '';
+  return `<igc-checkbox data-mcp="igniteui" ${hasIg}>Ignite UI CLI MCP</igc-checkbox>
+    <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>`;
+}
+
+function defaultVariantPreset(): { mcps: string[]; skills: boolean; localSkills: boolean } {
+  return mxProvider === 'aggrid'
+    ? { mcps: ['aggrid'], skills: true, localSkills: false }
+    : { mcps: ['igniteui', 'theming'], skills: true, localSkills: false };
+}
+
+function addVariantRow(preset?: { mcps: string[]; skills: boolean; localSkills: boolean }) {
+  const p = preset ?? defaultVariantPreset();
   const row: any = document.createElement('div');
   row.className = 'mx-variant';
-  const has = (m: string) => preset.mcps.includes(m) ? 'checked' : '';
-  const mode = skillModeOf(preset);
+  const mode = skillModeOf(p);
   const sel = (m: string) => mode === m ? 'selected' : '';
   row.innerHTML = `
-    <igc-checkbox data-mcp="igniteui" ${has('igniteui')}>Ignite UI CLI MCP</igc-checkbox>
-    <igc-checkbox data-mcp="theming" ${has('theming')}>Theming MCP</igc-checkbox>
+    ${variantMcpHtml(p)}
     <select data-skills title="Skills" class="mx-skills">
       <option value="off" ${sel('off')}>No skills</option>
       <option value="default" ${sel('default')}>Default skills</option>
@@ -84,9 +107,20 @@ async function refreshMxLocalSkills() {
   }
   note.hidden = false;
 }
-document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox, #mxPlatformsAg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
-addVariantRow(); // seed one default variant (igniteui+theming, default skills)
+
+// Provider toggle: show/hide platform groups, clear + re-seed variant rows.
+function applyMxProvider(p: string) {
+  mxProvider = p;
+  $('#mxPlatformsIg').hidden = p !== 'igniteui';
+  $('#mxPlatformsAg').hidden = p !== 'aggrid';
+  $('#mxVariants').innerHTML = '';
+  addVariantRow(); // seed one default for the new provider
+}
+$('#mxProvider').addEventListener('igcSelect', (e: any) => applyMxProvider(e.detail || mxProvider));
+
+addVariantRow(); // seed one default variant
 
 let mxES: EventSource | null = null;
 let mxTotal = 0, mxDone = 0;
@@ -99,8 +133,8 @@ export function setMatrixActive(active: boolean) {
   matrixActive = active;
   $('#wizBlocked').hidden = !active;
   $('#mxCancel').hidden = !active;
-  if (active) { $('#go').disabled = true; $('#fw').disabled = true; }
-  else if (!isSessionLive()) { $('#go').disabled = false; $('#fw').disabled = false; }
+  if (active) { $('#go').disabled = true; $('#fw').disabled = true; $('#fwAg').disabled = true; }
+  else if (!isSessionLive()) { $('#go').disabled = false; $('#fw').disabled = false; $('#fwAg').disabled = false; }
 }
 
 $('#mxCancel').addEventListener('click', async () => {

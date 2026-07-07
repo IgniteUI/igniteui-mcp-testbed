@@ -2,17 +2,53 @@
 import { $, fmt } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 
-let framework = 'angular';
+let framework = 'angular';      // active IgniteUI framework
+let agFramework = 'react-aggrid'; // active ag-grid framework
+let provider = 'igniteui';        // 'igniteui' | 'aggrid'
 let sessionLive = false;
 
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
 export const isSessionLive = () => sessionLive;
 
-// framework button group: igcSelect.detail is the selected toggle's value.
+// Returns the currently active framework key (depends on selected provider).
+const activeFramework = () => provider === 'aggrid' ? agFramework : framework;
+
+// Show/hide provider-specific sections and update visible state.
+function applyProvider(p: string) {
+  provider = p;
+  const ig = p === 'igniteui';
+  // Framework button groups
+  $('#fw').hidden = !ig;
+  $('#fwAg').hidden = ig;
+  // Project type + theme inputs (only apply to ig new)
+  $('#ptype').hidden = !ig;
+  $('#theme').hidden = !ig;
+  // MCP groups
+  $('#mcpsIg').hidden = !ig;
+  $('#mcpsAg').hidden = ig;
+  // Skills labels
+  $('#skillsLabelIg').hidden = !ig;
+  $('#skillsLabelAg').hidden = ig;
+  // Exclude input: no individual skill exclusion for ag-grid
+  $('#excl').hidden = !ig;
+  // Angular CLI MCP is only shown for angular + igniteui
+  $('#ngMcp').hidden = !(ig && framework === 'angular');
+  refreshLocalSkills();
+}
+
+// Provider toggle
+$('#provider').addEventListener('igcSelect', (e: any) => applyProvider(e.detail || provider));
+
+// IgniteUI framework button group
 $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
-  $('#ngMcp').hidden = framework !== 'angular';
+  $('#ngMcp').hidden = provider !== 'igniteui' || framework !== 'angular';
+  refreshLocalSkills();
+});
+// ag-grid framework button group
+$('#fwAg').addEventListener('igcSelect', (e: any) => {
+  agFramework = e.detail || agFramework;
   refreshLocalSkills();
 });
 // reflect the default selection (angular) into the Angular-MCP toggle's visibility.
@@ -36,12 +72,17 @@ const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'overlay-skills', 
 function collect() {
   // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
   // Scope to the interactive view so the matrix variant checkboxes aren't included.
-  const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
-  const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
+  // Only collect MCPs from the visible provider group (skip the hidden group's checkboxes).
+  const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')]
+    .filter((c) => c.checked && !c.closest('#mcpsIg')?.hidden && !c.closest('#mcpsAg')?.hidden)
+    .map((c: any) => c.dataset.mcp);
+  const excl = provider === 'igniteui'
+    ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : [];
   return {
-    framework,
-    projectType: $('#ptype').value.trim(),
-    theme: $('#theme').value.trim(),
+    framework: activeFramework(),
+    projectType: provider === 'igniteui' ? $('#ptype').value.trim() : '',
+    theme: provider === 'igniteui' ? $('#theme').value.trim() : '',
     enabledMcps: mcps,
     skills: $('#skills').checked,
     excludedSkills: excl,
@@ -61,11 +102,12 @@ async function refreshLocalSkills() {
   $('#localSkillsOnly').disabled = !on;
   const note = $('#localSkillsList');
   if (!on) { note.hidden = true; return; }
+  const fw = activeFramework();
   try {
-    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(framework)}`);
+    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(fw)}`);
     const valid = (j.skills || []).filter((s: any) => s.valid).map((s: any) => s.name);
     note.textContent = valid.length
-      ? `Local ${framework} skills: ${valid.join(', ')}`
+      ? `Local ${fw} skills: ${valid.join(', ')}`
       : `No skills found under ${j.dir} — add folders (each with a SKILL.md) before launching.`;
   } catch {
     note.textContent = 'Could not list local skills.';
@@ -79,6 +121,7 @@ $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();
   $('#go').disabled = true;
   $('#fw').disabled = true;
+  $('#fwAg').disabled = true;
   sessionLive = false;
   $('#log').textContent = '';
   $('#result').classList.remove('show');
@@ -103,7 +146,11 @@ $('#form').addEventListener('submit', async (e: any) => {
       handle(ev, () => activeIdx, (i) => { activeIdx = i; });
     }
   }
-  if (!sessionLive) { $('#go').disabled = false; $('#fw').disabled = false; }
+  if (!sessionLive) {
+    $('#go').disabled = false;
+    $('#fw').disabled = false;
+    $('#fwAg').disabled = false;
+  }
 });
 
 function handle(ev: any, getIdx: () => number, setIdx: (i: number) => void) {
@@ -138,6 +185,7 @@ function enterLiveState({ opencodePort, appPort, model }: { opencodePort: number
   $('#result').classList.add('show');
   $('#go').disabled = true;
   $('#fw').disabled = true;
+  $('#fwAg').disabled = true;
   loadUsage();
   startStatsStream();
   return ocUrl;
@@ -168,6 +216,7 @@ function applyRunState(st: any): number {
 function reattachRun(model: string) {
   $('#go').disabled = true;
   $('#fw').disabled = true;
+  $('#fwAg').disabled = true;
   sessionLive = false;
   let activeIdx = -1;
   const goLive = (r: any) => enterLiveState({ opencodePort: r.opencodePort, appPort: r.appPort, model });
@@ -177,7 +226,7 @@ function reattachRun(model: string) {
     if (ev.type === 'state') {
       activeIdx = applyRunState(ev.state);
       if (ev.state.phase === 'done' && ev.state.result) { es.close(); goLive(ev.state.result); }
-      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
+      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; $('#fwAg').disabled = false; }
       return;
     }
     if (ev.type === 'done') { if (activeIdx >= 0) setStep(ORDER[activeIdx], 'done'); es.close(); goLive(ev); $('#redirect').textContent = 'Session ready — opencode is running.'; return; }

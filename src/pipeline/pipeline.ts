@@ -70,60 +70,96 @@ export async function runPipeline(
     writePrepareFile(path.join(appDir, rel), subst([body], vars)[0], emit, appDir);
   }
 
-  // 2. AI config (skills + MCP definitions), non-interactive via flags.
+  // 1b. Post-scaffold package install (e.g. ag-grid packages into a plain Vite project).
+  if (fw.install && fw.install.length) {
+    emit('log', `installing packages: ${fw.install.join(' ')}`);
+    await runStep('npm', ['install', ...fw.install], appDir, emit);
+  }
+
+  // 2. AI config — branches on the framework's configure strategy.
   emit('step', { step: 'configure' });
-  const agents = cfg.skills ? ['claude'] : ['none'];
-  await runStep('ig', [
-    'ai-config',
-    '--framework', fw.aiFramework,
-    '--agents', ...agents,
-    '--assistants', 'vscode',
-  ], appDir, emit);
+  const configureStrategy = fw.configure ?? 'igniteui';
+
+  if (configureStrategy === 'igniteui') {
+    // Existing IgniteUI flow: ig ai-config writes .vscode/mcp.json + .claude/skills/.
+    const agents = cfg.skills ? ['claude'] : ['none'];
+    await runStep('ig', [
+      'ai-config',
+      '--framework', fw.aiFramework,
+      '--agents', ...agents,
+      '--assistants', 'vscode',
+    ], appDir, emit);
+
+  } else if (configureStrategy === 'aggrid') {
+    // ag-grid flow: write .vscode/mcp.json directly with the ag-mcp entry, then
+    // optionally install official ag-grid skills via `npx skills add ag-grid/skills`.
+    const vscodeMcpDir = path.join(appDir, '.vscode');
+    fs.mkdirSync(vscodeMcpDir, { recursive: true });
+    const agMcpConfig = {
+      servers: {
+        'ag-mcp': { type: 'stdio', command: 'npx', args: ['ag-mcp'] },
+      },
+    };
+    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify(agMcpConfig, null, 2));
+    emit('log', 'wrote .vscode/mcp.json with ag-mcp entry');
+
+    if (cfg.skills) {
+      // Ensure .claude/skills/ exists before the skills CLI tries to write into it.
+      const skillsDir = path.join(appDir, '.claude', 'skills');
+      fs.mkdirSync(skillsDir, { recursive: true });
+      emit('log', 'installing ag-grid skills (npx skills add ag-grid/skills)');
+      await runStep('npx', ['--yes', 'skills', 'add', 'ag-grid/skills'], appDir, emit);
+    }
+
+  } else {
+    // 'none': write a bare opencode.json now (no MCPs, no skills) and skip translate.
+    writeOpencodeConfig(cfg, {}, appDir);
+    emit('log', 'configure=none: wrote bare opencode.json, skipping translate');
+  }
 
   // 3. Translate .vscode/mcp.json -> opencode.json (with MCP toggles).
-  emit('step', { step: 'translate' });
-  let vscodeMcp: any = {};
-  const mcpPath = path.join(appDir, '.vscode', 'mcp.json');
-  if (fs.existsSync(mcpPath)) {
-    vscodeMcp = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
-  } else {
-    emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
-  }
-  // The user toggles MCPs by class (igniteui / theming / angular); `classify`
-  // (src/pipeline/mcp-classify.js) maps each server with explicit precedence so the
-  // generic "ignite" match can't swallow the theming server. Only classes the caller
-  // explicitly selected are enabled — everything else (incl. angular-cli and any
-  // unclassified "other" server) stays off, so a variant with no MCPs is a true
-  // clean baseline.
-  const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-  const servers = (vscodeMcp && vscodeMcp.servers) || {};
-  const enabled = new Set<string>();
-  const classByName: Record<string, string> = {};
-  for (const [name, s] of Object.entries(servers)) {
-    const cls = classify(name, s);
-    classByName[name] = cls;
-    const on = selected.has(cls);
-    if (on) enabled.add(name);
-    emit('log', `mcp "${name}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
-  }
-  const { mcp, warnings } = translate(vscodeMcp, { enabled, workspaceFolder: appDir });
-  warnings.forEach((w) => emit('log', `warning: ${w}`));
-  // The ig ai-config `npx -y <pkg> …` invocations don't resolve to a runnable
-  // bin (igniteui-cli's bins are `ig`/`igniteui`, not `igniteui-cli`; theming's
-  // is `igniteui-theming-mcp`) and cold-fetch from npm in the ephemeral
-  // container. Run the globally-installed bins directly instead.
-  for (const [name, def] of Object.entries(mcp)) {
-    const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
-    if (fix && def.type === 'local') {
-      def.command = fix.slice();
-      emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
+  // Skipped for configure='none' (opencode.json already written above).
+  if (configureStrategy !== 'none') {
+    emit('step', { step: 'translate' });
+    let vscodeMcp: any = {};
+    const mcpPath = path.join(appDir, '.vscode', 'mcp.json');
+    if (fs.existsSync(mcpPath)) {
+      vscodeMcp = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+    } else {
+      emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
     }
-  }
-  writeOpencodeConfig(cfg, mcp, appDir);
-  emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
+    // The user toggles MCPs by class (igniteui / theming / angular / aggrid); `classify`
+    // maps each server with explicit precedence. Only classes the caller explicitly
+    // selected are enabled — everything else stays off, so a variant with no MCPs is a
+    // true clean baseline.
+    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
+    const servers = (vscodeMcp && vscodeMcp.servers) || {};
+    const enabled = new Set<string>();
+    const classByName: Record<string, string> = {};
+    for (const [name, s] of Object.entries(servers)) {
+      const cls = classify(name, s);
+      classByName[name] = cls;
+      const on = selected.has(cls);
+      if (on) enabled.add(name);
+      emit('log', `mcp "${name}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
+    }
+    const { mcp, warnings } = translate(vscodeMcp, { enabled, workspaceFolder: appDir });
+    warnings.forEach((w) => emit('log', `warning: ${w}`));
+    // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
+    // (ig mcp, igniteui-theming-mcp, ag-mcp).
+    for (const [name, def] of Object.entries(mcp)) {
+      const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
+      if (fix && def.type === 'local') {
+        def.command = fix.slice();
+        emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
+      }
+    }
+    writeOpencodeConfig(cfg, mcp, appDir);
+    emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
+  } // end if (configureStrategy !== 'none')
 
-  // 4. Prune deselected skills
-  if (cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
+  // 4. Prune deselected skills (IgniteUI only — ag-grid skills have no per-skill exclusion).
+  if (configureStrategy === 'igniteui' && cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
   }

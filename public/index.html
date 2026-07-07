@@ -29,27 +29,52 @@
     <p class="eyebrow">Session setup</p>
     <form id="form">
       <fieldset>
+        <legend>Provider</legend>
+        <igc-button-group id="provider" selection="single-required">
+          <igc-toggle-button value="igniteui" selected>Ignite UI</igc-toggle-button>
+          <igc-toggle-button value="aggrid">ag-grid</igc-toggle-button>
+        </igc-button-group>
+      </fieldset>
+
+      <fieldset>
         <legend>Framework</legend>
+        <!-- IgniteUI frameworks (shown when provider = igniteui) -->
         <igc-button-group id="fw" selection="single-required">
           <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
           <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
           <igc-toggle-button value="react">React</igc-toggle-button>
           <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
         </igc-button-group>
+        <!-- ag-grid frameworks (shown when provider = aggrid) -->
+        <igc-button-group id="fwAg" selection="single-required" hidden>
+          <igc-toggle-button value="react-aggrid" selected>React</igc-toggle-button>
+          <igc-toggle-button value="angular-aggrid">Angular</igc-toggle-button>
+        </igc-button-group>
+        <!-- Project type + theme: only meaningful for ig new (IgniteUI) -->
         <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav"></igc-input>
         <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default"></igc-input>
       </fieldset>
 
       <fieldset>
         <legend>MCP servers</legend>
-        <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
-        <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
-        <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        <!-- IgniteUI MCPs -->
+        <div id="mcpsIg">
+          <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
+          <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
+          <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        </div>
+        <!-- ag-grid MCP -->
+        <div id="mcpsAg" hidden>
+          <igc-checkbox data-mcp="aggrid" checked>AG Grid MCP<small>Version-specific docs, examples &amp; API lookup</small></igc-checkbox>
+        </div>
       </fieldset>
 
       <fieldset>
         <legend>Agent skills</legend>
-        <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-checkbox id="skills" checked>
+          <span id="skillsLabelIg">Install Ignite UI skills</span><span id="skillsLabelAg" hidden>Install ag-grid skills</span><small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small>
+        </igc-checkbox>
+        <!-- Exclude: only relevant for IgniteUI (individual skill folders); hidden for ag-grid -->
         <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
         <igc-checkbox id="overrideSkills">Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly">Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
@@ -163,12 +188,26 @@
     <p class="eyebrow">Matrix setup</p>
     <form id="mxForm">
       <fieldset>
+        <legend>Provider</legend>
+        <igc-button-group id="mxProvider" selection="single-required">
+          <igc-toggle-button value="igniteui" selected>Ignite UI</igc-toggle-button>
+          <igc-toggle-button value="aggrid">ag-grid</igc-toggle-button>
+        </igc-button-group>
+      </fieldset>
+
+      <fieldset>
         <legend>Platforms <small style="color:var(--steel);font-weight:400">(axis)</small></legend>
-        <div id="mxPlatforms">
+        <!-- IgniteUI platforms -->
+        <div id="mxPlatformsIg">
           <igc-checkbox value="angular" checked>Angular</igc-checkbox>
           <igc-checkbox value="blazor">Blazor</igc-checkbox>
           <igc-checkbox value="react">React</igc-checkbox>
           <igc-checkbox value="webcomponents">Web Comps</igc-checkbox>
+        </div>
+        <!-- ag-grid platforms -->
+        <div id="mxPlatformsAg" hidden>
+          <igc-checkbox value="react-aggrid" checked>React</igc-checkbox>
+          <igc-checkbox value="angular-aggrid">Angular</igc-checkbox>
         </div>
       </fieldset>
 

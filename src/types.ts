@@ -30,8 +30,17 @@ export interface DevDef {
   env?: Record<string, string>;
 }
 
+// 'igniteui' (default) — runs `ig ai-config`, writes .vscode/mcp.json + .claude/skills/.
+// 'aggrid'             — writes .vscode/mcp.json with ag-mcp, installs skills via npx.
+// 'none'               — skips configure entirely, writes bare opencode.json.
+export type ConfigureStrategy = 'igniteui' | 'aggrid' | 'none';
+
 export interface FrameworkDef {
   scaffold: ScaffoldDef;
+  // npm packages to install into the scaffolded project after scaffold (e.g. ag-grid-community).
+  install?: string[];
+  // How to set up AI tooling. Defaults to 'igniteui' when omitted.
+  configure?: ConfigureStrategy;
   aiFramework: string;
   dev: DevDef;
   prepare?: Record<string, string>;

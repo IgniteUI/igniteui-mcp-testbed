@@ -4,7 +4,9 @@ import type { Variant } from '../types.ts';
 
 // Known MCP classes a matrix variant may toggle (angular-cli is intentionally not
 // here — it's never enabled). Used to sanitize incoming variant definitions.
-export const MATRIX_MCP_CLASSES = ['igniteui', 'theming'];
+// 'aggrid' is the ag-grid MCP class (ag-mcp server); only relevant when the
+// matrix is running in ag-grid provider mode.
+export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'aggrid'];
 
 // The four skill modes a variant can express, from {skills, localSkills}:
 //   skills  local  → mode
