@@ -275,5 +275,22 @@
 <!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
      (main bootstraps view switching and imports wizard / matrix / history). -->
 <script type="module" src="/vendor/app.js"></script>
+
+<!-- Screenshot lightbox — shown by history.ts when a thumbnail is clicked -->
+<div id="shotLightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+  <div id="shotLightboxBackdrop"></div>
+  <div id="shotLightboxContent">
+    <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+    <button id="shotPrev" class="shot-nav" aria-label="Previous image" title="Previous (←)">&#x2039;</button>
+    <div id="shotLightboxImgWrap">
+      <img id="shotLightboxImg" src="" alt="" />
+      <div id="shotLightboxMeta">
+        <span id="shotLightboxCap"></span>
+        <span id="shotLightboxCounter"></span>
+      </div>
+    </div>
+    <button id="shotNext" class="shot-nav" aria-label="Next image" title="Next (→)">&#x203A;</button>
+  </div>
+</div>
 </body>
 </html>

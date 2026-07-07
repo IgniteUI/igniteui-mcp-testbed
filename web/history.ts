@@ -30,6 +30,36 @@ let templatesBound = false;
 let defaultSortApplied = false;
 let gridDataBound = false;
 
+// Lightbox state
+let lbShots: Array<{file: string; route: string}> = [];
+let lbArt: (f: string) => string = () => '';
+let lbIdx = 0;
+
+function openLightbox(okShots: Array<{file: string; route: string}>, idx: number, art: (f: string) => string) {
+  lbShots = okShots;
+  lbArt = art;
+  lbIdx = Math.max(0, Math.min(idx, lbShots.length - 1));
+  refreshLightbox();
+  (document.getElementById('shotLightbox') as HTMLElement).hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+  (document.getElementById('shotLightbox') as HTMLElement).hidden = true;
+  document.body.style.overflow = '';
+}
+
+function refreshLightbox() {
+  const s = lbShots[lbIdx];
+  if (!s) return;
+  (document.getElementById('shotLightboxImg') as HTMLImageElement).src = lbArt(s.file);
+  (document.getElementById('shotLightboxImg') as HTMLImageElement).alt = s.route;
+  document.getElementById('shotLightboxCap')!.textContent = s.route;
+  document.getElementById('shotLightboxCounter')!.textContent = `${lbIdx + 1} / ${lbShots.length}`;
+  (document.getElementById('shotPrev') as HTMLButtonElement).disabled = lbIdx === 0;
+  (document.getElementById('shotNext') as HTMLButtonElement).disabled = lbIdx === lbShots.length - 1;
+}
+
 const grid = () => $('#runsGrid') as any;
 const html = (...args: any[]) => {
   const tag = (window as any).igniteuiHtml;
@@ -144,6 +174,7 @@ function bindGridTemplates() {
     const perModel = st && st.perModel ? Object.entries(st.perModel) : [];
     const shots = r.screenshots || [];
     const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
+    const okShots = shots.filter((s: any) => s.ok);
 
     return html`
       <div class="detail" data-run-id=${row.id}>
@@ -177,11 +208,12 @@ function bindGridTemplates() {
             <details class="shot-details">
               <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
               <div class="shot-strip">${shots.map((s: any) => s.ok
-                ? html`<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener">
+                ? html`<button type="button" class="shot" title="View ${s.route}"
+                    @click=${() => openLightbox(okShots, okShots.indexOf(s), art)}>
                     <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
                       src="${art(s.file)}" alt="${s.route}">
                     <span class="cap">${s.route}</span>
-                  </a>`
+                  </button>`
                 : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
               </div>
             </details>
@@ -502,3 +534,14 @@ async function saveRating(id: string, rating: number) {
 $('#historyRefresh').addEventListener('click', loadHistory);
 $('#rerunConfirm').addEventListener('click', confirmRerun);
 $('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
+document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);
+document.getElementById('shotLightboxClose')!.addEventListener('click', closeLightbox);
+document.getElementById('shotPrev')!.addEventListener('click', () => { if (lbIdx > 0) { lbIdx--; refreshLightbox(); } });
+document.getElementById('shotNext')!.addEventListener('click', () => { if (lbIdx < lbShots.length - 1) { lbIdx++; refreshLightbox(); } });
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  const lb = document.getElementById('shotLightbox') as HTMLElement;
+  if (lb.hidden) return;
+  if (e.key === 'Escape') { closeLightbox(); }
+  else if (e.key === 'ArrowLeft' && lbIdx > 0) { lbIdx--; refreshLightbox(); }
+  else if (e.key === 'ArrowRight' && lbIdx < lbShots.length - 1) { lbIdx++; refreshLightbox(); }
+});

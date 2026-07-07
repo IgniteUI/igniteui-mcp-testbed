@@ -297,9 +297,24 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
   letter-spacing:.1em; text-transform:uppercase; }
 .shot-strip { display:flex; flex-wrap:wrap; gap:.5rem; align-content:flex-start; margin-top:.5rem; }
 .shot { display:block; border:1px solid var(--line); border-radius:6px; overflow:hidden; text-decoration:none; }
+button.shot { background:none; padding:0; font:inherit; cursor:pointer; }
+button.shot:hover { border-color:var(--teal); }
 .shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; contain:paint; }
 .shot .cap { display:block; font-size:.66rem; color:var(--steel); padding:.2rem .35rem; text-align:left; max-width:150px; }
 .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
+/* Screenshot lightbox */
+#shotLightbox { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
+#shotLightbox[hidden] { display:none; }
+#shotLightboxBackdrop { position:absolute; inset:0; background:rgba(0,0,0,.88); cursor:pointer; }
+#shotLightboxContent { position:relative; z-index:1; display:flex; align-items:center; gap:.75rem; max-width:96vw; max-height:92vh; }
+#shotLightboxImgWrap { display:flex; flex-direction:column; align-items:center; gap:.4rem; max-width:88vw; max-height:88vh; }
+#shotLightboxImg { display:block; max-width:88vw; max-height:80vh; object-fit:contain; border-radius:6px; background:#0c1a18; box-shadow:0 8px 48px rgba(0,0,0,.7); }
+#shotLightboxMeta { display:flex; justify-content:space-between; align-items:center; width:100%; font-family:var(--mono); font-size:.73rem; color:var(--steel); padding:0 .2rem; gap:1rem; }
+#shotLightboxClose { position:fixed; top:1rem; right:1.2rem; z-index:2; background:rgba(7,33,31,.9); border:1px solid var(--line); color:var(--steel); font-size:1.2rem; line-height:1; border-radius:50%; width:2rem; height:2rem; cursor:pointer; display:grid; place-items:center; }
+#shotLightboxClose:hover { color:var(--ink); background:rgba(32,52,47,.95); border-color:var(--steel); }
+.shot-nav { flex:none; background:rgba(7,33,31,.85); border:1px solid var(--line); color:var(--steel); font-size:2rem; line-height:1; border-radius:6px; width:2.5rem; height:4.5rem; cursor:pointer; display:grid; place-items:center; transition:color .12s,background .12s; }
+.shot-nav:hover:not(:disabled) { color:var(--ink); background:rgba(26,169,158,.18); border-color:var(--teal); }
+.shot-nav:disabled { opacity:.25; cursor:not-allowed; }
 @media (max-width:980px){
   .detail { grid-template-columns:1fr; }
 }
