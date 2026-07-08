@@ -105,10 +105,21 @@ export async function runPipeline(
         isServerDef(parsed) ? { custom: parsed } :
         parsed;
       vscodeMcp.servers = vscodeMcp.servers || {};
+      // rawName is attacker/user-controlled (pasted JSON). Reject names that would
+      // shadow or pollute the object's prototype (e.g. "__proto__") before ever using
+      // them as a property key, and write via defineProperty so the assignment always
+      // creates an own data property rather than possibly invoking an inherited setter.
+      const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
       for (const [rawName, def] of Object.entries(customServers || {})) {
+        if (UNSAFE_KEYS.has(rawName)) {
+          emit('log', `warning: skipped custom MCP server with unsafe name "${rawName}"`);
+          continue;
+        }
         let key = rawName, n = 1;
-        while (vscodeMcp.servers[key]) key = `${rawName}-${n++}`;
-        vscodeMcp.servers[key] = def;
+        while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `${rawName}-${n++}`;
+        Object.defineProperty(vscodeMcp.servers, key, {
+          value: def, enumerable: true, writable: true, configurable: true,
+        });
         customNames.add(key);
       }
     } catch (e: any) {
