@@ -105,21 +105,16 @@ export async function runPipeline(
         isServerDef(parsed) ? { custom: parsed } :
         parsed;
       vscodeMcp.servers = vscodeMcp.servers || {};
-      // rawName is attacker/user-controlled (pasted JSON). Reject names that would
-      // shadow or pollute the object's prototype (e.g. "__proto__") before ever using
-      // them as a property key, and write via defineProperty so the assignment always
-      // creates an own data property rather than possibly invoking an inherited setter.
-      const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+      // rawName is attacker/user-controlled (pasted JSON). Per CodeQL's guidance for
+      // js/remote-property-injection, a fixed non-empty marker prefix is prepended
+      // before the untrusted string is ever used as an object property key. This
+      // guarantees the resulting key can never equal a dangerous name such as
+      // "__proto__" / "constructor" / "prototype", closing off prototype pollution
+      // regardless of what the pasted JSON contains.
       for (const [rawName, def] of Object.entries(customServers || {})) {
-        if (UNSAFE_KEYS.has(rawName)) {
-          emit('log', `warning: skipped custom MCP server with unsafe name "${rawName}"`);
-          continue;
-        }
-        let key = rawName, n = 1;
-        while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `${rawName}-${n++}`;
-        Object.defineProperty(vscodeMcp.servers, key, {
-          value: def, enumerable: true, writable: true, configurable: true,
-        });
+        let key = 'custom-' + rawName, n = 1;
+        while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
+        vscodeMcp.servers[key] = def;
         customNames.add(key);
       }
     } catch (e: any) {
