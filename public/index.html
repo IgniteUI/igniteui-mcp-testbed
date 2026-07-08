@@ -232,6 +232,7 @@
   <div class="history-head">
     <p class="eyebrow" style="margin:0">Run history</p>
     <igc-button type="button" id="historyRefresh" class="history-refresh" variant="outlined">Refresh</igc-button>
+    <igc-button type="button" id="historyExport" class="history-refresh" variant="outlined">Export HTML</igc-button>
     <span class="note" id="historyMeta" style="margin:0"></span>
   </div>
   <p class="note" id="historyEmpty">No runs recorded yet.</p>
@@ -276,20 +277,12 @@
      (main bootstraps view switching and imports wizard / matrix / history). -->
 <script type="module" src="/vendor/app.js"></script>
 
-<!-- Screenshot lightbox — shown by history.ts when a thumbnail is clicked -->
+<!-- Screenshot viewer — igc-carousel inside a fullscreen overlay, shown by history.ts -->
 <div id="shotLightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot viewer">
   <div id="shotLightboxBackdrop"></div>
   <div id="shotLightboxContent">
     <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
-    <button id="shotPrev" class="shot-nav" aria-label="Previous image" title="Previous (←)">&#x2039;</button>
-    <div id="shotLightboxImgWrap">
-      <img id="shotLightboxImg" src="" alt="" />
-      <div id="shotLightboxMeta">
-        <span id="shotLightboxCap"></span>
-        <span id="shotLightboxCounter"></span>
-      </div>
-    </div>
-    <button id="shotNext" class="shot-nav" aria-label="Next image" title="Next (→)">&#x203A;</button>
+    <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"></igc-carousel>
   </div>
 </div>
 </body>

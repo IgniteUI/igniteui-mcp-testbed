@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { Express } from 'express';
 import { ARTIFACT_DIR } from '../config.ts';
 import * as history from '../history.ts';
+import { buildExportHtml } from '../history-export.ts';
 import { rmrf } from '../proc/fsutil.ts';
 import * as session from '../session.ts';
 
@@ -11,6 +12,21 @@ export default function registerHistoryRoutes(app: Express): void {
   // Persisted run history (cross-container). List is newest-first; detail by id.
   app.get('/api/history', (_req, res) => {
     res.json({ ok: true, runs: history.list() });
+  });
+
+  // Export the full history (with screenshots embedded as base64) as a standalone HTML file.
+  // Registered before /:id so the path "export" isn't captured as a run id.
+  app.get('/api/history/export', async (_req, res) => {
+    try {
+      const runs = history.list();
+      const html = await buildExportHtml(runs);
+      const date = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ignite-ui-history-${date}.html"`);
+      res.send(html);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
   });
 
   app.get('/api/history/:id', (req, res) => {

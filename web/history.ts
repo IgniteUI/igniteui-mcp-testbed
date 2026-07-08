@@ -39,25 +39,40 @@ function openLightbox(okShots: Array<{file: string; route: string}>, idx: number
   lbShots = okShots;
   lbArt = art;
   lbIdx = Math.max(0, Math.min(idx, lbShots.length - 1));
-  refreshLightbox();
+
+  const carousel = document.getElementById('shotCarousel') as HTMLElement;
+  // Replace slides — replaceChildren clears in one shot then we append fresh ones.
+  carousel.replaceChildren();
+  for (let i = 0; i < okShots.length; i++) {
+    const s = okShots[i];
+    const slide = document.createElement('igc-carousel-slide');
+    const wrap = document.createElement('div');
+    wrap.className = 'shot-slide';
+    const img = document.createElement('img');
+    img.src = art(s.file);
+    img.alt = s.route;
+    const cap = document.createElement('div');
+    cap.className = 'shot-slide-cap';
+    cap.textContent = `${s.route}  ·  ${i + 1} / ${okShots.length}`;
+    wrap.append(img, cap);
+    slide.append(wrap);
+    carousel.append(slide);
+  }
+
   (document.getElementById('shotLightbox') as HTMLElement).hidden = false;
   document.body.style.overflow = 'hidden';
+
+  // Navigate to the clicked slide after web-component upgrade.
+  requestAnimationFrame(() => {
+    const c = carousel as any;
+    const slides = Array.from(carousel.querySelectorAll('igc-carousel-slide'));
+    if (typeof c.select === 'function' && slides[lbIdx]) c.select(slides[lbIdx]);
+  });
 }
 
 function closeLightbox() {
   (document.getElementById('shotLightbox') as HTMLElement).hidden = true;
   document.body.style.overflow = '';
-}
-
-function refreshLightbox() {
-  const s = lbShots[lbIdx];
-  if (!s) return;
-  (document.getElementById('shotLightboxImg') as HTMLImageElement).src = lbArt(s.file);
-  (document.getElementById('shotLightboxImg') as HTMLImageElement).alt = s.route;
-  document.getElementById('shotLightboxCap')!.textContent = s.route;
-  document.getElementById('shotLightboxCounter')!.textContent = `${lbIdx + 1} / ${lbShots.length}`;
-  (document.getElementById('shotPrev') as HTMLButtonElement).disabled = lbIdx === 0;
-  (document.getElementById('shotNext') as HTMLButtonElement).disabled = lbIdx === lbShots.length - 1;
 }
 
 const grid = () => $('#runsGrid') as any;
@@ -532,16 +547,25 @@ async function saveRating(id: string, rating: number) {
 }
 
 $('#historyRefresh').addEventListener('click', loadHistory);
+$('#historyExport').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/history/export';
+  a.download = '';
+  a.click();
+});
 $('#rerunConfirm').addEventListener('click', confirmRerun);
 $('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
 document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);
 document.getElementById('shotLightboxClose')!.addEventListener('click', closeLightbox);
-document.getElementById('shotPrev')!.addEventListener('click', () => { if (lbIdx > 0) { lbIdx--; refreshLightbox(); } });
-document.getElementById('shotNext')!.addEventListener('click', () => { if (lbIdx < lbShots.length - 1) { lbIdx++; refreshLightbox(); } });
+// Track carousel slide changes so lbIdx stays in sync with user navigation.
+document.getElementById('shotCarousel')!.addEventListener('igcSlideChanged', () => {
+  const c = document.getElementById('shotCarousel') as any;
+  if (typeof c.current === 'number') lbIdx = c.current;
+});
 document.addEventListener('keydown', (e: KeyboardEvent) => {
   const lb = document.getElementById('shotLightbox') as HTMLElement;
   if (lb.hidden) return;
   if (e.key === 'Escape') { closeLightbox(); }
-  else if (e.key === 'ArrowLeft' && lbIdx > 0) { lbIdx--; refreshLightbox(); }
-  else if (e.key === 'ArrowRight' && lbIdx < lbShots.length - 1) { lbIdx++; refreshLightbox(); }
+  else if (e.key === 'ArrowLeft') { (document.getElementById('shotCarousel') as any).prev?.(); }
+  else if (e.key === 'ArrowRight') { (document.getElementById('shotCarousel') as any).next?.(); }
 });
