@@ -90,6 +90,7 @@ igc-checkbox[hidden] { display:none; }
 .result.show { display:block; }
 .result igc-button { margin:.3rem .5rem .3rem 0; }
 .note { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.6rem; }
+.note.err { color:var(--red); }
 
 details.switcher { margin-top:1rem; font-size:.84rem; }
 details.switcher summary { cursor:pointer; color:var(--teal); display:flex; align-items:center; gap:.5rem; }
@@ -314,6 +315,7 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 #mxPlatforms igc-checkbox { margin:0; }
 .ta { width:100%; background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem;
       border:1px solid #0f3b37; border-radius:8px; padding:.6rem .7rem; margin-top:.5rem; resize:vertical; }
+.ta:disabled { opacity:.45; resize:none; cursor:not-allowed; }
 #mxGo { display:block; width:100%; margin-top:.6rem; }
 #mxGo::part(base) { width:100%; justify-content:center; padding-block:.65rem; }
 .mx-count { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.5rem; }

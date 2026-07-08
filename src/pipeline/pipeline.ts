@@ -89,7 +89,35 @@ export async function runPipeline(
   } else {
     emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
   }
-  // The user toggles MCPs by class (igniteui / theming / angular); `classify`
+
+  // User-supplied custom MCP server(s) (pasted JSON), merged in under their own
+  // fixed "custom" class (bypassing name-based classify) with their own toggle.
+  // Accepts a single server def, a map of named defs, or a whole mcp.json/.mcp.json
+  // (both "servers"/"mcpServers" wrappers are unwrapped).
+  const customNames = new Set<string>();
+  if (cfg.customMcp && cfg.customMcp.trim()) {
+    try {
+      const parsed = JSON.parse(cfg.customMcp);
+      const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
+      const customServers: Record<string, any> =
+        (parsed && parsed.servers && typeof parsed.servers === 'object') ? parsed.servers :
+        (parsed && parsed.mcpServers && typeof parsed.mcpServers === 'object') ? parsed.mcpServers :
+        isServerDef(parsed) ? { custom: parsed } :
+        parsed;
+      vscodeMcp.servers = vscodeMcp.servers || {};
+      for (const [rawName, def] of Object.entries(customServers || {})) {
+        let key = rawName, n = 1;
+        while (vscodeMcp.servers[key]) key = `${rawName}-${n++}`;
+        vscodeMcp.servers[key] = def;
+        customNames.add(key);
+      }
+    } catch (e: any) {
+      emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
+    }
+  }
+
+
+  // The user toggles MCPs by class (igniteui / theming / angular / custom); `classify`
   // (src/pipeline/mcp-classify.js) maps each server with explicit precedence so the
   // generic "ignite" match can't swallow the theming server. Only classes the caller
   // explicitly selected are enabled — everything else (incl. angular-cli and any
@@ -100,7 +128,7 @@ export async function runPipeline(
   const enabled = new Set<string>();
   const classByName: Record<string, string> = {};
   for (const [name, s] of Object.entries(servers)) {
-    const cls = classify(name, s);
+    const cls = customNames.has(name) ? 'custom' : classify(name, s);
     classByName[name] = cls;
     const on = selected.has(cls);
     if (on) enabled.add(name);

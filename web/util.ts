@@ -27,3 +27,19 @@ export function fmtDur(ms: number | null): string {
   const m = Math.floor(s / 60);
   return `${m}m ${Math.round(s - m * 60)}s`;
 }
+
+// Validate a pasted custom-MCP JSON blob. Returns an error message, or null when the
+// text is empty (nothing to validate) or valid JSON. Mirrors the shapes the backend
+// accepts (pipeline.ts) — this only checks it *parses*, not the server-def shape,
+// so it can't false-positive on a shape the backend still knows how to unwrap.
+export function validateMcpJson(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    JSON.parse(t);
+    return null;
+  } catch (e: any) {
+    return `Invalid JSON: ${e.message}`;
+  }
+}
+

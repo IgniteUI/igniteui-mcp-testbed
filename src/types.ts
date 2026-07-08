@@ -9,6 +9,7 @@ export interface RunConfig {
   projectType?: string;
   theme?: string;
   enabledMcps?: string[];
+  customMcp?: string;
   skills?: boolean;
   excludedSkills?: string[];
   overrideSkills?: boolean;
@@ -68,6 +69,7 @@ export interface StoredConfig {
   projectType: string;
   theme: string;
   enabledMcps: string[];
+  customMcp: boolean;
   skills: boolean;
   excludedSkills: string[];
   overrideSkills: boolean;

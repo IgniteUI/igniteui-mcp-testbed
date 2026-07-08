@@ -1,5 +1,5 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, fmt } from './util.ts';
+import { $, fmt, validateMcpJson } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 
 let framework = 'angular';
@@ -8,6 +8,26 @@ let sessionLive = false;
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
 export const isSessionLive = () => sessionLive;
+
+// Live-validate the pasted custom MCP JSON so a typo is caught immediately instead of
+// silently being dropped deep in the pipeline (see pipeline.ts's parse warning).
+function refreshCustomMcpErr(): boolean {
+  if (!$('#customMcpEnable').checked) { $('#customMcpErr').hidden = true; return true; }
+  const err = validateMcpJson($('#customMcp').value);
+  $('#customMcpErr').textContent = err || '';
+  $('#customMcpErr').hidden = !err;
+  return !err;
+}
+$('#customMcp').addEventListener('input', refreshCustomMcpErr);
+
+// The JSON field only matters once the checkbox is on — keep it disabled otherwise.
+function syncCustomMcpEnabled() {
+  const on = $('#customMcpEnable').checked;
+  $('#customMcp').disabled = !on;
+  refreshCustomMcpErr();
+}
+$('#customMcpEnable').addEventListener('igcChange', syncCustomMcpEnabled);
+syncCustomMcpEnabled();
 
 // framework button group: igcSelect.detail is the selected toggle's value.
 $('#fw').addEventListener('igcSelect', (e: any) => {
@@ -43,6 +63,7 @@ function collect() {
     projectType: $('#ptype').value.trim(),
     theme: $('#theme').value.trim(),
     enabledMcps: mcps,
+    customMcp: $('#customMcp').value.trim() || undefined,
     skills: $('#skills').checked,
     excludedSkills: excl,
     overrideSkills: $('#overrideSkills').checked,
@@ -77,6 +98,7 @@ refreshLocalSkills();
 
 $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();
+  if (!refreshCustomMcpErr()) { $('#customMcp').scrollIntoView({ block: 'center' }); return; }
   $('#go').disabled = true;
   $('#fw').disabled = true;
   sessionLive = false;

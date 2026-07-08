@@ -45,6 +45,12 @@
         <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
         <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
         <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        <igc-checkbox data-mcp="custom" id="customMcpEnable">Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
+        <textarea id="customMcp" class="ta" rows="4" disabled placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></textarea>
+        <p class="note err" id="customMcpErr" hidden></p>
+        <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
+        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.vscode/mcp.json</code> or
+        <code>.mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
       </fieldset>
 
       <fieldset>
@@ -186,6 +192,10 @@
         <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skill mode per row)</small></legend>
         <div id="mxVariants"></div>
         <button type="button" class="viewbtn" id="mxAddVariant" style="margin-top:.5rem">+ add variant</button>
+        <textarea id="mxCustomMcp" class="ta" rows="3" disabled placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></textarea>
+        <p class="note err" id="mxCustomMcpErr" hidden></p>
+        <p class="note">Custom MCP server def (shared by every entry, same shape as the interactive wizard's) —
+        only applied to variant rows with the <strong>Custom MCP</strong> checkbox ticked.</p>
         <p class="note" id="mxLocalSkills" hidden></p>
         <details class="help">
           <summary>Skill modes &amp; local skills</summary>

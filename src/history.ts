@@ -46,6 +46,7 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     projectType: c.projectType || '',
     theme: c.theme || '',
     enabledMcps: Array.isArray(c.enabledMcps) ? c.enabledMcps.slice() : [],
+    customMcp: !!(c.customMcp && c.customMcp.trim()),
     skills: !!c.skills,
     excludedSkills: Array.isArray(c.excludedSkills) ? c.excludedSkills.slice() : [],
     overrideSkills: !!c.overrideSkills,
