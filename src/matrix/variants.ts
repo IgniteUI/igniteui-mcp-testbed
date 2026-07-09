@@ -4,7 +4,10 @@ import type { Variant } from '../types.ts';
 
 // Known MCP classes a matrix variant may toggle (angular-cli is intentionally not
 // here — it's never enabled). Used to sanitize incoming variant definitions.
-export const MATRIX_MCP_CLASSES = ['igniteui', 'theming'];
+// 'custom' toggles the shared custom MCP JSON blob (see Fixed.customMcp) on/off per
+// variant — it isn't a discovered server class like the others, but reuses the same
+// per-variant mcps toggle list for a consistent, simple UI.
+export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'custom'];
 
 // The four skill modes a variant can express, from {skills, localSkills}:
 //   skills  local  → mode

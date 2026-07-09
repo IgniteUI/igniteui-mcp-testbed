@@ -43,6 +43,8 @@ legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
 body { --ig-size: 1; }
 form igc-input { display:block; margin-top:.7rem; }
 igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+.mcp-ta { display:block; width:100%; margin-top:.5rem; font-family:var(--mono); font-size:.8rem; }
+.mcp-ta::part(input) { font-family:var(--mono); font-size:.8rem; }
 
 /* framework toggles: smaller, non-uppercase text so all four fit */
 #fw { margin-bottom:.2rem; max-width:100%; }
@@ -90,6 +92,7 @@ igc-checkbox[hidden] { display:none; }
 .result.show { display:block; }
 .result igc-button { margin:.3rem .5rem .3rem 0; }
 .note { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.6rem; }
+.note.err { color:var(--red); }
 
 details.switcher { margin-top:1rem; font-size:.84rem; }
 details.switcher summary { cursor:pointer; color:var(--teal); display:flex; align-items:center; gap:.5rem; }
