@@ -1,10 +1,12 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, fmt } from './util.ts';
+import { $, esc, fmt } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
+import { getPacks, type ProviderPack } from './providers.ts';
 
 let framework = 'angular';      // active IgniteUI framework
-let agFramework = 'react-aggrid'; // active ag-grid framework
-let provider = 'igniteui';        // 'igniteui' | 'aggrid'
+let provider = 'igniteui';      // currently selected provider (name)
+// Per-pack selected framework id, so switching back to a pack retains the last choice.
+const extFramework = new Map<string, string>();
 let sessionLive = false;
 
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
@@ -12,29 +14,100 @@ let sessionLive = false;
 export const isSessionLive = () => sessionLive;
 
 // Returns the currently active framework key (depends on selected provider).
-const activeFramework = () => provider === 'aggrid' ? agFramework : framework;
+const activeFramework = () => provider === 'igniteui' ? framework : (extFramework.get(provider) || '');
 
 // Show/hide provider-specific sections and update visible state.
 function applyProvider(p: string) {
   provider = p;
   const ig = p === 'igniteui';
-  // Framework button groups
+  // IgniteUI-specific sections
   $('#fw').hidden = !ig;
-  $('#fwAg').hidden = ig;
-  // Project type + theme inputs (only apply to ig new)
   $('#ptype').hidden = !ig;
   $('#theme').hidden = !ig;
-  // MCP groups
   $('#mcpsIg').hidden = !ig;
-  $('#mcpsAg').hidden = ig;
-  // Skills labels
   $('#skillsLabelIg').hidden = !ig;
-  $('#skillsLabelAg').hidden = ig;
-  // Exclude input: no individual skill exclusion for ag-grid
   $('#excl').hidden = !ig;
-  // Angular CLI MCP is only shown for angular + igniteui
+  // External provider sections (one group per pack)
+  for (const pack of getPacks()) {
+    const fwGroup = document.getElementById(`fw-${pack.name}`);
+    const mcpGroup = document.getElementById(`mcps-${pack.name}`);
+    const isThis = p === pack.name;
+    if (fwGroup) fwGroup.hidden = !isThis;
+    if (mcpGroup) mcpGroup.hidden = !isThis;
+  }
+  // Skills label — update text for external provider
+  const extLabel = document.getElementById('skillsLabelExt');
+  if (extLabel) {
+    extLabel.hidden = ig;
+    if (!ig) {
+      const pack = getPacks().find((pk) => pk.name === p);
+      extLabel.textContent = pack?.configure?.skills?.label || 'Install skills';
+    }
+  }
+  // Angular CLI MCP: only shown for angular + igniteui
   $('#ngMcp').hidden = !(ig && framework === 'angular');
   refreshLocalSkills();
+}
+
+/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+export function applyExternalProviders(packs: ProviderPack[]): void {
+  // Update provider toggle buttons: remove old external buttons, add new ones.
+  const providerGroup = document.getElementById('provider') as any;
+  [...providerGroup.querySelectorAll('[data-external-pack]')].forEach((el: any) => el.remove());
+  for (const pack of packs) {
+    const btn = document.createElement('igc-toggle-button') as any;
+    btn.setAttribute('value', pack.name);
+    btn.setAttribute('data-external-pack', pack.name);
+    btn.textContent = pack.displayName;
+    providerGroup.appendChild(btn);
+  }
+
+  // Render external framework button groups into #externalFwGroups.
+  const fwContainer = document.getElementById('externalFwGroups')!;
+  fwContainer.innerHTML = '';
+  for (const pack of packs) {
+    const group = document.createElement('igc-button-group') as any;
+    group.id = `fw-${pack.name}`;
+    group.setAttribute('selection', 'single-required');
+    group.setAttribute('data-external-pack', pack.name);
+    group.hidden = true;
+    group.innerHTML = pack.frameworks.map((fw, i) =>
+      `<igc-toggle-button value="${esc(fw.id)}"${i === 0 ? ' selected' : ''}>${esc(fw.label)}</igc-toggle-button>`,
+    ).join('');
+    // Seed default selection for this pack if not already set.
+    if (!extFramework.has(pack.name) && pack.frameworks.length > 0) {
+      extFramework.set(pack.name, pack.frameworks[0].id);
+    }
+    group.addEventListener('igcSelect', (e: any) => {
+      extFramework.set(pack.name, e.detail || extFramework.get(pack.name) || '');
+      refreshLocalSkills();
+    });
+    fwContainer.appendChild(group);
+  }
+
+  // Render external MCP sections into #externalMcpGroups.
+  const mcpContainer = document.getElementById('externalMcpGroups')!;
+  mcpContainer.innerHTML = '';
+  for (const pack of packs) {
+    const div = document.createElement('div');
+    div.id = `mcps-${pack.name}`;
+    div.setAttribute('data-external-pack', pack.name);
+    div.hidden = true;
+    div.innerHTML = (pack.configure?.mcpServers || []).map((s) =>
+      `<igc-checkbox data-mcp="${esc(s.class)}" checked>${esc(s.label)}` +
+      (s.description ? `<small>${s.description}</small>` : '') +
+      `</igc-checkbox>`,
+    ).join('');
+    mcpContainer.appendChild(div);
+  }
+
+  // If the currently selected provider was removed, revert to igniteui.
+  if (provider !== 'igniteui' && !packs.some((p) => p.name === provider)) {
+    provider = 'igniteui';
+    const igBtn = (providerGroup as Element).querySelector<any>('[value="igniteui"]');
+    if (igBtn) igBtn.selected = true;
+  }
+  applyProvider(provider);
 }
 
 // Provider toggle
@@ -44,11 +117,6 @@ $('#provider').addEventListener('igcSelect', (e: any) => applyProvider(e.detail 
 $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
   $('#ngMcp').hidden = provider !== 'igniteui' || framework !== 'angular';
-  refreshLocalSkills();
-});
-// ag-grid framework button group
-$('#fwAg').addEventListener('igcSelect', (e: any) => {
-  agFramework = e.detail || agFramework;
   refreshLocalSkills();
 });
 // reflect the default selection (angular) into the Angular-MCP toggle's visibility.
@@ -70,12 +138,13 @@ function logLine(msg: string, cls?: string) {
 const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'overlay-skills', 'launch-app', 'launch-opencode'];
 
 function collect() {
-  // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-  // Scope to the interactive view so the matrix variant checkboxes aren't included.
-  // Only collect MCPs from the visible provider group (skip the hidden group's checkboxes).
-  const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')]
-    .filter((c) => c.checked && !c.closest('#mcpsIg')?.hidden && !c.closest('#mcpsAg')?.hidden)
-    .map((c: any) => c.dataset.mcp);
+  // Collect MCPs only from the currently-visible provider's container.
+  const mcpContainer = provider === 'igniteui'
+    ? document.getElementById('mcpsIg')
+    : document.getElementById(`mcps-${provider}`);
+  const mcps = mcpContainer
+    ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
+    : [];
   const excl = provider === 'igniteui'
     ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
     : [];
@@ -121,7 +190,6 @@ $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();
   $('#go').disabled = true;
   $('#fw').disabled = true;
-  $('#fwAg').disabled = true;
   sessionLive = false;
   $('#log').textContent = '';
   $('#result').classList.remove('show');
@@ -149,7 +217,6 @@ $('#form').addEventListener('submit', async (e: any) => {
   if (!sessionLive) {
     $('#go').disabled = false;
     $('#fw').disabled = false;
-    $('#fwAg').disabled = false;
   }
 });
 
@@ -185,7 +252,6 @@ function enterLiveState({ opencodePort, appPort, model }: { opencodePort: number
   $('#result').classList.add('show');
   $('#go').disabled = true;
   $('#fw').disabled = true;
-  $('#fwAg').disabled = true;
   loadUsage();
   startStatsStream();
   return ocUrl;
@@ -216,7 +282,6 @@ function applyRunState(st: any): number {
 function reattachRun(model: string) {
   $('#go').disabled = true;
   $('#fw').disabled = true;
-  $('#fwAg').disabled = true;
   sessionLive = false;
   let activeIdx = -1;
   const goLive = (r: any) => enterLiveState({ opencodePort: r.opencodePort, appPort: r.appPort, model });
@@ -226,7 +291,7 @@ function reattachRun(model: string) {
     if (ev.type === 'state') {
       activeIdx = applyRunState(ev.state);
       if (ev.state.phase === 'done' && ev.state.result) { es.close(); goLive(ev.state.result); }
-      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; $('#fwAg').disabled = false; }
+      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
       return;
     }
     if (ev.type === 'done') { if (activeIdx >= 0) setStep(ORDER[activeIdx], 'done'); es.close(); goLive(ev); $('#redirect').textContent = 'Session ready — opencode is running.'; return; }

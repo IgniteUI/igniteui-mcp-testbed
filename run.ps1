@@ -63,7 +63,11 @@ $Hist = Join-Path $PSScriptRoot 'sessions/history'
 # "use local skills" toggle / matrix variants). Created empty so the bind mount always
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 $Skills = Join-Path $PSScriptRoot 'local-skills'
-New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills | Out-Null
+# Provider packs (3rd-party library configs) persisted across containers.
+# Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
+# make additional libraries available in the wizard and matrix views.
+$Providers = Join-Path $PSScriptRoot 'providers-data'
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers | Out-Null
 
 Write-Host "Session artifacts -> $Out"
 Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
@@ -78,15 +82,16 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z")
   $userns = @('--userns=keep-id')
 }
 else {
   # Windows: give Podman a forward-slash path and drop the Linux-only :Z / --userns.
-  $outHost    = $Out    -replace '\\', '/'
-  $histHost   = $Hist   -replace '\\', '/'
-  $skillsHost = $Skills -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro")
+  $outHost       = $Out       -replace '\\', '/'
+  $histHost      = $Hist      -replace '\\', '/'
+  $skillsHost    = $Skills    -replace '\\', '/'
+  $providersHost = $Providers -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers")
   $userns = @()
 }
 

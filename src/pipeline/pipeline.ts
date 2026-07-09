@@ -20,6 +20,7 @@ import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencod
 import { classify } from './mcp-classify.ts';
 import { pruneSkills, overlaySkills } from './skills.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
+import { getPackForFramework } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
 
 export interface PipelineOpts {
@@ -90,26 +91,60 @@ export async function runPipeline(
       '--assistants', 'vscode',
     ], appDir, emit);
 
-  } else if (configureStrategy === 'aggrid') {
-    // ag-grid flow: write .vscode/mcp.json directly with the ag-mcp entry, then
-    // optionally install official ag-grid skills via `npx skills add ag-grid/skills`.
+  } else if (configureStrategy === 'external') {
+    // External provider flow: driven entirely by the ProviderPack definition.
+    // Write .vscode/mcp.json from the pack's MCP server list, then optionally
+    // clone + copy the pack's skills from GitHub. opencode.json is written here
+    // directly (no translate step needed — the pack supplies correct commands).
+    const pack = getPackForFramework(cfg.framework);
+    if (!pack) throw new Error(`no provider pack found for framework "${cfg.framework}" — is the pack loaded?`);
+
+    // Write .vscode/mcp.json (used as a record; opencode.json is written below).
     const vscodeMcpDir = path.join(appDir, '.vscode');
     fs.mkdirSync(vscodeMcpDir, { recursive: true });
-    const agMcpConfig = {
-      servers: {
-        'ag-mcp': { type: 'stdio', command: 'npx', args: ['ag-mcp'] },
-      },
-    };
-    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify(agMcpConfig, null, 2));
-    emit('log', 'wrote .vscode/mcp.json with ag-mcp entry');
+    const vsServers: Record<string, any> = {};
+    for (const s of pack.configure.mcpServers) {
+      vsServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
+    }
+    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify({ servers: vsServers }, null, 2));
+    emit('log', `wrote .vscode/mcp.json (${Object.keys(vsServers).length} server(s) from pack "${pack.name}")`);
 
+    // Optionally install skills.
     if (cfg.skills) {
-      // Ensure .claude/skills/ exists before the skills CLI tries to write into it.
       const skillsDir = path.join(appDir, '.claude', 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
-      emit('log', 'installing ag-grid skills (npx skills add ag-grid/skills)');
-      await runStep('npx', ['--yes', 'skills', 'add', 'ag-grid/skills'], appDir, emit);
+      const skillsConf = pack.configure.skills;
+      if (skillsConf?.github) {
+        // Clone the GitHub repo and copy every top-level skill folder.
+        const tmpDir = `/tmp/skills-clone-${Date.now()}`;
+        emit('log', `cloning skills from github.com/${skillsConf.github}`);
+        await runStep('git', ['clone', '--depth', '1', `https://github.com/${skillsConf.github}.git`, tmpDir], appDir, emit);
+        let count = 0;
+        for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+          fs.cpSync(path.join(tmpDir, entry.name), path.join(skillsDir, entry.name), { recursive: true });
+          count++;
+        }
+        emit('log', `installed ${count} skill(s) from github.com/${skillsConf.github}`);
+        await rmrf(tmpDir);
+      } else if (skillsConf?.installCommand?.length) {
+        const [cmd, ...args] = skillsConf.installCommand;
+        emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
+        await runStep(cmd, args, skillsDir, emit);
+      }
     }
+
+    // Write opencode.json directly — pack commands are already correct,
+    // so the translate step is not needed.
+    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
+    const mcpBlock: Record<string, any> = {};
+    for (const s of pack.configure.mcpServers) {
+      const on = selected.has(s.class);
+      emit('log', `mcp "${s.name}" → class "${s.class}" → ${on ? 'enabled' : 'disabled'}`);
+      if (on) mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+    }
+    writeOpencodeConfig(cfg, mcpBlock, appDir);
+    emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
 
   } else {
     // 'none': write a bare opencode.json now (no MCPs, no skills) and skip translate.
@@ -117,9 +152,10 @@ export async function runPipeline(
     emit('log', 'configure=none: wrote bare opencode.json, skipping translate');
   }
 
-  // 3. Translate .vscode/mcp.json -> opencode.json (with MCP toggles).
-  // Skipped for configure='none' (opencode.json already written above).
-  if (configureStrategy !== 'none') {
+  // 3. Translate .vscode/mcp.json -> opencode.json (IgniteUI only).
+  // The 'external' strategy already wrote opencode.json in step 2.
+  // The 'none' strategy wrote a bare opencode.json in step 2 as well.
+  if (configureStrategy === 'igniteui') {
     emit('step', { step: 'translate' });
     let vscodeMcp: any = {};
     const mcpPath = path.join(appDir, '.vscode', 'mcp.json');
@@ -251,14 +287,15 @@ export async function runPipeline(
   const disc = discoverRoutes(appDir, cfg.framework);
   emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
+  // Always shoot at minimum the root page — some frameworks (plain Vite, Angular
+  // with empty routes) have no discoverable routes but still serve a valid app.
+  const routesToShoot = disc.routes.length ? disc.routes : ['/'];
   let screenshots: HeadlessResult['screenshots'] = [];
-  if (disc.routes.length) {
-    try {
-      screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, disc.routes, artifactDir || '');
-      emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
-    } catch (e: any) {
-      emit('log', `warning: screenshots failed (${e.message})`);
-    }
+  try {
+    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '');
+    emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
+  } catch (e: any) {
+    emit('log', `warning: screenshots failed (${e.message})`);
   }
 
   // Free the ports before the next matrix entry reuses them.

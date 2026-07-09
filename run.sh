@@ -54,6 +54,11 @@ mkdir -p "$HIST"
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 SKILLS="$PWD/local-skills"
 mkdir -p "$SKILLS"
+# Provider packs (3rd-party library configs) persisted across containers.
+# Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
+# make additional libraries available in the wizard and matrix views.
+PROVIDERS="$PWD/providers-data"
+mkdir -p "$PROVIDERS"
 echo "Session artifacts -> $OUT"
 echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
 echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
@@ -73,12 +78,13 @@ case "$(uname -s)" in
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
     HIST_HOST="$(cygpath -m "$HIST")"
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro")
+    PROV_HOST="$(cygpath -m "$PROVIDERS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z")
     USERNS=("--userns=keep-id")
     ;;
 esac

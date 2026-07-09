@@ -2,13 +2,14 @@
 import { $, esc } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
+import { getPacks, type ProviderPack } from './providers.ts';
 
-let mxProvider = 'igniteui'; // 'igniteui' | 'aggrid'
+let mxProvider = 'igniteui'; // currently selected provider name
 
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
 // Read only from the currently-visible platform group so hidden entries are excluded.
 const mxPlatforms = () => {
-  const id = mxProvider === 'aggrid' ? '#mxPlatformsAg' : '#mxPlatformsIg';
+  const id = mxProvider === 'igniteui' ? '#mxPlatformsIg' : `#mxPlatforms-${mxProvider}`;
   return [...document.querySelectorAll<any>(`${id} igc-checkbox`)].filter((c) => c.checked).map((c) => c.value);
 };
 
@@ -30,20 +31,25 @@ function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } 
 // Variant builder: each row = which MCPs are enabled + a skill mode (the axis).
 // MCP checkboxes are provider-dependent.
 function variantMcpHtml(preset: { mcps: string[] }): string {
-  if (mxProvider === 'aggrid') {
-    const chk = preset.mcps.includes('aggrid') ? 'checked' : '';
-    return `<igc-checkbox data-mcp="aggrid" ${chk}>AG Grid MCP</igc-checkbox>`;
+  if (mxProvider === 'igniteui') {
+    const hasIg = preset.mcps.includes('igniteui') ? 'checked' : '';
+    const hasTh = preset.mcps.includes('theming') ? 'checked' : '';
+    return `<igc-checkbox data-mcp="igniteui" ${hasIg}>Ignite UI CLI MCP</igc-checkbox>
+      <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>`;
   }
-  const hasIg = preset.mcps.includes('igniteui') ? 'checked' : '';
-  const hasTh = preset.mcps.includes('theming') ? 'checked' : '';
-  return `<igc-checkbox data-mcp="igniteui" ${hasIg}>Ignite UI CLI MCP</igc-checkbox>
-    <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>`;
+  const pack = getPacks().find((p) => p.name === mxProvider);
+  if (!pack) return '';
+  return (pack.configure?.mcpServers || []).map((s) => {
+    const chk = preset.mcps.includes(s.class) ? 'checked' : '';
+    return `<igc-checkbox data-mcp="${esc(s.class)}" ${chk}>${esc(s.label)}</igc-checkbox>`;
+  }).join('\n');
 }
 
 function defaultVariantPreset(): { mcps: string[]; skills: boolean; localSkills: boolean } {
-  return mxProvider === 'aggrid'
-    ? { mcps: ['aggrid'], skills: true, localSkills: false }
-    : { mcps: ['igniteui', 'theming'], skills: true, localSkills: false };
+  if (mxProvider === 'igniteui') return { mcps: ['igniteui', 'theming'], skills: true, localSkills: false };
+  const pack = getPacks().find((p) => p.name === mxProvider);
+  if (!pack) return { mcps: [], skills: false, localSkills: false };
+  return { mcps: (pack.configure?.mcpServers || []).map((s) => s.class), skills: true, localSkills: false };
 }
 
 function addVariantRow(preset?: { mcps: string[]; skills: boolean; localSkills: boolean }) {
@@ -107,20 +113,61 @@ async function refreshMxLocalSkills() {
   }
   note.hidden = false;
 }
-document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox, #mxPlatformsAg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+// IgniteUI platforms change listener (static; external ones are wired in applyExternalProvidersMatrix).
+document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
 
 // Provider toggle: show/hide platform groups, clear + re-seed variant rows.
 function applyMxProvider(p: string) {
   mxProvider = p;
   $('#mxPlatformsIg').hidden = p !== 'igniteui';
-  $('#mxPlatformsAg').hidden = p !== 'aggrid';
+  for (const pack of getPacks()) {
+    const div = document.getElementById(`mxPlatforms-${pack.name}`);
+    if (div) div.hidden = p !== pack.name;
+  }
   $('#mxVariants').innerHTML = '';
-  addVariantRow(); // seed one default for the new provider
+  addVariantRow();
 }
 $('#mxProvider').addEventListener('igcSelect', (e: any) => applyMxProvider(e.detail || mxProvider));
 
 addVariantRow(); // seed one default variant
+
+/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+export function applyExternalProvidersMatrix(packs: ProviderPack[]): void {
+  // Update provider toggle buttons.
+  const providerGroup = document.getElementById('mxProvider') as any;
+  [...providerGroup.querySelectorAll('[data-external-pack]')].forEach((el: any) => el.remove());
+  for (const pack of packs) {
+    const btn = document.createElement('igc-toggle-button') as any;
+    btn.setAttribute('value', pack.name);
+    btn.setAttribute('data-external-pack', pack.name);
+    btn.textContent = pack.displayName;
+    providerGroup.appendChild(btn);
+  }
+
+  // Render external platform groups into #mxExternalPlatforms.
+  const platformContainer = document.getElementById('mxExternalPlatforms')!;
+  platformContainer.innerHTML = '';
+  for (const pack of packs) {
+    const div = document.createElement('div');
+    div.id = `mxPlatforms-${pack.name}`;
+    div.setAttribute('data-external-pack', pack.name);
+    div.hidden = true;
+    div.innerHTML = pack.frameworks.map((fw, i) =>
+      `<igc-checkbox value="${esc(fw.id)}"${i === 0 ? ' checked' : ''}>${esc(fw.label)}</igc-checkbox>`,
+    ).join('');
+    div.querySelectorAll<any>('igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+    platformContainer.appendChild(div);
+  }
+
+  // If the currently selected provider was removed, revert to igniteui.
+  if (mxProvider !== 'igniteui' && !packs.some((p) => p.name === mxProvider)) {
+    mxProvider = 'igniteui';
+    const igBtn = (providerGroup as Element).querySelector<any>('[value="igniteui"]');
+    if (igBtn) igBtn.selected = true;
+  }
+  applyMxProvider(mxProvider);
+}
 
 let mxES: EventSource | null = null;
 let mxTotal = 0, mxDone = 0;
@@ -133,8 +180,8 @@ export function setMatrixActive(active: boolean) {
   matrixActive = active;
   $('#wizBlocked').hidden = !active;
   $('#mxCancel').hidden = !active;
-  if (active) { $('#go').disabled = true; $('#fw').disabled = true; $('#fwAg').disabled = true; }
-  else if (!isSessionLive()) { $('#go').disabled = false; $('#fw').disabled = false; $('#fwAg').disabled = false; }
+  if (active) { $('#go').disabled = true; $('#fw').disabled = true; }
+  else if (!isSessionLive()) { $('#go').disabled = false; $('#fw').disabled = false; }
 }
 
 $('#mxCancel').addEventListener('click', async () => {

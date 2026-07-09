@@ -114,49 +114,13 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
   },
 };
 
-// ── ag-grid frameworks ────────────────────────────────────────────────────────
-// These use Vite (React) / Angular CLI as the scaffold, install ag-grid packages
-// directly, and configure AI tooling via the ag-grid MCP + skills pipeline
-// (configure: 'aggrid') rather than ig ai-config. The dev-server commands are
-// identical to their IgniteUI Vite/ng counterparts — same polling + strictPort rules.
-
-FRAMEWORKS['react-aggrid'] = {
-  scaffold: {
-    // `npm create vite` exits 0 even when scaffolding into an existing dir when
-    // --template is provided; cwdIsParent so it creates ./app/ like ig new does.
-    cmd: 'npm',
-    argv: ['create', 'vite@latest', '{{name}}', '--', '--template', 'react-ts'],
-    cwdIsParent: true,
-  },
-  install: ['ag-grid-community', 'ag-grid-react'],
-  configure: 'aggrid',
-  aiFramework: 'react',
-  dev: {
-    cmd: 'npm',
-    argv: ['run', 'dev', '--', '--host', '0.0.0.0', '--port', '{{port}}', '--strictPort'],
-    env: { CHOKIDAR_USEPOLLING: 'true', CHOKIDAR_INTERVAL: '1500' },
-  },
-};
-
-FRAMEWORKS['angular-aggrid'] = {
-  scaffold: {
-    // `ng new` is the Angular CLI scaffold, used here without ig-cli. The `--no-ssr`
-    // flag keeps the template as a SPA (avoids the SSR complexity for benchmarking).
-    cmd: 'npx',
-    argv: [
-      '--yes', '@angular/cli@latest', 'new', '{{name}}',
-      '--routing', '--style=scss', '--no-ssr', '--skip-git', '--skip-install',
-    ],
-    cwdIsParent: true,
-  },
-  install: ['ag-grid-community', 'ag-grid-angular'],
-  configure: 'aggrid',
-  aiFramework: 'angular',
-  dev: {
-    cmd: 'npx',
-    argv: ['ng', 'serve', '--host', '0.0.0.0', '--port', '{{port}}', '--poll', '1500'],
-  },
-};
+// ── External provider frameworks ──────────────────────────────────────────────
+// Additional frameworks (e.g. ag-grid) are loaded at runtime from ProviderPack
+// JSON files by src/provider-registry.ts.  They are inserted into FRAMEWORKS by
+// registerPack() and carry configure: 'external' so the pipeline drives them
+// through the pack's MCP server list and skills config instead of ig ai-config.
+// Do NOT add 3rd-party framework entries here — put them in a pack file under
+// 3rdPartyConfigurations/ and they will be picked up automatically.
 
 export function subst(argv: string[], vars: Record<string, string | number | undefined>): string[] {
   return argv.map((a) =>

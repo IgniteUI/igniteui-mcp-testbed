@@ -16,6 +16,11 @@ export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
 // skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
 export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 
+// Provider packs loaded at runtime — persists across container restarts via the
+// /providers bind mount (see run.sh / run.ps1).  Each .json file in this dir is
+// one ProviderPack describing how to scaffold and configure a 3rd-party library.
+export const PROVIDERS_DIR = process.env.PROVIDERS_DIR || '/providers';
+
 // Matrix-mode tunables.
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
