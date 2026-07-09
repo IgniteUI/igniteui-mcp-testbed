@@ -28,10 +28,11 @@ export interface ExportRun extends Omit<HistoryRecord, 'screenshots'> {
   screenshotData: ExportShot[];
 }
 
-// Build the complete self-contained export HTML string.
-export async function buildExportHtml(runs: HistoryRecord[]): Promise<string> {
-  // Embed screenshots as base64 data-URLs in parallel.
-  const exportRuns: ExportRun[] = await Promise.all(
+// Enrich each history record with base64-encoded screenshot data-URLs.
+// The original `screenshots` array (server file paths) is replaced with
+// `screenshotData` (route + ok flag + data-URL) so the result is fully portable.
+export async function buildExportRuns(runs: HistoryRecord[]): Promise<ExportRun[]> {
+  return Promise.all(
     runs.map(async (r) => {
       const screenshotData: ExportShot[] = await Promise.all(
         (r.screenshots || []).map(async (s) => ({
@@ -44,6 +45,11 @@ export async function buildExportHtml(runs: HistoryRecord[]): Promise<string> {
       return { ...rest, screenshotData } as ExportRun;
     }),
   );
+}
+
+// Build the complete self-contained export HTML string.
+export async function buildExportHtml(runs: HistoryRecord[]): Promise<string> {
+  const exportRuns = await buildExportRuns(runs);
 
   const exportedAt = new Date().toISOString();
   // JSON.stringify with minimal escaping; the string is embedded inside a <script> block.

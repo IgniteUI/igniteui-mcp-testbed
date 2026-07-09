@@ -553,6 +553,12 @@ $('#historyExport').addEventListener('click', () => {
   a.download = '';
   a.click();
 });
+$('#historyExportJson').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/history/export.json';
+  a.download = '';
+  a.click();
+});
 $('#rerunConfirm').addEventListener('click', confirmRerun);
 $('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
 document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);

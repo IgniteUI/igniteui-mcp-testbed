@@ -4,7 +4,7 @@ import * as path from 'path';
 import type { Express } from 'express';
 import { ARTIFACT_DIR } from '../config.ts';
 import * as history from '../history.ts';
-import { buildExportHtml } from '../history-export.ts';
+import { buildExportHtml, buildExportRuns } from '../history-export.ts';
 import { rmrf } from '../proc/fsutil.ts';
 import * as session from '../session.ts';
 
@@ -24,6 +24,21 @@ export default function registerHistoryRoutes(app: Express): void {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="ignite-ui-history-${date}.html"`);
       res.send(html);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Export the same enriched run data as plain JSON (screenshots as base64 data-URLs).
+  // Useful for feeding into third-party analysis tools.
+  app.get('/api/history/export.json', async (_req, res) => {
+    try {
+      const runs = history.list();
+      const exportRuns = await buildExportRuns(runs);
+      const date = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ignite-ui-history-${date}.json"`);
+      res.json(exportRuns);
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
     }
