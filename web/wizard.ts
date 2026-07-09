@@ -18,12 +18,12 @@ function refreshCustomMcpErr(): boolean {
   $('#customMcpErr').hidden = !err;
   return !err;
 }
-$('#customMcp').addEventListener('input', refreshCustomMcpErr);
+$('#customMcp').addEventListener('igcInput', refreshCustomMcpErr);
 
-// The JSON field only matters once the checkbox is on — keep it disabled otherwise.
+// The JSON field only matters once the checkbox is on — hide it otherwise.
 function syncCustomMcpEnabled() {
   const on = $('#customMcpEnable').checked;
-  $('#customMcp').disabled = !on;
+  $('#customMcp').hidden = !on;
   refreshCustomMcpErr();
 }
 $('#customMcpEnable').addEventListener('igcChange', syncCustomMcpEnabled);

@@ -5,19 +5,19 @@ import { isSessionLive } from './wizard.ts';
 
 // Live-validate the shared custom MCP JSON (mirrors the wizard's own field).
 function refreshMxCustomMcpErr(): boolean {
-  if ($('#mxCustomMcp').disabled) { $('#mxCustomMcpErr').hidden = true; return true; }
+  if ($('#mxCustomMcp').hidden) { $('#mxCustomMcpErr').hidden = true; return true; }
   const err = validateMcpJson($('#mxCustomMcp').value);
   $('#mxCustomMcpErr').textContent = err || '';
   $('#mxCustomMcpErr').hidden = !err;
   return !err;
 }
-$('#mxCustomMcp').addEventListener('input', refreshMxCustomMcpErr);
+$('#mxCustomMcp').addEventListener('igcInput', refreshMxCustomMcpErr);
 
 // The shared JSON field only matters while at least one variant row has its Custom
-// MCP checkbox on — keep it disabled otherwise.
+// MCP checkbox on — keep it hidden otherwise.
 function syncMxCustomMcpEnabled() {
   const on = [...document.querySelectorAll<any>('#mxVariants igc-checkbox[data-mcp="custom"]')].some((c) => c.checked);
-  $('#mxCustomMcp').disabled = !on;
+  $('#mxCustomMcp').hidden = !on;
   refreshMxCustomMcpErr();
 }
 

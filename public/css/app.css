@@ -43,6 +43,8 @@ legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
 body { --ig-size: 1; }
 form igc-input { display:block; margin-top:.7rem; }
 igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+.mcp-ta { display:block; width:100%; margin-top:.5rem; font-family:var(--mono); font-size:.8rem; }
+.mcp-ta::part(input) { font-family:var(--mono); font-size:.8rem; }
 
 /* framework toggles: smaller, non-uppercase text so all four fit */
 #fw { margin-bottom:.2rem; max-width:100%; }
@@ -315,7 +317,6 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 #mxPlatforms igc-checkbox { margin:0; }
 .ta { width:100%; background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem;
       border:1px solid #0f3b37; border-radius:8px; padding:.6rem .7rem; margin-top:.5rem; resize:vertical; }
-.ta:disabled { opacity:.45; resize:none; cursor:not-allowed; }
 #mxGo { display:block; width:100%; margin-top:.6rem; }
 #mxGo::part(base) { width:100%; justify-content:center; padding-block:.65rem; }
 .mx-count { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.5rem; }
