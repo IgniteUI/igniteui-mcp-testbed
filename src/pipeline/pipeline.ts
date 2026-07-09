@@ -249,14 +249,17 @@ export async function runPipeline(
   const disc = discoverRoutes(appDir, cfg.framework);
   emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
+  // When no routes are discovered (e.g. a plain Vite React app with no router, or an
+  // Angular app whose routes array is still empty after scaffold), fall back to '/' —
+  // the app IS serving and at minimum the root page should be captured.
+  const routesToShoot = disc.routes.length ? disc.routes : ['/'];
+  if (!disc.routes.length) emit('log', 'no routes discovered — falling back to root (/)');
   let screenshots: HeadlessResult['screenshots'] = [];
-  if (disc.routes.length) {
-    try {
-      screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, disc.routes, artifactDir || '');
-      emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
-    } catch (e: any) {
-      emit('log', `warning: screenshots failed (${e.message})`);
-    }
+  try {
+    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '');
+    emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
+  } catch (e: any) {
+    emit('log', `warning: screenshots failed (${e.message})`);
   }
 
   // Free the ports before the next matrix entry reuses them.

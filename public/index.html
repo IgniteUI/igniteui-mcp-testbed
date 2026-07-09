@@ -242,6 +242,8 @@
   <div class="history-head">
     <p class="eyebrow" style="margin:0">Run history</p>
     <igc-button type="button" id="historyRefresh" class="history-refresh" variant="outlined">Refresh</igc-button>
+    <igc-button type="button" id="historyExport" class="history-refresh" variant="outlined">Export HTML</igc-button>
+    <igc-button type="button" id="historyExportJson" class="history-refresh" variant="outlined">Export JSON</igc-button>
     <span class="note" id="historyMeta" style="margin:0"></span>
   </div>
   <p class="note" id="historyEmpty">No runs recorded yet.</p>
@@ -285,5 +287,14 @@
 <!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
      (main bootstraps view switching and imports wizard / matrix / history). -->
 <script type="module" src="/vendor/app.js"></script>
+
+<!-- Screenshot viewer — igc-carousel inside a fullscreen overlay, shown by history.ts -->
+<div id="shotLightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+  <div id="shotLightboxBackdrop"></div>
+  <div id="shotLightboxContent">
+    <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+    <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"></igc-carousel>
+  </div>
+</div>
 </body>
 </html>

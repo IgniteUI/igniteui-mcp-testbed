@@ -30,6 +30,51 @@ let templatesBound = false;
 let defaultSortApplied = false;
 let gridDataBound = false;
 
+// Lightbox state
+let lbShots: Array<{file: string; route: string}> = [];
+let lbArt: (f: string) => string = () => '';
+let lbIdx = 0;
+
+function openLightbox(okShots: Array<{file: string; route: string}>, idx: number, art: (f: string) => string) {
+  lbShots = okShots;
+  lbArt = art;
+  lbIdx = Math.max(0, Math.min(idx, lbShots.length - 1));
+
+  const carousel = document.getElementById('shotCarousel') as HTMLElement;
+  // Replace slides — replaceChildren clears in one shot then we append fresh ones.
+  carousel.replaceChildren();
+  for (let i = 0; i < okShots.length; i++) {
+    const s = okShots[i];
+    const slide = document.createElement('igc-carousel-slide');
+    const wrap = document.createElement('div');
+    wrap.className = 'shot-slide';
+    const img = document.createElement('img');
+    img.src = art(s.file);
+    img.alt = s.route;
+    const cap = document.createElement('div');
+    cap.className = 'shot-slide-cap';
+    cap.textContent = `${s.route}  ·  ${i + 1} / ${okShots.length}`;
+    wrap.append(img, cap);
+    slide.append(wrap);
+    carousel.append(slide);
+  }
+
+  (document.getElementById('shotLightbox') as HTMLElement).hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  // Navigate to the clicked slide after web-component upgrade.
+  requestAnimationFrame(() => {
+    const c = carousel as any;
+    const slides = Array.from(carousel.querySelectorAll('igc-carousel-slide'));
+    if (typeof c.select === 'function' && slides[lbIdx]) c.select(slides[lbIdx]);
+  });
+}
+
+function closeLightbox() {
+  (document.getElementById('shotLightbox') as HTMLElement).hidden = true;
+  document.body.style.overflow = '';
+}
+
 const grid = () => $('#runsGrid') as any;
 const html = (...args: any[]) => {
   const tag = (window as any).igniteuiHtml;
@@ -144,6 +189,7 @@ function bindGridTemplates() {
     const perModel = st && st.perModel ? Object.entries(st.perModel) : [];
     const shots = r.screenshots || [];
     const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
+    const okShots = shots.filter((s: any) => s.ok);
 
     return html`
       <div class="detail" data-run-id=${row.id}>
@@ -177,11 +223,12 @@ function bindGridTemplates() {
             <details class="shot-details">
               <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
               <div class="shot-strip">${shots.map((s: any) => s.ok
-                ? html`<a class="shot" href="${art(s.file)}" target="_blank" rel="noopener">
+                ? html`<button type="button" class="shot" title="View ${s.route}"
+                    @click=${() => openLightbox(okShots, okShots.indexOf(s), art)}>
                     <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
                       src="${art(s.file)}" alt="${s.route}">
                     <span class="cap">${s.route}</span>
-                  </a>`
+                  </button>`
                 : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
               </div>
             </details>
@@ -500,5 +547,31 @@ async function saveRating(id: string, rating: number) {
 }
 
 $('#historyRefresh').addEventListener('click', loadHistory);
+$('#historyExport').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/history/export';
+  a.download = '';
+  a.click();
+});
+$('#historyExportJson').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/history/export.json';
+  a.download = '';
+  a.click();
+});
 $('#rerunConfirm').addEventListener('click', confirmRerun);
 $('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
+document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);
+document.getElementById('shotLightboxClose')!.addEventListener('click', closeLightbox);
+// Track carousel slide changes so lbIdx stays in sync with user navigation.
+document.getElementById('shotCarousel')!.addEventListener('igcSlideChanged', () => {
+  const c = document.getElementById('shotCarousel') as any;
+  if (typeof c.current === 'number') lbIdx = c.current;
+});
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  const lb = document.getElementById('shotLightbox') as HTMLElement;
+  if (lb.hidden) return;
+  if (e.key === 'Escape') { closeLightbox(); }
+  else if (e.key === 'ArrowLeft') { (document.getElementById('shotCarousel') as any).prev?.(); }
+  else if (e.key === 'ArrowRight') { (document.getElementById('shotCarousel') as any).next?.(); }
+});
