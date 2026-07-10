@@ -2,10 +2,11 @@
 
 import type { Variant } from '../types.ts';
 
-// Known MCP classes for the built-in IgniteUI provider. External providers add
-// their own classes via ProviderPack.configure.mcpServers[].class.
+// Known MCP classes for the built-in IgniteUI provider. External providers add their own
+// classes via ProviderPack.configure.mcpServers[].class — those flow through parseVariants
+// without a whitelist check. 'custom' toggles the shared custom MCP JSON blob.
 // No longer used for strict whitelist validation — kept for reference.
-export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'aggrid'];
+export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'custom'];
 
 // The four skill modes a variant can express, from {skills, localSkills}:
 //   skills  local  → mode
@@ -38,7 +39,7 @@ export function entryDirName(i: number, platform: string, v: Variant): string {
 
 // Normalize + dedupe the variant rows from the request.
 // Accepts any non-empty string as an MCP class so external provider classes
-// (e.g. 'aggrid') flow through without a whitelist check.
+// flow through without a whitelist check.
 export function parseVariants(raw: any): Variant[] {
   const seen = new Set<string>();
   const out: Variant[] = [];

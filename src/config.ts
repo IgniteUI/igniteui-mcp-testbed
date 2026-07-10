@@ -40,8 +40,6 @@ process.env.XDG_DATA_HOME = process.env.XDG_DATA_HOME || path.join(WORK, '.openc
 export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = {
   igniteui: ['ig', 'mcp'],
   theming: ['igniteui-theming-mcp'],
-  // ag-grid MCP server — installed globally in the image as `ag-mcp`.
-  aggrid: ['ag-mcp'],
 };
 
 // Which env var carries the API key, keyed by the provider prefix of the model id.

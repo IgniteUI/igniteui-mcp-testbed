@@ -1,5 +1,5 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, esc, fmt } from './util.ts';
+import { $, esc, fmt, validateMcpJson } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
 
@@ -12,6 +12,26 @@ let sessionLive = false;
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
 export const isSessionLive = () => sessionLive;
+
+// Live-validate the pasted custom MCP JSON so a typo is caught immediately instead of
+// silently being dropped deep in the pipeline (see pipeline.ts's parse warning).
+function refreshCustomMcpErr(): boolean {
+  if (!$('#customMcpEnable').checked) { $('#customMcpErr').hidden = true; return true; }
+  const err = validateMcpJson($('#customMcp').value);
+  $('#customMcpErr').textContent = err || '';
+  $('#customMcpErr').hidden = !err;
+  return !err;
+}
+$('#customMcp').addEventListener('igcInput', refreshCustomMcpErr);
+
+// The JSON field only matters once the checkbox is on — hide it otherwise.
+function syncCustomMcpEnabled() {
+  const on = $('#customMcpEnable').checked;
+  $('#customMcp').hidden = !on;
+  refreshCustomMcpErr();
+}
+$('#customMcpEnable').addEventListener('igcChange', syncCustomMcpEnabled);
+syncCustomMcpEnabled();
 
 // Returns the currently active framework key (depends on selected provider).
 const activeFramework = () => provider === 'igniteui' ? framework : (extFramework.get(provider) || '');
@@ -113,7 +133,6 @@ export function applyExternalProviders(packs: ProviderPack[]): void {
 // Provider toggle
 $('#provider').addEventListener('igcSelect', (e: any) => applyProvider(e.detail || provider));
 
-// IgniteUI framework button group
 $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
   $('#ngMcp').hidden = provider !== 'igniteui' || framework !== 'angular';
@@ -145,6 +164,8 @@ function collect() {
   const mcps = mcpContainer
     ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
     : [];
+  // Custom MCP is provider-agnostic — collect it independently of the provider container.
+  if ($('#customMcpEnable').checked) mcps.push('custom');
   const excl = provider === 'igniteui'
     ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
     : [];
@@ -153,6 +174,7 @@ function collect() {
     projectType: provider === 'igniteui' ? $('#ptype').value.trim() : '',
     theme: provider === 'igniteui' ? $('#theme').value.trim() : '',
     enabledMcps: mcps,
+    customMcp: $('#customMcp').value.trim() || undefined,
     skills: $('#skills').checked,
     excludedSkills: excl,
     overrideSkills: $('#overrideSkills').checked,
@@ -188,6 +210,7 @@ refreshLocalSkills();
 
 $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();
+  if (!refreshCustomMcpErr()) { $('#customMcp').scrollIntoView({ block: 'center' }); return; }
   $('#go').disabled = true;
   $('#fw').disabled = true;
   sessionLive = false;

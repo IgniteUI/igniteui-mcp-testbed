@@ -43,6 +43,8 @@ legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
 body { --ig-size: 1; }
 form igc-input { display:block; margin-top:.7rem; }
 igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+.mcp-ta { display:block; width:100%; margin-top:.5rem; font-family:var(--mono); font-size:.8rem; }
+.mcp-ta::part(input) { font-family:var(--mono); font-size:.8rem; }
 
 /* framework toggles: smaller, non-uppercase text so all four fit */
 #fw { margin-bottom:.2rem; max-width:100%; }
@@ -90,6 +92,7 @@ igc-checkbox[hidden] { display:none; }
 .result.show { display:block; }
 .result igc-button { margin:.3rem .5rem .3rem 0; }
 .note { font-family:var(--mono); font-size:.74rem; color:var(--steel); margin-top:.6rem; }
+.note.err { color:var(--red); }
 
 details.switcher { margin-top:1rem; font-size:.84rem; }
 details.switcher summary { cursor:pointer; color:var(--teal); display:flex; align-items:center; gap:.5rem; }
@@ -297,9 +300,23 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
   letter-spacing:.1em; text-transform:uppercase; }
 .shot-strip { display:flex; flex-wrap:wrap; gap:.5rem; align-content:flex-start; margin-top:.5rem; }
 .shot { display:block; border:1px solid var(--line); border-radius:6px; overflow:hidden; text-decoration:none; }
+button.shot { background:none; padding:0; font:inherit; cursor:pointer; }
+button.shot:hover { border-color:var(--teal); }
 .shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; contain:paint; }
 .shot .cap { display:block; font-size:.66rem; color:var(--steel); padding:.2rem .35rem; text-align:left; max-width:150px; }
 .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
+/* Screenshot carousel overlay */
+#shotLightbox { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
+#shotLightbox[hidden] { display:none; }
+#shotLightboxBackdrop { position:absolute; inset:0; background:rgba(0,0,0,.90); cursor:pointer; }
+#shotLightboxContent { position:relative; z-index:1; width:min(96vw,1280px); display:flex; flex-direction:column; align-items:stretch; }
+#shotLightboxClose { position:fixed; top:1rem; right:1.2rem; z-index:10000; background:rgba(7,33,31,.9); border:1px solid var(--line); color:var(--steel); font-size:1.2rem; line-height:1; border-radius:50%; width:2rem; height:2rem; cursor:pointer; display:grid; place-items:center; }
+#shotLightboxClose:hover { color:var(--ink); background:rgba(32,52,47,.95); border-color:var(--steel); }
+/* igc-carousel inside the overlay: let slides define height, make nav arrows visible over dark bg */
+igc-carousel.shot-carousel { display:block; width:100%; --ig-carousel-button-background:rgba(7,33,31,.8); --ig-carousel-button-hover-background:rgba(26,169,158,.2); --ig-carousel-button-border-color:var(--line); --ig-carousel-button-color:var(--steel); --ig-carousel-button-hover-color:var(--ink); }
+.shot-slide { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:.5rem 4rem; user-select:none; }
+.shot-slide img { max-height:76vh; max-width:82vw; width:auto; height:auto; object-fit:contain; border-radius:6px; background:#0c1a18; box-shadow:0 6px 32px rgba(0,0,0,.6); display:block; }
+.shot-slide-cap { font-family:var(--mono); font-size:.73rem; color:var(--steel); text-align:center; }
 @media (max-width:980px){
   .detail { grid-template-columns:1fr; }
 }

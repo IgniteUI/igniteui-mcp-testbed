@@ -18,6 +18,7 @@ interface Fixed {
   model: string;
   apiKey?: string;
   customBaseUrl?: string;
+  customMcp?: string;
 }
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
@@ -41,6 +42,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     projectType: fixed.projectType || '',
     theme: fixed.theme || '',
     enabledMcps: c.variant.mcps,
+    customMcp: fixed.customMcp,
     skills: !!c.variant.skills,
     excludedSkills: [],
     overrideSkills: !!c.variant.localSkills,

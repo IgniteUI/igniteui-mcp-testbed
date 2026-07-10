@@ -64,6 +64,13 @@
         </div>
         <!-- External provider MCPs (appended by JS per pack) -->
         <div id="externalMcpGroups"></div>
+        <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
+        <igc-checkbox data-mcp="custom" id="customMcpEnable">Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
+        <igc-textarea id="customMcp" class="mcp-ta" rows="4" hidden placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
+        <p class="note err" id="customMcpErr" hidden></p>
+        <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
+        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.vscode/mcp.json</code> or
+        <code>.mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
       </fieldset>
 
       <fieldset>
@@ -220,6 +227,10 @@
         <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skill mode per row)</small></legend>
         <div id="mxVariants"></div>
         <button type="button" class="viewbtn" id="mxAddVariant" style="margin-top:.5rem">+ add variant</button>
+        <igc-textarea id="mxCustomMcp" class="mcp-ta" rows="3" hidden placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
+        <p class="note err" id="mxCustomMcpErr" hidden></p>
+        <p class="note">Custom MCP server def (shared by every entry, same shape as the interactive wizard's) —
+        only applied to variant rows with the <strong>Custom MCP</strong> checkbox ticked.</p>
         <p class="note" id="mxLocalSkills" hidden></p>
         <details class="help">
           <summary>Skill modes &amp; local skills</summary>
@@ -266,6 +277,8 @@
   <div class="history-head">
     <p class="eyebrow" style="margin:0">Run history</p>
     <igc-button type="button" id="historyRefresh" class="history-refresh" variant="outlined">Refresh</igc-button>
+    <igc-button type="button" id="historyExport" class="history-refresh" variant="outlined">Export HTML</igc-button>
+    <igc-button type="button" id="historyExportJson" class="history-refresh" variant="outlined">Export JSON</igc-button>
     <span class="note" id="historyMeta" style="margin:0"></span>
   </div>
   <p class="note" id="historyEmpty">No runs recorded yet.</p>
@@ -331,5 +344,14 @@
 <!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
      (main bootstraps view switching and imports wizard / matrix / history). -->
 <script type="module" src="/vendor/app.js"></script>
+
+<!-- Screenshot viewer — igc-carousel inside a fullscreen overlay, shown by history.ts -->
+<div id="shotLightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+  <div id="shotLightboxBackdrop"></div>
+  <div id="shotLightboxContent">
+    <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+    <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"></igc-carousel>
+  </div>
+</div>
 </body>
 </html>

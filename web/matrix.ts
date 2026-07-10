@@ -1,10 +1,28 @@
 // Matrix view: platform × variant grid of one-shot headless runs, streamed live.
-import { $, esc } from './util.ts';
+import { $, esc, validateMcpJson } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
 
 let mxProvider = 'igniteui'; // currently selected provider name
+
+// Live-validate the shared custom MCP JSON (mirrors the wizard's own field).
+function refreshMxCustomMcpErr(): boolean {
+  if ($('#mxCustomMcp').hidden) { $('#mxCustomMcpErr').hidden = true; return true; }
+  const err = validateMcpJson($('#mxCustomMcp').value);
+  $('#mxCustomMcpErr').textContent = err || '';
+  $('#mxCustomMcpErr').hidden = !err;
+  return !err;
+}
+$('#mxCustomMcp').addEventListener('igcInput', refreshMxCustomMcpErr);
+
+// The shared JSON field only matters while at least one variant row has its Custom
+// MCP checkbox on — keep it hidden otherwise.
+function syncMxCustomMcpEnabled() {
+  const on = [...document.querySelectorAll<any>('#mxVariants igc-checkbox[data-mcp="custom"]')].some((c) => c.checked);
+  $('#mxCustomMcp').hidden = !on;
+  refreshMxCustomMcpErr();
+}
 
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
 // Read only from the currently-visible platform group so hidden entries are excluded.
@@ -31,18 +49,21 @@ function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } 
 // Variant builder: each row = which MCPs are enabled + a skill mode (the axis).
 // MCP checkboxes are provider-dependent.
 function variantMcpHtml(preset: { mcps: string[] }): string {
+  const hasCust = preset.mcps.includes('custom') ? 'checked' : '';
+  const customCb = `<igc-checkbox data-mcp="custom" ${hasCust}>Custom MCP</igc-checkbox>`;
   if (mxProvider === 'igniteui') {
     const hasIg = preset.mcps.includes('igniteui') ? 'checked' : '';
     const hasTh = preset.mcps.includes('theming') ? 'checked' : '';
     return `<igc-checkbox data-mcp="igniteui" ${hasIg}>Ignite UI CLI MCP</igc-checkbox>
-      <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>`;
+      <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>
+      ${customCb}`;
   }
   const pack = getPacks().find((p) => p.name === mxProvider);
-  if (!pack) return '';
+  if (!pack) return customCb;
   return (pack.configure?.mcpServers || []).map((s) => {
     const chk = preset.mcps.includes(s.class) ? 'checked' : '';
     return `<igc-checkbox data-mcp="${esc(s.class)}" ${chk}>${esc(s.label)}</igc-checkbox>`;
-  }).join('\n');
+  }).join('\n') + '\n      ' + customCb;
 }
 
 function defaultVariantPreset(): { mcps: string[]; skills: boolean; localSkills: boolean } {
@@ -91,6 +112,7 @@ export function updateMxCount() {
   const p = mxPlatforms().length, v = mxVariants().length;
   $('#mxCount').textContent = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
   refreshMxLocalSkills();
+  syncMxCustomMcpEnabled();
 }
 
 // Show which local skills are available per selected platform — but only when a variant
@@ -293,12 +315,13 @@ export async function checkMatrixLock() {
 
 $('#mxForm').addEventListener('submit', async (e: any) => {
   e.preventDefault();
+  if (!refreshMxCustomMcpErr()) { $('#mxCustomMcp').scrollIntoView({ block: 'center' }); return; }
   const platforms = mxPlatforms(), variants = mxVariants();
   const model = $('#mxModel').value.trim(), prompt = $('#mxPrompt').value.trim();
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
-  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value };
+  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined };
   $('#mxGo').disabled = true;
   try {
     const j = await postJSON('/api/matrix', body);

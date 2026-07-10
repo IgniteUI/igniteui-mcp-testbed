@@ -143,6 +143,36 @@ export async function runPipeline(
       emit('log', `mcp "${s.name}" → class "${s.class}" → ${on ? 'enabled' : 'disabled'}`);
       if (on) mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
     }
+    // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
+    // when the 'custom' class is enabled. Uses translate() to convert from vscode MCP
+    // format to opencode format.
+    if (selected.has('custom') && cfg.customMcp?.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.customMcp);
+        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
+        const rawCustom: Record<string, any> =
+          parsed?.servers && typeof parsed.servers === 'object' ? parsed.servers :
+          parsed?.mcpServers && typeof parsed.mcpServers === 'object' ? parsed.mcpServers :
+          isServerDef(parsed) ? { custom: parsed } :
+          parsed;
+        const tempVscodeMcp: any = { servers: {} };
+        for (const [rawName, def] of Object.entries(rawCustom || {})) {
+          let key = 'custom-' + rawName, n = 1;
+          while (Object.prototype.hasOwnProperty.call(tempVscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
+          tempVscodeMcp.servers[key] = def;
+        }
+        const { mcp: customMcp } = translate(tempVscodeMcp, {
+          enabled: new Set(Object.keys(tempVscodeMcp.servers)),
+          workspaceFolder: appDir,
+        });
+        for (const [name, def] of Object.entries(customMcp)) {
+          mcpBlock[name] = def;
+          emit('log', `mcp "${name}" → custom → enabled`);
+        }
+      } catch (e: any) {
+        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
+      }
+    }
     writeOpencodeConfig(cfg, mcpBlock, appDir);
     emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
 
@@ -164,7 +194,35 @@ export async function runPipeline(
     } else {
       emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
     }
-    // The user toggles MCPs by class (igniteui / theming / angular / aggrid); `classify`
+    // Inject user-supplied custom MCP servers (pasted JSON) into vscodeMcp before classify/translate.
+    const customNames = new Set<string>();
+    if (cfg.customMcp && cfg.customMcp.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.customMcp);
+        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
+        const customServers: Record<string, any> =
+          (parsed && parsed.servers && typeof parsed.servers === 'object') ? parsed.servers :
+          (parsed && parsed.mcpServers && typeof parsed.mcpServers === 'object') ? parsed.mcpServers :
+          isServerDef(parsed) ? { custom: parsed } :
+          parsed;
+        vscodeMcp.servers = vscodeMcp.servers || {};
+        // rawName is attacker/user-controlled (pasted JSON). Per CodeQL's guidance for
+        // js/remote-property-injection, a fixed non-empty marker prefix is prepended
+        // before the untrusted string is ever used as an object property key. This
+        // guarantees the resulting key can never equal a dangerous name such as
+        // "__proto__" / "constructor" / "prototype", closing off prototype pollution
+        // regardless of what the pasted JSON contains.
+        for (const [rawName, def] of Object.entries(customServers || {})) {
+          let key = 'custom-' + rawName, n = 1;
+          while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
+          vscodeMcp.servers[key] = def;
+          customNames.add(key);
+        }
+      } catch (e: any) {
+        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
+      }
+    }
+    // The user toggles MCPs by class (igniteui / theming / angular / custom); `classify`
     // maps each server with explicit precedence. Only classes the caller explicitly
     // selected are enabled — everything else stays off, so a variant with no MCPs is a
     // true clean baseline.
@@ -173,7 +231,7 @@ export async function runPipeline(
     const enabled = new Set<string>();
     const classByName: Record<string, string> = {};
     for (const [name, s] of Object.entries(servers)) {
-      const cls = classify(name, s);
+      const cls = customNames.has(name) ? 'custom' : classify(name, s);
       classByName[name] = cls;
       const on = selected.has(cls);
       if (on) enabled.add(name);
@@ -182,7 +240,7 @@ export async function runPipeline(
     const { mcp, warnings } = translate(vscodeMcp, { enabled, workspaceFolder: appDir });
     warnings.forEach((w) => emit('log', `warning: ${w}`));
     // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
-    // (ig mcp, igniteui-theming-mcp, ag-mcp).
+    // (ig mcp, igniteui-theming-mcp).
     for (const [name, def] of Object.entries(mcp)) {
       const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
       if (fix && def.type === 'local') {
@@ -287,9 +345,11 @@ export async function runPipeline(
   const disc = discoverRoutes(appDir, cfg.framework);
   emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
-  // Always shoot at minimum the root page — some frameworks (plain Vite, Angular
-  // with empty routes) have no discoverable routes but still serve a valid app.
+  // When no routes are discovered (e.g. a plain Vite React app with no router, or an
+  // Angular app whose routes array is still empty after scaffold), fall back to '/' —
+  // the app IS serving and at minimum the root page should be captured.
   const routesToShoot = disc.routes.length ? disc.routes : ['/'];
+  if (!disc.routes.length) emit('log', 'no routes discovered — falling back to root (/)');
   let screenshots: HeadlessResult['screenshots'] = [];
   try {
     screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '');

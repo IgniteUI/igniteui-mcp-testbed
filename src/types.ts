@@ -9,6 +9,7 @@ export interface RunConfig {
   projectType?: string;
   theme?: string;
   enabledMcps?: string[];
+  customMcp?: string;
   skills?: boolean;
   excludedSkills?: string[];
   overrideSkills?: boolean;
@@ -53,7 +54,7 @@ export interface ProviderPackMcpServer {
   name: string;
   command: string;
   args?: string[];
-  /** Logical class used for enable/disable toggling (e.g. 'aggrid'). */
+  /** Logical class used for enable/disable toggling (e.g. 'igniteui'). */
   class: string;
   label: string;
   description?: string;
@@ -126,6 +127,7 @@ export interface StoredConfig {
   projectType: string;
   theme: string;
   enabledMcps: string[];
+  customMcp: boolean;
   skills: boolean;
   excludedSkills: string[];
   overrideSkills: boolean;
