@@ -62,7 +62,13 @@ export function renderProviderList(packs: ProviderPack[]): void {
       ${pack.description ? `<p class="note" style="margin:.2rem 0 0">${esc(pack.description)}</p>` : ''}
       <p class="note" style="margin:.25rem 0 0">Frameworks: ${esc(fwLabels)} · MCPs: ${esc(mcpLabels || '—')}</p>
       ${pack.containerDeps?.npmGlobal?.length
-        ? `<p class="note warn" style="margin:.25rem 0 0">⚠ Container deps: <code>${esc(pack.containerDeps.npmGlobal.join(', '))}</code> — must be installed globally in the image.</p>`
+        ? `<p class="note warn" style="margin:.25rem 0 0">
+            ⚠ <strong>Container rebuild required.</strong> This pack needs global npm packages that must be baked into the image.<br>
+            1. Open <code>Containerfile</code> and find the <em>3rd-party provider dependencies</em> section.<br>
+            2. Uncomment the <code>RUN</code> line and replace the placeholder with:<br>
+            &nbsp;&nbsp;&nbsp;<code>npm install -g ${esc(pack.containerDeps.npmGlobal.join(' '))}</code><br>
+            3. Rebuild: <code>.\\run.ps1 build</code> (Windows) · <code>./run.sh build</code> (Linux/macOS)
+           </p>`
         : ''}`;
     el.querySelector('.del-pack')!.addEventListener('click', () => removePack(pack.name, pack.displayName));
     list.appendChild(el);
