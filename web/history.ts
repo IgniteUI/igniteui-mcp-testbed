@@ -40,12 +40,17 @@ function openLightbox(okShots: Array<{file: string; route: string}>, idx: number
   lbArt = art;
   lbIdx = Math.max(0, Math.min(idx, lbShots.length - 1));
 
-  const carousel = document.getElementById('shotCarousel') as HTMLElement;
-  // Replace slides — replaceChildren clears in one shot then we append fresh ones.
-  carousel.replaceChildren();
+  // Create a fresh igc-carousel each time. Re-using the same element with
+  // replaceChildren() leaves the component's internal slide cache stale, which
+  // breaks prev/next navigation. A fresh element always starts with clean state.
+  const carousel = document.createElement('igc-carousel') as any;
+  carousel.id = 'shotCarousel';
+  carousel.className = 'shot-carousel';
+  carousel.setAttribute('loop', 'false');
+
   for (let i = 0; i < okShots.length; i++) {
     const s = okShots[i];
-    const slide = document.createElement('igc-carousel-slide');
+    const slide = document.createElement('igc-carousel-slide') as any;
     const wrap = document.createElement('div');
     wrap.className = 'shot-slide';
     const img = document.createElement('img');
@@ -56,17 +61,30 @@ function openLightbox(okShots: Array<{file: string; route: string}>, idx: number
     cap.textContent = `${s.route}  ·  ${i + 1} / ${okShots.length}`;
     wrap.append(img, cap);
     slide.append(wrap);
+    if (i === lbIdx) slide.active = true;
     carousel.append(slide);
   }
+
+  // Attach igcSlideChanged to this fresh element so lbIdx stays in sync.
+  carousel.addEventListener('igcSlideChanged', () => {
+    if (typeof carousel.current === 'number') lbIdx = carousel.current;
+  });
+
+  // Swap the placeholder (or the previous carousel) with the fresh one.
+  const old = document.getElementById('shotCarousel');
+  if (old) old.replaceWith(carousel);
+  else document.getElementById('shotLightboxContent')!.append(carousel);
 
   (document.getElementById('shotLightbox') as HTMLElement).hidden = false;
   document.body.style.overflow = 'hidden';
 
-  // Navigate to the clicked slide after web-component upgrade.
-  requestAnimationFrame(() => {
-    const c = carousel as any;
+  // Navigate to the correct starting slide after the component has connected
+  // to the DOM and processed its slotchange microtasks.
+  Promise.resolve().then(() => {
     const slides = Array.from(carousel.querySelectorAll('igc-carousel-slide'));
-    if (typeof c.select === 'function' && slides[lbIdx]) c.select(slides[lbIdx]);
+    if (typeof carousel.select === 'function' && slides[lbIdx]) {
+      carousel.select(slides[lbIdx] as Element);
+    }
   });
 }
 
@@ -563,11 +581,7 @@ $('#rerunConfirm').addEventListener('click', confirmRerun);
 $('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
 document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);
 document.getElementById('shotLightboxClose')!.addEventListener('click', closeLightbox);
-// Track carousel slide changes so lbIdx stays in sync with user navigation.
-document.getElementById('shotCarousel')!.addEventListener('igcSlideChanged', () => {
-  const c = document.getElementById('shotCarousel') as any;
-  if (typeof c.current === 'number') lbIdx = c.current;
-});
+// igcSlideChanged is attached per-carousel inside openLightbox() (fresh element each open).
 document.addEventListener('keydown', (e: KeyboardEvent) => {
   const lb = document.getElementById('shotLightbox') as HTMLElement;
   if (lb.hidden) return;

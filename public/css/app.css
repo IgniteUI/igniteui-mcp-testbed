@@ -313,10 +313,10 @@ button.shot:hover { border-color:var(--teal); }
 #shotLightboxClose { position:fixed; top:1rem; right:1.2rem; z-index:10000; background:rgba(7,33,31,.9); border:1px solid var(--line); color:var(--steel); font-size:1.2rem; line-height:1; border-radius:50%; width:2rem; height:2rem; cursor:pointer; display:grid; place-items:center; }
 #shotLightboxClose:hover { color:var(--ink); background:rgba(32,52,47,.95); border-color:var(--steel); }
 /* igc-carousel inside the overlay: let slides define height, make nav arrows visible over dark bg */
-igc-carousel.shot-carousel { display:block; width:100%; --ig-carousel-button-background:rgba(7,33,31,.8); --ig-carousel-button-hover-background:rgba(26,169,158,.2); --ig-carousel-button-border-color:var(--line); --ig-carousel-button-color:var(--steel); --ig-carousel-button-hover-color:var(--ink); }
-.shot-slide { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:.5rem 4rem; user-select:none; }
+igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carousel-button-background:rgba(7,33,31,.8); --ig-carousel-button-hover-background:rgba(26,169,158,.2); --ig-carousel-button-border-color:var(--line); --ig-carousel-button-color:var(--steel); --ig-carousel-button-hover-color:var(--ink); }
+.shot-slide { display:flex; flex-direction:column; align-items:flex-start; gap:.4rem; padding:.5rem 4rem; user-select:none; }
 .shot-slide img { max-height:76vh; max-width:82vw; width:auto; height:auto; object-fit:contain; border-radius:6px; background:#0c1a18; box-shadow:0 6px 32px rgba(0,0,0,.6); display:block; }
-.shot-slide-cap { font-family:var(--mono); font-size:.73rem; color:var(--steel); text-align:center; }
+.shot-slide-cap { font-family:var(--mono); font-size:.73rem; color:var(--steel); text-align:left; }
 @media (max-width:980px){
   .detail { grid-template-columns:1fr; }
 }
