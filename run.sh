@@ -54,6 +54,11 @@ mkdir -p "$HIST"
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 SKILLS="$PWD/local-skills"
 mkdir -p "$SKILLS"
+# Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
+# collects tests/shared + tests/<framework> and runs them against the freshly-built app
+# in the post-generation verify stage. Created so the mount always resolves.
+TESTS="$PWD/tests"
+mkdir -p "$TESTS"
 echo "Session artifacts -> $OUT"
 echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
 echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
@@ -73,12 +78,13 @@ case "$(uname -s)" in
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
     HIST_HOST="$(cygpath -m "$HIST")"
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro")
+    TESTS_HOST="$(cygpath -m "$TESTS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${TESTS_HOST}:/tests:ro")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${TESTS}:/tests:ro,Z")
     USERNS=("--userns=keep-id")
     ;;
 esac

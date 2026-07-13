@@ -215,8 +215,11 @@ function handleMx(m: any) {
     else if (m.type === 'entry-done') {
       mxStatus(rec, m.status);
       mxDone += 1; mxOverall();
-      if (m.status === 'success') rec.step.textContent = `${(m.screenshots || []).filter((s: any) => s.ok).length} shots`;
-      else if (m.status === 'build-error') rec.step.textContent = 'build failed';
+      if (m.status === 'success') {
+        const shots = `${(m.screenshots || []).filter((s: any) => s.ok).length} shots`;
+        rec.step.textContent = m.tests && m.tests.ran ? `${shots} · ${m.tests.passed}/${m.tests.total} tests` : shots;
+      } else if (m.status === 'build-error') rec.step.textContent = 'build failed';
+      else if (m.status === 'test-failed') rec.step.textContent = m.tests ? `tests failed (${m.tests.failed}/${m.tests.total})` : 'tests failed';
     }
   }
 }

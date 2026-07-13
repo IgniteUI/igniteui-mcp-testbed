@@ -19,6 +19,7 @@ import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
 import { pruneSkills, overlaySkills } from './skills.ts';
+import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
 
@@ -262,10 +263,21 @@ export async function runPipeline(
     emit('log', `warning: screenshots failed (${e.message})`);
   }
 
+  // 7b. Verify: run the injected Playwright tests against the serving app (app must
+  // still be up, so this runs before the watchers are killed). Skipped (null) when no
+  // test files are present; a failing suite flips the entry to 'test-failed' upstream.
+  let tests: HeadlessResult['tests'] = null;
+  emit('step', { step: 'verify' });
+  try {
+    tests = await runVerification({ framework: cfg.framework, appDir, artifactDir, emit, onChild });
+  } catch (e: any) {
+    emit('log', `warning: verification stage failed (${e.message})`);
+  }
+
   // Free the ports before the next matrix entry reuses them.
   await killWatcher('app'); await killWatcher('opencode');
   // Prune heavy regenerable dirs from the kept entry (screenshots already saved).
   emit('step', { step: 'cleanup' });
   await cleanupAppDir(appDir, emit);
-  return { appPort: APP_PORT, stats: entryStats, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true };
+  return { appPort: APP_PORT, stats: entryStats, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true, tests };
 }

@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot } from './types.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult } from './types.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -112,6 +112,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     stages: { completed: [], timings: {} },
     stats: null,
     screenshots: [], // [{ route, file, ok, error }]
+    tests: null, // Playwright verification outcome (headless/matrix only)
     logs: [], // streamed pipeline log lines, retained for post-run inspection
   };
   writeAtomic(id, record);
@@ -125,10 +126,11 @@ export interface FinishOpts {
   timings?: Record<string, number>;
   finishedAt?: string;
   screenshots?: Screenshot[];
+  tests?: TestResult | null;
   logs?: string[];
 }
 
-export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, logs }: FinishOpts = {}): HistoryRecord | null {
+export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, tests, logs }: FinishOpts = {}): HistoryRecord | null {
   return update(id, (r) => {
     r.status = status || 'success';
     r.error = error || null;
@@ -137,6 +139,7 @@ export function finish(id: string, { status, error, completed, timings, finished
     if (Array.isArray(completed)) r.stages.completed = completed.slice();
     if (timings) r.stages.timings = timings;
     if (Array.isArray(screenshots)) r.screenshots = screenshots;
+    if (tests !== undefined) r.tests = tests;
     if (Array.isArray(logs)) r.logs = logs.slice();
   });
 }

@@ -16,6 +16,13 @@ export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
 // skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
 export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 
+// Host-supplied Playwright verification tests, bind-mounted in read-only (see
+// run.sh/run.ps1). A run collects TESTS_DIR/shared plus TESTS_DIR/<framework> and runs
+// them against the freshly-built app in the post-generation `verify` stage (headless
+// mode only). Timeout caps the whole runner; 0/absent tests => the stage is skipped.
+export const TESTS_DIR = process.env.TESTS_DIR || '/tests';
+export const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS || 5 * 60 * 1000);
+
 // Matrix-mode tunables.
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
