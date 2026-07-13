@@ -95,7 +95,76 @@ function fromRouteConfigs(appDir: string): RouteDiscovery {
   return res;
 }
 
+// Fallback for React / WebComponents apps whose AI-generated code dropped the URL
+// router and switched to state-based navigation (React useState + conditional render).
+// Looks for:
+//  1. String-literal union type aliases whose name contains Page/Screen/View/Route
+//     e.g.  type Page = 'dashboard' | 'projects' | 'analytics'
+//  2. Component files directly under src/pages/ or src/app/pages/ as a secondary hint.
+// Returns routes like '/dashboard', '/projects' — used for screenshot filenames —
+// plus stateNav:true so the capture layer knows to click nav items, not URL-navigate.
+function fromReactStateNav(appDir: string): RouteDiscovery {
+  const src = fs.existsSync(path.join(appDir, 'src')) ? path.join(appDir, 'src') : appDir;
+  const tsFiles = walk(src, (n) => /\.(t|j)sx?$/.test(n), []);
+
+  // Regex to find type aliases whose identifier contains Page/Screen/View/Route.
+  // Captures the right-hand side (the union of string literals).
+  const PAGE_TYPE_RE = /type\s+\w*(?:Page|Screen|View|Route)\w*\s*=\s*((?:\s*['"\`][a-zA-Z0-9_/-]+['"\`]\s*\|?\s*)+)/g;
+  const LITERAL_RE = /['"\`]([a-zA-Z0-9_/-]+)['"\`]/g;
+
+  const seen = new Set<string>();
+  const raw: string[] = [];
+
+  for (const f of tsFiles) {
+    let text: string;
+    try { text = fs.readFileSync(f, 'utf8'); } catch (_) { continue; }
+    PAGE_TYPE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = PAGE_TYPE_RE.exec(text)) !== null) {
+      LITERAL_RE.lastIndex = 0;
+      let lit: RegExpExecArray | null;
+      while ((lit = LITERAL_RE.exec(m[1])) !== null) {
+        const name = lit[1];
+        if (!seen.has(name)) { seen.add(name); raw.push(name); }
+      }
+    }
+  }
+
+  // Secondary heuristic: component files in src/pages/ (or src/app/pages/).
+  const PAGES_DIRS = [
+    path.join(src, 'pages'),
+    path.join(src, 'app', 'pages'),
+  ];
+  const IGNORE_NAMES = new Set(['index', 'not-found', '404', 'error', 'notfound']);
+  for (const pagesDir of PAGES_DIRS) {
+    if (!fs.existsSync(pagesDir)) continue;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(pagesDir, { withFileTypes: true }); } catch (_) { continue; }
+    for (const e of entries) {
+      if (e.isDirectory() || !/\.(t|j)sx?$/.test(e.name)) continue;
+      const name = e.name.replace(/\.(t|j)sx?$/, '').toLowerCase();
+      if (IGNORE_NAMES.has(name) || seen.has(name)) continue;
+      seen.add(name);
+      raw.push(name);
+    }
+  }
+
+  const res = collect(raw);
+  res.sources = tsFiles;
+  res.stateNav = true;
+  return res;
+}
+
 // discoverRoutes(appDir, framework) -> { routes: string[], skipped: [{path,reason}], sources: string[] }
 export function discoverRoutes(appDir: string, framework: string): RouteDiscovery {
-  return framework === 'blazor' ? fromRazor(appDir) : fromRouteConfigs(appDir);
+  if (framework === 'blazor') return fromRazor(appDir);
+  const res = fromRouteConfigs(appDir);
+  // If a React / WC app has no URL routes (AI agent replaced the router with state-
+  // based navigation), fall back to state-navigation discovery so we can still
+  // capture per-page screenshots via sidebar clicks.
+  if (res.routes.length === 0 && (framework.startsWith('react') || framework.startsWith('webcomponents'))) {
+    const stateRes = fromReactStateNav(appDir);
+    if (stateRes.routes.length > 0) return stateRes;
+  }
+  return res;
 }

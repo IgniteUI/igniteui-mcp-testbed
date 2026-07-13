@@ -7,6 +7,9 @@ import type { Screenshot } from '../types.ts';
 export interface ShootOpts {
   settle?: number;
   navTimeout?: number;
+  /** When true, routes are logical page names (state-based nav). Navigate to root
+   * once, then click the matching sidebar/nav item for each page. */
+  stateNav?: boolean;
 }
 
 // Turn a route path into a safe PNG filename. "/" -> "index", "/auth/profile" -> "auth_profile".
@@ -35,19 +38,62 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
-    for (const route of routes) {
-      const file = sanitize(route) + '.png';
-      const dest = path.join(outDir, file);
+
+    if (opts.stateNav) {
+      // State-based navigation (React useState): the app has no URL routes.
+      // Navigate to the root once, then click sidebar/nav items by text to switch pages.
       try {
-        await page.goto(joinUrl(baseUrl, route), { waitUntil: 'networkidle', timeout: opts.navTimeout || 30000 });
-        // Let custom elements upgrade and charts paint before capturing.
+        await page.goto(joinUrl(baseUrl, '/'), { waitUntil: 'networkidle', timeout: opts.navTimeout || 30000 });
         await page.waitForTimeout(settle);
-        await page.screenshot({ path: dest, fullPage: true });
-        results.push({ route, file, ok: true });
       } catch (err: any) {
-        results.push({ route, file, ok: false, error: err.message });
+        // If root fails, every entry will fail — record and bail.
+        for (const route of routes) {
+          results.push({ route, file: sanitize(route) + '.png', ok: false, error: err.message });
+        }
+        await ctx.close();
+        return results;
+      }
+      // Nav containers to search inside (widening selector so custom sidebar class names work).
+      const NAV_SEL = 'nav, aside, [role="navigation"], [class*="sidebar"], [class*="side-bar"], [class*="nav"]';
+      for (const route of routes) {
+        const file = sanitize(route) + '.png';
+        const dest = path.join(outDir, file);
+        // Derive a human display name: '/dashboard' → 'Dashboard'.
+        const pageName = route.replace(/^\//, '');
+        const displayName = pageName.charAt(0).toUpperCase() + pageName.slice(1);
+        try {
+          // Look for a nav item whose visible text matches the page name (case-insensitive).
+          const navArea = page.locator(NAV_SEL);
+          const item = navArea.getByText(displayName, { exact: false }).first();
+          if (await item.count() === 0) {
+            await page.screenshot({ path: dest, fullPage: true });
+            results.push({ route, file, ok: false, error: `nav item not found: ${displayName}` });
+            continue;
+          }
+          await item.click();
+          await page.waitForTimeout(settle);
+          await page.screenshot({ path: dest, fullPage: true });
+          results.push({ route, file, ok: true });
+        } catch (err: any) {
+          results.push({ route, file, ok: false, error: err.message });
+        }
+      }
+    } else {
+      for (const route of routes) {
+        const file = sanitize(route) + '.png';
+        const dest = path.join(outDir, file);
+        try {
+          await page.goto(joinUrl(baseUrl, route), { waitUntil: 'networkidle', timeout: opts.navTimeout || 30000 });
+          // Let custom elements upgrade and charts paint before capturing.
+          await page.waitForTimeout(settle);
+          await page.screenshot({ path: dest, fullPage: true });
+          results.push({ route, file, ok: true });
+        } catch (err: any) {
+          results.push({ route, file, ok: false, error: err.message });
+        }
       }
     }
+
     await ctx.close();
   } finally {
     await browser.close();
