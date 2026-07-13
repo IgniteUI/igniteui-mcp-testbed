@@ -81,6 +81,7 @@ export function updateMxCount() {
   const p = mxPlatforms().length, v = mxVariants().length;
   $('#mxCount').textContent = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
   refreshMxLocalSkills();
+  refreshMxTestFiles();
   syncMxCustomMcpEnabled();
 }
 
@@ -101,6 +102,27 @@ async function refreshMxLocalSkills() {
     note.textContent = `Local skills — ${lines.join(' · ')}`;
   } catch {
     note.textContent = 'Could not list local skills.';
+  }
+  note.hidden = false;
+}
+
+// Show the Playwright specs the verify stage would run: the shared set (every platform)
+// plus each selected platform's overlay. Informational; the Skip tests toggle opts out.
+async function refreshMxTestFiles() {
+  const note = $('#mxTestsList');
+  const platforms = mxPlatforms();
+  if (!platforms.length) { note.hidden = true; return; }
+  try {
+    const j = await getJSON('/api/tests');
+    const shared = j.shared || [];
+    const map = j.byPlatform || {};
+    const lines = platforms.map((p) => `${p}: ${(map[p] || []).length ? map[p].join(', ') : '—'}`);
+    const total = shared.length + platforms.reduce((n, p) => n + (map[p] || []).length, 0);
+    note.textContent = total
+      ? `Tests — shared: ${shared.length ? shared.join(', ') : '—'} · ${lines.join(' · ')}`
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/<platform>/.`;
+  } catch {
+    note.textContent = 'Could not list test files.';
   }
   note.hidden = false;
 }
@@ -241,7 +263,7 @@ $('#mxForm').addEventListener('submit', async (e: any) => {
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
-  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined };
+  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined, skipTests: $('#mxSkipTests').checked };
   $('#mxGo').disabled = true;
   try {
     const j = await postJSON('/api/matrix', body);

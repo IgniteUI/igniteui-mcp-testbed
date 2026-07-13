@@ -234,6 +234,7 @@ function bindGridTemplates() {
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          <dt>Verification</dt><dd>${c.skipTests ? 'skipped' : 'on'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : html``}
         </dl></div>
@@ -552,6 +553,7 @@ async function confirmRerun() {
     prompt: r.prompt,
     apiKey,
     customBaseUrl: c.customBaseUrl || undefined,
+    skipTests: !!c.skipTests,
   };
   try {
     const j = await postJSON('/api/matrix', body);

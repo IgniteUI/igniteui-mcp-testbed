@@ -34,6 +34,7 @@ $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
   $('#ngMcp').hidden = framework !== 'angular';
   refreshLocalSkills();
+  refreshTestFiles();
 });
 // reflect the default selection (angular) into the Angular-MCP toggle's visibility.
 $('#ngMcp').hidden = framework !== 'angular';
@@ -68,6 +69,7 @@ function collect() {
     excludedSkills: excl,
     overrideSkills: $('#overrideSkills').checked,
     localSkillsOnly: $('#overrideSkills').checked && $('#localSkillsOnly').checked,
+    skipTests: $('#skipTests').checked,
     model: $('#model').value.trim(),
     apiKey: $('#key').value,
     customBaseUrl: $('#base').value.trim() || undefined,
@@ -95,6 +97,30 @@ async function refreshLocalSkills() {
 }
 $('#overrideSkills').addEventListener('igcChange', refreshLocalSkills);
 refreshLocalSkills();
+
+// Show the Playwright specs the verify stage would run for the selected framework
+// (shared/ + the per-framework overlay). Informational — verification executes during
+// matrix runs; the Skip tests toggle opts a run out.
+async function refreshTestFiles() {
+  const note = $('#testsList');
+  try {
+    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(framework)}`);
+    const shared = j.shared || [];
+    const fw = j.framework || [];
+    if (!shared.length && !fw.length) {
+      note.textContent = `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${framework}/.`;
+    } else {
+      const parts = [];
+      if (shared.length) parts.push(`shared: ${shared.join(', ')}`);
+      if (fw.length) parts.push(`${framework}: ${fw.join(', ')}`);
+      note.textContent = `Tests found (${shared.length + fw.length}) — ${parts.join(' · ')}`;
+    }
+  } catch {
+    note.textContent = 'Could not list test files.';
+  }
+  note.hidden = false;
+}
+refreshTestFiles();
 
 $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();

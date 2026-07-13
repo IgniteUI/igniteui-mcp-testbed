@@ -14,6 +14,7 @@ export interface RunConfig {
   excludedSkills?: string[];
   overrideSkills?: boolean;
   localSkillsOnly?: boolean;
+  skipTests?: boolean;
   model: string;
   apiKey?: string;
   customBaseUrl?: string | null;
@@ -74,6 +75,7 @@ export interface StoredConfig {
   excludedSkills: string[];
   overrideSkills: boolean;
   localSkillsOnly: boolean;
+  skipTests: boolean;
   models: string[];
   customBaseUrl: string | null;
 }

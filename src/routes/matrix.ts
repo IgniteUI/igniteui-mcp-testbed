@@ -34,7 +34,7 @@ export default function registerMatrixRoutes(app: Express): void {
       combos = combos.slice(0, MATRIX_MAX_ENTRIES);
     }
 
-    const { matrixId, total } = matrix.begin(combos, { prompt, fixed: { model, apiKey: body.apiKey, customBaseUrl: body.customBaseUrl, customMcp: body.customMcp } });
+    const { matrixId, total } = matrix.begin(combos, { prompt, fixed: { model, apiKey: body.apiKey, customBaseUrl: body.customBaseUrl, customMcp: body.customMcp, skipTests: !!body.skipTests } });
     res.json({ ok: true, matrixId, total, dropped });
   });
 

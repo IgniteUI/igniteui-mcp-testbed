@@ -90,6 +90,26 @@
         </details>
       </fieldset>
 
+      <fieldset>
+        <legend>Verification tests</legend>
+        <igc-checkbox id="skipTests">Skip tests<small>Don’t run the injected Playwright tests for this run</small></igc-checkbox>
+        <p class="note" id="testsList" hidden></p>
+        <details class="help">
+          <summary>How verification tests work</summary>
+          <div class="help-body">
+            <p>Drop <strong>Playwright</strong> specs on the host under <code>./tests/</code> —
+            a <code>shared/</code> set that runs for every platform plus optional per-framework
+            overlays (<code>tests/&lt;framework&gt;/</code>). They’re bind-mounted read-only at
+            <code>/tests</code> and run against the built app in the pipeline’s
+            <strong>verify</strong> stage.</p>
+            <p>Verification executes during <strong>matrix runs</strong> (each entry, once its
+            app builds and serves). A suite with any failing test marks that run
+            <code>test-failed</code> in History. The <strong>Skip tests</strong> toggle opts a
+            run out; the line above lists the specs found for the selected framework.</p>
+          </div>
+        </details>
+      </fieldset>
+
       <!-- Model fieldset: converted to Ignite UI Web Components (igc-input).
            Each igc-input exposes a `value` property, so the existing JS that
            reads $('#model').value / $('#key').value / $('#base').value is unchanged. -->
@@ -222,6 +242,15 @@
         <legend>API key</legend>
         <igc-input id="mxKey" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
         <p class="note">One key applied to every entry. Mixing providers in one matrix needs them to share a key.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Verification tests</legend>
+        <igc-checkbox id="mxSkipTests">Skip tests<small>Don’t run the injected Playwright tests for any entry</small></igc-checkbox>
+        <p class="note" id="mxTestsList" hidden></p>
+        <p class="note">Each entry runs the specs under <code>./tests/shared/</code> + <code>./tests/&lt;platform&gt;/</code>
+        against its built app; a failing suite marks that entry <code>test-failed</code> in History. The line above lists
+        what’s found for the selected platforms.</p>
       </fieldset>
 
       <p class="mx-count" id="mxCount">0 runs</p>

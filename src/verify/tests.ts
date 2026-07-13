@@ -43,6 +43,12 @@ function listSpecs(dir: string, base = dir, out: string[] = []): string[] {
   return out;
 }
 
+// Public: list the collected spec files (relative paths) so the wizard/matrix UIs can
+// show what the verify stage would run. `shared/` applies to every platform; the
+// per-framework overlay is listed separately.
+export function sharedTests(): string[] { return listSpecs(path.join(TESTS_DIR, 'shared')); }
+export function frameworkTests(framework: string): string[] { return listSpecs(path.join(TESTS_DIR, framework)); }
+
 // Resolve the node_modules root that holds `@playwright/test` (the wizard's own deps),
 // so the harness can borrow it via a symlink regardless of container vs host-dev layout.
 function nodeModulesRoot(): string {
