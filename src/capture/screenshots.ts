@@ -65,10 +65,13 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
           // Look for a nav item whose visible text matches the page name (case-insensitive).
           const navArea = page.locator(NAV_SEL);
           const item = navArea.getByText(displayName, { exact: false }).first();
-          if (await item.count() > 0) {
-            await item.click();
-            await page.waitForTimeout(settle);
+          if (await item.count() === 0) {
+            await page.screenshot({ path: dest, fullPage: true });
+            results.push({ route, file, ok: false, error: `nav item not found: ${displayName}` });
+            continue;
           }
+          await item.click();
+          await page.waitForTimeout(settle);
           await page.screenshot({ path: dest, fullPage: true });
           results.push({ route, file, ok: true });
         } catch (err: any) {
