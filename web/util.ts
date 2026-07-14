@@ -58,7 +58,6 @@ export function syncTestsCombo(combo: any, data: TestComboItem[], known: Set<str
   combo.groupKey = 'category';
   combo.data = data;
   combo.value = value;
-  known.clear();
   for (const d of data) known.add(d.id);
   return value;
 }
