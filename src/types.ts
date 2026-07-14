@@ -203,6 +203,10 @@ export interface RouteDiscovery {
   routes: string[];
   skipped: SkippedRoute[];
   sources?: string[];
+  /** True when routes are logical page names discovered from state-based navigation
+   * (React useState / conditional rendering) rather than URL router config.
+   * Screenshots must be captured via nav-item clicks, not URL navigation. */
+  stateNav?: boolean;
 }
 
 export interface InteractiveResult {

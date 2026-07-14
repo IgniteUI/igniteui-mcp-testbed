@@ -343,7 +343,7 @@ export async function runPipeline(
   }
   await sleep(Number(process.env.SCREENSHOT_SETTLE_MS || 5000));
   const disc = discoverRoutes(appDir, cfg.framework);
-  emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}`);
+  emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}${disc.stateNav ? ' (state-nav, will click through)' : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
   // When no routes are discovered (e.g. a plain Vite React app with no router, or an
   // Angular app whose routes array is still empty after scaffold), fall back to '/' —
@@ -352,7 +352,7 @@ export async function runPipeline(
   if (!disc.routes.length) emit('log', 'no routes discovered — falling back to root (/)');
   let screenshots: HeadlessResult['screenshots'] = [];
   try {
-    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '');
+    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '', { stateNav: disc.stateNav });
     emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
   } catch (e: any) {
     emit('log', `warning: screenshots failed (${e.message})`);
