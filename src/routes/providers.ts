@@ -4,9 +4,13 @@ import type { Express } from 'express';
 import { listPacks, getPack, savePack, deletePack } from '../provider-registry.ts';
 import type { ProviderPack } from '../types.ts';
 
-/** Basic structural validation — ensures required fields are present. */
+// Only letters, digits, hyphens, underscores — matches assertSafeId() in the registry.
+const SAFE_PACK_NAME = /^[a-zA-Z0-9_-]+$/;
+
+/** Basic structural validation — ensures required fields are present and safe. */
 function validate(body: any): ProviderPack | null {
   if (!body || typeof body.name !== 'string' || !body.name.trim()) return null;
+  if (!SAFE_PACK_NAME.test(body.name.trim())) return null; // prevents path traversal
   if (!body.displayName || typeof body.displayName !== 'string') return null;
   if (!Array.isArray(body.frameworks) || body.frameworks.length === 0) return null;
   if (!body.configure || !Array.isArray(body.configure.mcpServers)) return null;

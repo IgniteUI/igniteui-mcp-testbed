@@ -102,7 +102,9 @@ export async function runPipeline(
     // Write .vscode/mcp.json (used as a record; opencode.json is written below).
     const vscodeMcpDir = path.join(appDir, '.vscode');
     fs.mkdirSync(vscodeMcpDir, { recursive: true });
-    const vsServers: Record<string, any> = {};
+    // Use Object.create(null) so that user-supplied server names like "__proto__"
+    // cannot pollute Object.prototype via bracket-assignment.
+    const vsServers: Record<string, any> = Object.create(null);
     for (const s of pack.configure.mcpServers) {
       vsServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
     }
@@ -116,16 +118,22 @@ export async function runPipeline(
       const skillsConf = pack.configure.skills;
       if (skillsConf?.github) {
         // Clone the GitHub repo and copy every top-level skill folder.
+        // Validate the ref before embedding it in a git argument to prevent
+        // second-order command injection (e.g. "--upload-pack=malicious").
+        const githubRef = skillsConf.github;
+        if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
+          throw new Error(`invalid skills.github value "${githubRef}" — expected "owner/repo" with only safe characters`);
+        }
         const tmpDir = `/tmp/skills-clone-${Date.now()}`;
-        emit('log', `cloning skills from github.com/${skillsConf.github}`);
-        await runStep('git', ['clone', '--depth', '1', `https://github.com/${skillsConf.github}.git`, tmpDir], appDir, emit);
+        emit('log', `cloning skills from github.com/${githubRef}`);
+        await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
         let count = 0;
         for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
           if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
           fs.cpSync(path.join(tmpDir, entry.name), path.join(skillsDir, entry.name), { recursive: true });
           count++;
         }
-        emit('log', `installed ${count} skill(s) from github.com/${skillsConf.github}`);
+        emit('log', `installed ${count} skill(s) from github.com/${githubRef}`);
         await rmrf(tmpDir);
       } else if (skillsConf?.installCommand?.length) {
         const [cmd, ...args] = skillsConf.installCommand;
@@ -137,7 +145,7 @@ export async function runPipeline(
     // Write opencode.json directly — pack commands are already correct,
     // so the translate step is not needed.
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-    const mcpBlock: Record<string, any> = {};
+    const mcpBlock: Record<string, any> = Object.create(null); // prototype-safe
     for (const s of pack.configure.mcpServers) {
       const on = selected.has(s.class);
       emit('log', `mcp "${s.name}" → class "${s.class}" → ${on ? 'enabled' : 'disabled'}`);

@@ -13,6 +13,20 @@ import type { FrameworkDef, ProviderPack } from './types.ts';
 
 const packs = new Map<string, ProviderPack>();
 
+// Safe identifier — only alphanumerics, hyphens, underscores.
+// Applied to pack.name (used in file paths) and fw.id (used as object keys) to
+// prevent path-traversal and prototype-pollution attacks from untrusted JSON.
+const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+
+function assertSafeId(value: string, label: string): void {
+  if (!SAFE_ID.test(value)) {
+    throw new Error(
+      `${label} "${value}" contains disallowed characters — ` +
+      'only letters, digits, hyphens and underscores are allowed',
+    );
+  }
+}
+
 // Convert a ProviderPackFramework into the FrameworkDef that the pipeline expects.
 function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
   return {
@@ -29,8 +43,10 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
 
 /** Register a pack into the in-memory FRAMEWORKS map. */
 export function registerPack(pack: ProviderPack): void {
+  assertSafeId(pack.name, 'pack name');
   packs.set(pack.name, pack);
   for (const fw of pack.frameworks) {
+    assertSafeId(fw.id, `framework id in pack "${pack.name}"`);
     FRAMEWORKS[fw.id] = packFwToDef(fw);
   }
 }
@@ -64,6 +80,7 @@ export function loadAll(): void {
 
 /** Persist a pack to disk (PROVIDERS_DIR/<name>.json) and register it. */
 export function savePack(pack: ProviderPack): void {
+  assertSafeId(pack.name, 'pack name'); // validate before constructing the file path
   fs.mkdirSync(PROVIDERS_DIR, { recursive: true });
   fs.writeFileSync(path.join(PROVIDERS_DIR, `${pack.name}.json`), JSON.stringify(pack, null, 2));
   registerPack(pack);
@@ -71,6 +88,7 @@ export function savePack(pack: ProviderPack): void {
 
 /** Remove a pack from disk and memory. */
 export function deletePack(name: string): void {
+  assertSafeId(name, 'pack name'); // validate before constructing the file path
   unregisterPack(name);
   const f = path.join(PROVIDERS_DIR, `${name}.json`);
   if (fs.existsSync(f)) fs.unlinkSync(f);
