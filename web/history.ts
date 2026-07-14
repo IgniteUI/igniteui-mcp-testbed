@@ -101,6 +101,15 @@ const html = (...args: any[]) => {
 };
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
+// Format a framework id for display in the History grid.
+// IgniteUI-native frameworks (angular, react, webcomponents, blazor) have no hyphen;
+// external provider frameworks do (e.g. react-aggrid).  Append " - Ignite UI" to the
+// native ones so entries are distinguishable at a glance.
+function fmtFramework(fw: string | undefined): string {
+  if (!fw) return '—';
+  return fw.includes('-') ? fw : `${fw} - Ignite UI`;
+}
+
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
   const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
@@ -120,7 +129,7 @@ function rowVals(r: any): HistoryGridRow {
     whenTs: Date.parse(r.startedAt) || 0,
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
-    framework: r.config.framework || '—',
+    framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
