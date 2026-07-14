@@ -1,5 +1,5 @@
 // Matrix view: platform × variant grid of one-shot headless runs, streamed live.
-import { $, esc, validateMcpJson } from './util.ts';
+import { $, esc, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
 
@@ -106,26 +106,40 @@ async function refreshMxLocalSkills() {
   note.hidden = false;
 }
 
-// Show the Playwright specs the verify stage would run: the shared set (every platform)
-// plus each selected platform's overlay. Informational; the Skip tests toggle opts out.
+// Populate the tests combo, grouped by framework: one group per selected platform, whose
+// items are the specs that run for it — its own overlay plus the shared set (a shared spec
+// is listed under each platform, so it can be toggled per framework). All discovered specs
+// start selected; each entry runs only its own group's selected specs. Selection is
+// preserved as platforms are toggled.
+const mxTestsKnownIds = new Set<string>();
 async function refreshMxTestFiles() {
-  const note = $('#mxTestsList');
+  const combo = $('#mxTestsCombo');
+  const note = $('#mxTestsNote');
   const platforms = mxPlatforms();
-  if (!platforms.length) { note.hidden = true; return; }
   try {
     const j = await getJSON('/api/tests');
     const shared = j.shared || [];
     const map = j.byPlatform || {};
-    const lines = platforms.map((p) => `${p}: ${(map[p] || []).length ? map[p].join(', ') : '—'}`);
-    const total = shared.length + platforms.reduce((n, p) => n + (map[p] || []).length, 0);
-    note.textContent = total
-      ? `Tests — shared: ${shared.length ? shared.join(', ') : '—'} · ${lines.join(' · ')}`
+    const data = platforms.flatMap((p) => [
+      ...shared.map((f: string) => ({ id: `${p}::shared/${f}`, file: f, category: p })),
+      ...(map[p] || []).map((f: string) => ({ id: `${p}::${p}/${f}`, file: f, category: p })),
+    ]);
+    const sel = syncTestsCombo(combo, data, mxTestsKnownIds);
+    combo.disabled = !data.length;
+    note.textContent = data.length
+      ? `${sel.length}/${data.length} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`
       : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/<platform>/.`;
   } catch {
     note.textContent = 'Could not list test files.';
   }
-  note.hidden = false;
 }
+$('#mxTestsCombo').addEventListener('igcChange', () => {
+  const combo = $('#mxTestsCombo');
+  const total = (combo.data || []).length;
+  const sel = (combo.value || []).length;
+  if (total) $('#mxTestsNote').textContent =
+    `${sel}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
+});
 document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
 addVariantRow(); // seed one default variant (igniteui+theming, default skills)
@@ -263,7 +277,7 @@ $('#mxForm').addEventListener('submit', async (e: any) => {
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
-  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined, skipTests: $('#mxSkipTests').checked };
+  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined, selectedTests: ($('#mxTestsCombo').value || []) as string[] };
   $('#mxGo').disabled = true;
   try {
     const j = await postJSON('/api/matrix', body);

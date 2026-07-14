@@ -92,8 +92,9 @@
 
       <fieldset>
         <legend>Verification tests</legend>
-        <igc-checkbox id="skipTests">Skip tests<small>Don’t run the injected Playwright tests for this run</small></igc-checkbox>
-        <p class="note" id="testsList" hidden></p>
+        <igc-combo id="testsCombo" label="Tests to run" placeholder="Select test files…"
+          value-key="id" display-key="file" group-key="category"></igc-combo>
+        <p class="note" id="testsNote"></p>
         <details class="help">
           <summary>How verification tests work</summary>
           <div class="help-body">
@@ -102,10 +103,12 @@
             overlays (<code>tests/&lt;framework&gt;/</code>). They’re bind-mounted read-only at
             <code>/tests</code> and run against the built app in the pipeline’s
             <strong>verify</strong> stage.</p>
-            <p>Verification executes during <strong>matrix runs</strong> (each entry, once its
-            app builds and serves). A suite with any failing test marks that run
-            <code>test-failed</code> in History. The <strong>Skip tests</strong> toggle opts a
-            run out; the line above lists the specs found for the selected framework.</p>
+            <p>The combo groups specs by <strong>framework</strong>; the group lists every spec
+            that runs for the selected framework (its own overlay plus the shared set).
+            <strong>Only the selected files execute</strong> — clear the selection to skip
+            verification entirely. Verification executes during <strong>matrix runs</strong>
+            (each entry, once its app builds and serves); a suite with any failing test marks
+            that run <code>test-failed</code> in History.</p>
           </div>
         </details>
       </fieldset>
@@ -246,11 +249,11 @@
 
       <fieldset>
         <legend>Verification tests</legend>
-        <igc-checkbox id="mxSkipTests">Skip tests<small>Don’t run the injected Playwright tests for any entry</small></igc-checkbox>
-        <p class="note" id="mxTestsList" hidden></p>
-        <p class="note">Each entry runs the specs under <code>./tests/shared/</code> + <code>./tests/&lt;platform&gt;/</code>
-        against its built app; a failing suite marks that entry <code>test-failed</code> in History. The line above lists
-        what’s found for the selected platforms.</p>
+        <igc-combo id="mxTestsCombo" label="Tests to run" placeholder="Select test files…"
+          value-key="id" display-key="file" group-key="category"></igc-combo>
+        <p class="note" id="mxTestsNote">Grouped by framework — each platform's group lists the specs that run for it
+        (its own overlay plus the shared set). Only the selected files run per entry; clear the selection to skip.
+        A failing suite marks that entry <code>test-failed</code> in History.</p>
       </fieldset>
 
       <p class="mx-count" id="mxCount">0 runs</p>

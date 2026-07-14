@@ -42,6 +42,15 @@ Spec files are matched by name: `*.spec.ts` / `*.test.ts` (also `.js`, `.tsx`, `
 - Each spec has a 30s default per-test timeout; the whole suite is capped by
   `TEST_TIMEOUT_MS` (default 5 min).
 
+## Choosing which specs run
+
+The wizard and matrix setup each show a grouped multi-select combo grouped **by
+framework**. Each framework group lists the specs that run for it — its own overlay plus
+the shared set (a shared spec appears under each framework it runs for). **Only the
+selected files run.** Every discovered spec starts selected; clear the selection to skip
+verification. In matrix mode there's one group per selected platform, and each entry runs
+only its own group's selected specs.
+
 ## Example
 
 ```ts

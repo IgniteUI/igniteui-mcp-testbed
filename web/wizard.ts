@@ -1,5 +1,5 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, fmt, validateMcpJson } from './util.ts';
+import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 
 let framework = 'angular';
@@ -69,7 +69,7 @@ function collect() {
     excludedSkills: excl,
     overrideSkills: $('#overrideSkills').checked,
     localSkillsOnly: $('#overrideSkills').checked && $('#localSkillsOnly').checked,
-    skipTests: $('#skipTests').checked,
+    selectedTests: ($('#testsCombo').value || []) as string[],
     model: $('#model').value.trim(),
     apiKey: $('#key').value,
     customBaseUrl: $('#base').value.trim() || undefined,
@@ -98,28 +98,38 @@ async function refreshLocalSkills() {
 $('#overrideSkills').addEventListener('igcChange', refreshLocalSkills);
 refreshLocalSkills();
 
-// Show the Playwright specs the verify stage would run for the selected framework
-// (shared/ + the per-framework overlay). Informational — verification executes during
-// matrix runs; the Skip tests toggle opts a run out.
+// Populate the tests combo, grouped by framework: the group is the selected framework
+// and its items are the specs that run for it — its own overlay plus the shared set
+// (a shared spec appears under each framework it runs for). All discovered specs start
+// selected; clearing the selection skips verification. Selection is preserved across
+// framework switches for specs that still exist.
+const testsKnownIds = new Set<string>();
 async function refreshTestFiles() {
-  const note = $('#testsList');
+  const combo = $('#testsCombo');
+  const note = $('#testsNote');
   try {
     const j = await getJSON(`/api/tests?platform=${encodeURIComponent(framework)}`);
-    const shared = j.shared || [];
-    const fw = j.framework || [];
-    if (!shared.length && !fw.length) {
-      note.textContent = `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${framework}/.`;
-    } else {
-      const parts = [];
-      if (shared.length) parts.push(`shared: ${shared.join(', ')}`);
-      if (fw.length) parts.push(`${framework}: ${fw.join(', ')}`);
-      note.textContent = `Tests found (${shared.length + fw.length}) — ${parts.join(' · ')}`;
-    }
+    const data = [
+      ...(j.shared || []).map((f: string) => ({ id: `${framework}::shared/${f}`, file: f, category: framework })),
+      ...(j.framework || []).map((f: string) => ({ id: `${framework}::${framework}/${f}`, file: f, category: framework })),
+    ];
+    const sel = syncTestsCombo(combo, data, testsKnownIds);
+    combo.disabled = !data.length;
+    note.textContent = data.length
+      ? `${sel.length}/${data.length} test file(s) selected — only these run during matrix verification.`
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${framework}/.`;
   } catch {
     note.textContent = 'Could not list test files.';
   }
-  note.hidden = false;
 }
+$('#testsCombo').addEventListener('igcChange', () => {
+  const combo = $('#testsCombo');
+  const total = (combo.data || []).length;
+  const sel = (combo.value || []).length;
+  $('#testsNote').textContent = total
+    ? `${sel}/${total} test file(s) selected — only these run during matrix verification.`
+    : '';
+});
 refreshTestFiles();
 
 $('#form').addEventListener('submit', async (e: any) => {

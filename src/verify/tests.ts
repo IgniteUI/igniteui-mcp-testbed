@@ -19,18 +19,6 @@ function cleanSpecPath(file: string): string {
   return i >= 0 ? file.slice(i + marker.length) : file;
 }
 
-// Recursively test whether a directory contains at least one Playwright spec file.
-function hasSpecs(dir: string): boolean {
-  let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) { if (hasSpecs(full)) return true; }
-    else if (SPEC_RE.test(e.name)) return true;
-  }
-  return false;
-}
-
 // Collect the relative paths of every spec file under a directory (for reporting).
 function listSpecs(dir: string, base = dir, out: string[] = []): string[] {
   let entries: fs.Dirent[];
@@ -130,19 +118,42 @@ export interface VerifyOpts {
   artifactDir?: string | null;
   emit: Emit;
   onChild?: ((c: ChildProcess) => void) | null;
+  /** `<category>/<file>` keys to run (category = 'shared' or the framework). undefined
+   * ⇒ run every discovered spec; [] ⇒ run none (the stage is skipped). */
+  selectedTests?: string[] | null;
 }
 
 // Run the injected Playwright tests against the already-serving app at APP_PORT.
-// Collects TESTS_DIR/shared + TESTS_DIR/<framework> (framework overlays shared),
+// Collects the user-selected files from TESTS_DIR/shared + TESTS_DIR/<framework>
+// (each namespaced under specs/<category>/ so shared and framework never collide),
 // executes them in a throwaway harness dir beside the project, and returns a
-// TestResult. Returns null when no test files are present (the stage is skipped).
+// TestResult. Returns null when nothing is selected/found (the stage is skipped).
 export async function runVerification(
-  { framework, appDir, artifactDir = null, emit, onChild = null }: VerifyOpts,
+  { framework, appDir, artifactDir = null, emit, onChild = null, selectedTests = null }: VerifyOpts,
 ): Promise<TestResult | null> {
-  const sources = [path.join(TESTS_DIR, 'shared'), path.join(TESTS_DIR, framework)]
-    .filter((d) => fs.existsSync(d) && hasSpecs(d));
-  if (!sources.length) {
-    emit('log', `no test files under ${TESTS_DIR}/{shared,${framework}} — skipping verification`);
+  // Discover the specs that apply to this framework — its own overlay plus the shared
+  // set — then keep only the selected keys (or all when no selection was supplied).
+  // Selection keys are framework-scoped (`<framework>::<category>/<file>`): the combo
+  // groups tests by framework, and a shared spec is an item under EACH framework it runs
+  // for, so it can be toggled per framework. The overlay is copied under a separate
+  // specs/<category>/ dir so a same-named shared spec is never silently shadowed.
+  const selected = selectedTests == null ? null : new Set(selectedTests);
+  const categories: { category: string; dir: string }[] = [
+    { category: 'shared', dir: path.join(TESTS_DIR, 'shared') },
+    { category: framework, dir: path.join(TESTS_DIR, framework) },
+  ];
+  const chosen: { category: string; rel: string; src: string }[] = [];
+  for (const { category, dir } of categories) {
+    for (const rel of listSpecs(dir)) {
+      const key = `${framework}::${category}/${rel}`;
+      if (selected && !selected.has(key)) continue;
+      chosen.push({ category, rel, src: path.join(dir, rel) });
+    }
+  }
+  if (!chosen.length) {
+    emit('log', selected
+      ? 'no tests selected — skipping verification'
+      : `no test files under ${TESTS_DIR}/{shared,${framework}} — skipping verification`);
     return null;
   }
 
@@ -153,10 +164,13 @@ export async function runVerification(
   fs.rmSync(harness, { recursive: true, force: true });
   fs.mkdirSync(specsDir, { recursive: true });
 
+  // Copy each chosen spec to specs/<category>/<rel> (preserving any subdirs).
   const files: string[] = [];
-  for (const src of sources) {
-    fs.cpSync(src, specsDir, { recursive: true }); // later (framework) overlays earlier (shared)
-    files.push(...listSpecs(src));
+  for (const { category, rel, src } of chosen) {
+    const dest = path.join(specsDir, category, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+    files.push(`${category}/${rel}`);
   }
 
   // Borrow the wizard's installed @playwright/test via a node_modules symlink so the

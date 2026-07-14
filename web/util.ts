@@ -43,3 +43,24 @@ export function validateMcpJson(text: string): string | null {
   }
 }
 
+export interface TestComboItem { id: string; file: string; category: string }
+
+// Populate a grouped multi-select igc-combo with test files, preserving the user's
+// selection across refreshes: an id seen for the first time defaults to selected, and
+// an id the user explicitly deselected stays off. `known` tracks previously-seen ids
+// (mutated in place) so a newly-added platform's specs come in pre-selected without
+// resurrecting ones the user cleared. Returns the applied selection.
+export function syncTestsCombo(combo: any, data: TestComboItem[], known: Set<string>): string[] {
+  const prevSel = new Set<string>((combo.value || []) as string[]);
+  const value = data.filter((d) => !known.has(d.id) || prevSel.has(d.id)).map((d) => d.id);
+  combo.valueKey = 'id';
+  combo.displayKey = 'file';
+  combo.groupKey = 'category';
+  combo.data = data;
+  combo.value = value;
+  known.clear();
+  for (const d of data) known.add(d.id);
+  return value;
+}
+
+

@@ -161,9 +161,9 @@ pipeline's **verify** stage runs them, and any failure marks that run `test-fail
 History (distinct from `success` / `build-error`).
 
 > Verification runs in **matrix (headless) mode**, where there's a clear
-> post-generation checkpoint. The interactive wizard shows which specs were found and
-> carries a **Skip tests** toggle for record-keeping, but doesn't execute them (its
-> session hands off to a live opencode editor with no fixed checkpoint).
+> post-generation checkpoint. The interactive wizard lets you pick specs and records the
+> selection, but doesn't execute them (its session hands off to a live opencode editor
+> with no fixed checkpoint).
 
 ### Authoring tests
 
@@ -211,9 +211,14 @@ Notes:
 
 ### Choosing what runs
 
-Both the interactive wizard and the matrix setup show, under **Verification tests**, which
-specs were found for the selected framework(s), plus a **Skip tests** toggle to opt a run
-out. See [`tests/README.md`](tests/README.md) for the full reference.
+Both the interactive wizard and the matrix setup have a **Verification tests** picker — a
+grouped multi-select combo grouped **by framework**. Each framework group lists the specs
+that run for it: its own overlay (`tests/<framework>/`) plus the shared set, so a shared
+spec appears under every framework it runs for and can be toggled per framework. **Only
+the selected files run**; every discovered spec starts selected, and clearing the
+selection skips verification entirely. In matrix mode the picker has one group per
+selected platform, and each entry runs only its own group's selected specs. See
+[`tests/README.md`](tests/README.md) for the full reference.
 
 ## Adapting it to your packages
 

@@ -264,19 +264,15 @@ export async function runPipeline(
   }
 
   // 7b. Verify: run the injected Playwright tests against the serving app (app must
-  // still be up, so this runs before the watchers are killed). Skipped (null) when no
-  // test files are present or the user opted out; a failing suite flips the entry to
-  // 'test-failed' upstream.
+  // still be up, so this runs before the watchers are killed). Only the user-selected
+  // test files run; returns null (stage skipped) when nothing is selected/found. A
+  // failing suite flips the entry to 'test-failed' upstream.
   let tests: HeadlessResult['tests'] = null;
-  if (cfg.skipTests) {
-    emit('log', 'verification skipped (skip tests enabled)');
-  } else {
-    emit('step', { step: 'verify' });
-    try {
-      tests = await runVerification({ framework: cfg.framework, appDir, artifactDir, emit, onChild });
-    } catch (e: any) {
-      emit('log', `warning: verification stage failed (${e.message})`);
-    }
+  emit('step', { step: 'verify' });
+  try {
+    tests = await runVerification({ framework: cfg.framework, appDir, artifactDir, emit, onChild, selectedTests: cfg.selectedTests });
+  } catch (e: any) {
+    emit('log', `warning: verification stage failed (${e.message})`);
   }
 
   // Free the ports before the next matrix entry reuses them.

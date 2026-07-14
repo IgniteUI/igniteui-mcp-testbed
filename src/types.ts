@@ -14,7 +14,9 @@ export interface RunConfig {
   excludedSkills?: string[];
   overrideSkills?: boolean;
   localSkillsOnly?: boolean;
-  skipTests?: boolean;
+  // Which injected test files to run in the verify stage, as `<category>/<file>` keys
+  // (category = 'shared' or a framework). undefined ⇒ run all discovered; [] ⇒ run none.
+  selectedTests?: string[];
   model: string;
   apiKey?: string;
   customBaseUrl?: string | null;
@@ -75,7 +77,7 @@ export interface StoredConfig {
   excludedSkills: string[];
   overrideSkills: boolean;
   localSkillsOnly: boolean;
-  skipTests: boolean;
+  selectedTests: string[];
   models: string[];
   customBaseUrl: string | null;
 }

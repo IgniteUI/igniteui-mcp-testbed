@@ -19,7 +19,7 @@ interface Fixed {
   apiKey?: string;
   customBaseUrl?: string;
   customMcp?: string;
-  skipTests?: boolean;
+  selectedTests?: string[];
 }
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
@@ -48,7 +48,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     excludedSkills: [],
     overrideSkills: !!c.variant.localSkills,
     localSkillsOnly: !!c.variant.localSkills && !c.variant.skills,
-    skipTests: !!fixed.skipTests,
+    selectedTests: fixed.selectedTests,
     model: fixed.model,
     apiKey: fixed.apiKey,
     customBaseUrl: fixed.customBaseUrl || undefined,
