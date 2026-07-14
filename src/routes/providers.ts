@@ -4,8 +4,9 @@ import type { Express } from 'express';
 import { listPacks, getPack, savePack, deletePack } from '../provider-registry.ts';
 import type { ProviderPack } from '../types.ts';
 
-// Only letters, digits, hyphens, underscores — matches assertSafeId() in the registry.
-const SAFE_PACK_NAME = /^[a-zA-Z0-9_-]+$/;
+// Only letters/digits/hyphens/underscores, must start with a letter or digit —
+// mirrors SAFE_ID in provider-registry.ts (path-traversal + prototype-pollution guard).
+const SAFE_PACK_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
 
 /** Basic structural validation — ensures required fields are present and safe. */
 function validate(body: any): { pack: ProviderPack } | { error: string } {
@@ -32,8 +33,14 @@ function validate(body: any): { pack: ProviderPack } | { error: string } {
     if (!fw.scaffold || typeof fw.scaffold.cmd !== 'string') {
       return { error: `frameworks[${i}].scaffold.cmd is required` };
     }
+    if (!Array.isArray(fw.scaffold.argv) || !fw.scaffold.argv.every((a: any) => typeof a === 'string')) {
+      return { error: `frameworks[${i}].scaffold.argv must be an array of strings` };
+    }
     if (!fw.dev || typeof fw.dev.cmd !== 'string') {
       return { error: `frameworks[${i}].dev.cmd is required` };
+    }
+    if (!Array.isArray(fw.dev.argv) || !fw.dev.argv.every((a: any) => typeof a === 'string')) {
+      return { error: `frameworks[${i}].dev.argv must be an array of strings` };
     }
   }
   if (!body.configure || !Array.isArray(body.configure.mcpServers)) {
@@ -52,6 +59,9 @@ function validate(body: any): { pack: ProviderPack } | { error: string } {
     }
     if (typeof s.label !== 'string' || !s.label.trim()) {
       return { error: `configure.mcpServers[${i}].label is required` };
+    }
+    if (s.args !== undefined && (!Array.isArray(s.args) || !s.args.every((a: any) => typeof a === 'string'))) {
+      return { error: `configure.mcpServers[${i}].args must be an array of strings when provided` };
     }
   }
   return { pack: body as ProviderPack };

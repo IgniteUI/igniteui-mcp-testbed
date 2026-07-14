@@ -16,16 +16,24 @@ const packs = new Map<string, ProviderPack>();
 // Framework ids owned by the built-in IgniteUI provider — never overwriteable.
 const BUILTIN_FRAMEWORK_IDS = new Set(Object.keys(FRAMEWORKS));
 
-// Safe identifier — only alphanumerics, hyphens, underscores.
+// Tracks which external pack "owns" each framework id, so two different packs
+// cannot silently overwrite each other's frameworks.
+const externalFrameworkOwner = new Map<string, string>();
+
+// Safe identifier — only alphanumerics, hyphens, underscores; must start with a
+// letter or digit so names like __proto__ (starts with _) are also rejected.
 // Applied to pack.name (used in file paths) and fw.id (used as object keys) to
 // prevent path-traversal and prototype-pollution attacks from untrusted JSON.
-const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+
+// Explicitly forbidden even if they somehow pass the regex (defence in depth).
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function assertSafeId(value: string, label: string): void {
-  if (!SAFE_ID.test(value)) {
+  if (!SAFE_ID.test(value) || FORBIDDEN_KEYS.has(value)) {
     throw new Error(
-      `${label} "${value}" contains disallowed characters — ` +
-      'only letters, digits, hyphens and underscores are allowed',
+      `${label} "${value}" contains disallowed characters or is a reserved name — ` +
+      'only letters/digits/hyphens/underscores are allowed and the name must start with a letter or digit',
     );
   }
 }
@@ -47,8 +55,13 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
 /** Register a pack into the in-memory FRAMEWORKS map. */
 export function registerPack(pack: ProviderPack): void {
   assertSafeId(pack.name, 'pack name');
-  // Remove stale framework ids from a previous version of this pack before re-adding.
-  unregisterPack(pack.name);
+  // Reserve the built-in provider name at the registry level so a pack dropped
+  // directly into /providers (bypassing the HTTP route check) can't hijack it.
+  if (pack.name === 'igniteui') {
+    throw new Error('"igniteui" is reserved for the built-in provider');
+  }
+  // Validate all frameworks BEFORE mutating FRAMEWORKS or packs, so a partially
+  // valid pack can't leave the registry in a half-registered state.
   for (const fw of pack.frameworks) {
     assertSafeId(fw.id, `framework id in pack "${pack.name}"`);
     if (BUILTIN_FRAMEWORK_IDS.has(fw.id)) {
@@ -56,7 +69,27 @@ export function registerPack(pack: ProviderPack): void {
         `framework id "${fw.id}" in pack "${pack.name}" conflicts with a built-in framework id`,
       );
     }
-    FRAMEWORKS[fw.id] = packFwToDef(fw);
+    // Reject cross-pack framework-id collisions (two different packs with the same id).
+    const owner = externalFrameworkOwner.get(fw.id);
+    if (owner && owner !== pack.name) {
+      throw new Error(
+        `framework id "${fw.id}" in pack "${pack.name}" is already registered by pack "${owner}"`,
+      );
+    }
+  }
+  // Remove stale framework ids from a previous version of this pack before re-adding.
+  unregisterPack(pack.name);
+  for (const fw of pack.frameworks) {
+    externalFrameworkOwner.set(fw.id, pack.name);
+    // Use Object.defineProperty so a user-supplied key (even a theoretically dangerous
+    // one that slipped through assertSafeId) cannot modify Object.prototype via
+    // bracket-assignment — a pattern CodeQL's remote-property-injection rule flags.
+    Object.defineProperty(FRAMEWORKS, fw.id, {
+      value: packFwToDef(fw),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
   }
   packs.set(pack.name, pack);
 }
@@ -65,7 +98,10 @@ export function registerPack(pack: ProviderPack): void {
 export function unregisterPack(name: string): void {
   const pack = packs.get(name);
   if (!pack) return;
-  for (const fw of pack.frameworks) delete FRAMEWORKS[fw.id];
+  for (const fw of pack.frameworks) {
+    delete FRAMEWORKS[fw.id];
+    externalFrameworkOwner.delete(fw.id);
+  }
   packs.delete(name);
 }
 
