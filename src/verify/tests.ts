@@ -10,6 +10,7 @@ import { killTree } from '../proc/exec.ts';
 import type { Emit, TestResult, TestFailure } from '../types.ts';
 
 const SPEC_RE = /\.(spec|test)\.(m|c)?[jt]sx?$/;
+const FRAMEWORK_RE = /^(angular|react|webcomponents|blazor)$/i;
 
 // Playwright reports absolute spec paths under the throwaway harness; show the path
 // relative to the collected specs dir (what the user actually authored) instead.
@@ -131,6 +132,9 @@ export interface VerifyOpts {
 export async function runVerification(
   { framework, appDir, artifactDir = null, emit, onChild = null, selectedTests = null }: VerifyOpts,
 ): Promise<TestResult | null> {
+  if (!FRAMEWORK_RE.test(framework)) {
+    throw new Error(`invalid framework: ${framework}`);
+  }
   // Discover the specs that apply to this framework — its own overlay plus the shared
   // set — then keep only the selected keys (or all when no selection was supplied).
   // Selection keys are framework-scoped (`<framework>::<category>/<file>`): the combo
