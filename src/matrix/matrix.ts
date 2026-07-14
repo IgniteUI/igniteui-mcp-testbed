@@ -10,17 +10,7 @@ import { createSSE } from '../stream/sse.ts';
 import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
-import type { Combo, MatrixEntry, MatrixState, RunConfig } from '../types.ts';
-
-interface Fixed {
-  projectType?: string;
-  theme?: string;
-  model: string;
-  apiKey?: string;
-  customBaseUrl?: string;
-  customMcp?: string;
-  selectedTests?: string[];
-}
+import type { Combo, MatrixEntry, MatrixState, MatrixFixed as Fixed, RunConfig } from '../types.ts';
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
 // (the app + opencode bind fixed ports, so only one entry can be live at a time).
@@ -190,9 +180,10 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
 }
 
 // Set up state for a (validated, already-capped) set of combos and kick off the run
-// in the background. Returns { matrixId, total }; the caller responds immediately and
-// the client follows progress via the matrix SSE stream.
-export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixed: Fixed }): { matrixId: string; total: number } {
+// in the background. Returns { matrixId, total, completion }; the caller responds
+// immediately and the client follows progress via the matrix SSE stream. `completion`
+// settles when the whole matrix finishes (never rejects — errors are broadcast).
+export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixed: Fixed }): { matrixId: string; total: number; completion: Promise<void> } {
   const matrixId = newMatrixId();
   matrixRunning = true;
   matrixCancelled = false;
@@ -207,11 +198,11 @@ export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixe
       runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, status: 'pending' }),
     })),
   };
-  runMatrix(combos, { prompt, matrixId, fixed }).catch((e: any) => {
+  const completion = runMatrix(combos, { prompt, matrixId, fixed }).catch((e: any) => {
     matrixRunning = false; matrixState.running = false;
     broadcast({ type: 'error', msg: e.message });
   });
-  return { matrixId, total: combos.length };
+  return { matrixId, total: combos.length, completion };
 }
 
 // Abort the in-progress matrix: kill whatever the current entry is running (whole

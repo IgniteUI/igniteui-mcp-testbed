@@ -3,7 +3,7 @@
 // their top-level listener registrations.
 import { $ } from './util.ts';
 import { checkActiveSession } from './wizard.ts';
-import { updateMxCount, ensureMatrixStream, checkMatrixLock } from './matrix.ts';
+import { updateMxCount, ensureMatrixStream, checkMatrixLock, applyServerMatrixConfig } from './matrix.ts';
 import { loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
 
 const VIEWS: Record<string, string> = { wizard: '#wizardMain', matrix: '#matrix', history: '#history' };
@@ -30,4 +30,5 @@ document.querySelectorAll<any>('.tab[data-view]').forEach((b) =>
 window.addEventListener('load', () => {
   checkActiveSession();
   checkMatrixLock();
+  applyServerMatrixConfig();
 });

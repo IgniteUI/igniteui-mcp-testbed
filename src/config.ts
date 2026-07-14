@@ -24,6 +24,9 @@ export const TESTS_DIR = process.env.TESTS_DIR || '/tests';
 export const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS || 5 * 60 * 1000);
 
 // Matrix-mode tunables.
+// Optional JSON config file (bind-mounted; see run.sh/run.ps1 --matrix-config) that
+// pre-loads — and by default auto-runs — a matrix without going through the UI.
+export const MATRIX_CONFIG = process.env.MATRIX_CONFIG || '';
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
 // How long to wait for the (headless) post-edit dev-server build before giving up

@@ -139,6 +139,18 @@ export interface Variant {
   localSkills: boolean;
 }
 
+// The per-matrix constant config applied to every entry (the axes are the combos;
+// everything else — model, key, custom MCP, test selection — is fixed across them).
+export interface MatrixFixed {
+  projectType?: string;
+  theme?: string;
+  model: string;
+  apiKey?: string;
+  customBaseUrl?: string;
+  customMcp?: string;
+  selectedTests?: string[];
+}
+
 export interface Combo {
   platform: string;
   variant: Variant;

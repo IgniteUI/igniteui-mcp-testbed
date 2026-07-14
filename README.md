@@ -29,6 +29,7 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 .\run.ps1 build           # build the image (podman build -t localhost/igniteui-testbed:latest .)
 .\run.ps1 build -Prune    # build, then delete dangling <none> images the rebuild orphaned
 .\run.ps1                 # run a fresh container; publishes ports 8080 / 4096 / 5000
+.\run.ps1 -MatrixConfig .\matrix.json   # run + execute a matrix from a JSON config (no UI needed)
 ```
 
 **Linux / macOS / Git Bash:**
@@ -37,6 +38,7 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 ./run.sh build            # build the image
 ./run.sh build --prune    # build, then delete dangling <none> images the rebuild orphaned
 ./run.sh                  # run a fresh container; publishes ports 8080 / 4096 / 5000
+./run.sh --matrix-config ./matrix.json  # run + execute a matrix from a JSON config (no UI needed)
 ```
 
 Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
@@ -106,6 +108,43 @@ The header switches between three views:
   token / cost stats, screenshots, logs), with expandable detail rows, a 1–5★ rating
   per run, and Excel export. It persists in `./sessions/history/` on the host, so it
   survives *across* containers — not just the current session.
+
+## Running the matrix from the terminal
+
+Everything the Matrix tab collects can also come from a JSON config file, so a matrix
+can be executed without opening the UI:
+
+```bash
+./run.sh --matrix-config ./matrix.json          # Bash
+.\run.ps1 -MatrixConfig .\matrix.json           # PowerShell
+```
+
+The file is bind-mounted read-only into the container and loaded at startup; by default
+the matrix **auto-runs** immediately. The wizard server still starts, so opening
+<http://localhost:8080> shows the config **prefilled in the Matrix form** and the run's
+live progress — tweak and resubmit from there like any UI-configured matrix. A config
+that fails validation stops the container at startup with a clear error.
+
+Copy [`matrix.example.json`](matrix.example.json) as a starting point:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `platforms` | yes | Any of `angular`, `blazor`, `react`, `webcomponents`. Unknown names are ignored with a warning. |
+| `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. `mcps` ⊆ `igniteui` / `theming` / `custom`; `localSkills` without `skills` = local-only. Deduped. |
+| `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
+| `prompt` | yes | The shared prompt every entry runs. |
+| `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
+| `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
+| *(neither)* | — | The provider default for the model's prefix is used (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`). The run scripts read `.env` and forward any of these that are set, so putting the key in the gitignored `.env` is the easiest safe path. |
+| `customMcp` | no | Custom MCP server def(s) — a JSON object (single def, named map, or full `mcp.json` shape) or a JSON string. Only used by variants that include `"custom"` in `mcps`. |
+| `customBaseUrl` | no | Custom OpenAI-compatible base URL (pairs with `CUSTOM_API_KEY`). |
+| `selectedTests` | no | Verification specs to run, as `<platform>::<category>/<file>` keys (e.g. `angular::shared/smoke.spec.ts`). Omitted = run all discovered; `[]` = run none. Unknown keys warn. |
+| `autoRun` | no | Default `true`. Set `false` to only prefill the UI (the file becomes a saved preset). |
+| `exitOnDone` | no | Default `false` (container keeps serving the UI so results stay browsable). `true` = exit when the matrix finishes — code 0 iff every entry succeeded — for CI. |
+
+The API key is never written to disk inside the container and never echoed back to the
+browser; a matrix submitted from the prefilled UI with an empty key field falls back to
+the config's key automatically.
 
 ## How a session works
 

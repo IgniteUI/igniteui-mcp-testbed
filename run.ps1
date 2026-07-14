@@ -3,11 +3,14 @@
 # of run.sh). Generated project + logs land in .\sessions\<timestamp> on the host and
 # survive container teardown (the container itself is --rm).
 #
-#   .\run.ps1 build           build the image
-#   .\run.ps1 build -Prune    build, then remove dangling (<none>) images left behind
-#   .\run.ps1                 run a fresh container
+#   .\run.ps1 build                      build the image
+#   .\run.ps1 build -Prune               build, then remove dangling (<none>) images left behind
+#   .\run.ps1                            run a fresh container
+#   .\run.ps1 -MatrixConfig <file>       run with a matrix JSON config (auto-runs the
+#                                        matrix headlessly unless the file sets
+#                                        "autoRun": false; the UI reflects the config)
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune)
+param([string]$Command, [switch]$Prune, [string]$MatrixConfig)
 
 $ErrorActionPreference = 'Stop'
 $Image = 'localhost/igniteui-testbed:latest'
@@ -54,6 +57,33 @@ if ($Command -eq 'build') {
   exit $buildExit
 }
 
+# Run-mode arguments: resolve the matrix config to an absolute path up-front.
+$mcAbs = $null
+if ($MatrixConfig) {
+  if (-not (Test-Path $MatrixConfig)) {
+    Write-Host "matrix config not found: $MatrixConfig"
+    exit 2
+  }
+  $mcAbs = (Resolve-Path $MatrixConfig).Path
+}
+
+# Provider API keys: source .env (the same file the build reads) and forward any set
+# key vars into the container so a matrix config's apiKeyEnv — or the provider default
+# for its model — resolves. `-e VAR` passes the value through without echoing it into
+# the process listing.
+if (Test-Path "$PSScriptRoot/.env") {
+  Get-Content "$PSScriptRoot/.env" | ForEach-Object {
+    if ($_ -match '^\s*(ANTHROPIC_API_KEY|OPENAI_API_KEY|OPENROUTER_API_KEY|GOOGLE_GENERATIVE_AI_API_KEY|CUSTOM_API_KEY)\s*=\s*(.+)$') {
+      Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim()
+    }
+  }
+}
+$envFlags = @()
+foreach ($v in 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'CUSTOM_API_KEY') {
+  if (Test-Path "env:$v") { $envFlags += @('-e', $v) }
+}
+if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
+
 $Session = Get-Date -Format "yyyyMMdd'T'HHmmss"
 $Out  = Join-Path $PSScriptRoot "sessions/$Session"
 # Run history persists across containers, so it lives in a stable shared dir
@@ -83,6 +113,7 @@ $HostBind = '127.0.0.1:'
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
   $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Tests}:/tests:ro,Z")
+  if ($mcAbs) { $vol += @('-v', "${mcAbs}:/matrix-config.json:ro,Z") }
   $userns = @('--userns=keep-id')
 }
 else {
@@ -92,16 +123,23 @@ else {
   $skillsHost = $Skills -replace '\\', '/'
   $testsHost  = $Tests  -replace '\\', '/'
   $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${testsHost}:/tests:ro")
+  if ($mcAbs) {
+    $mcHost = $mcAbs -replace '\\', '/'
+    $vol += @('-v', "${mcHost}:/matrix-config.json:ro")
+  }
   $userns = @()
 }
 
-$podmanArgs = @(
-  'run', '--rm', '-it',
+# Allocate a TTY only when we actually have one, so CI / piped invocations
+# (e.g. a matrix-config run driven from a script) don't fail on `-t`.
+if ([Console]::IsInputRedirected) { $tty = @('-i') } else { $tty = @('-it') }
+
+$podmanArgs = @('run', '--rm') + $tty + @(
   '--name', "igniteui-testbed-$Session",
   '-p', "${HostBind}8080:8080",
   '-p', "${HostBind}4096:4096",
   '-p', "${HostBind}5000:5000"
-) + $vol + $userns + $Image
+) + $vol + $userns + $envFlags + $Image
 
 podman @podmanArgs
 exit $LASTEXITCODE

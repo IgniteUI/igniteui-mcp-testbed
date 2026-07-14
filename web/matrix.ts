@@ -112,12 +112,18 @@ async function refreshMxLocalSkills() {
 // start selected; each entry runs only its own group's selected specs. Selection is
 // preserved as platforms are toggled.
 const mxTestsKnownIds = new Set<string>();
+// Generation counter: updateMxCount fires this un-awaited on every platform/variant
+// change, so during a burst (e.g. config prefill rebuilding rows) only the newest
+// call may apply its result — a stale response must not clobber the combo.
+let mxTestsRefreshSeq = 0;
 async function refreshMxTestFiles() {
+  const seq = ++mxTestsRefreshSeq;
   const combo = $('#mxTestsCombo');
   const note = $('#mxTestsNote');
   const platforms = mxPlatforms();
   try {
     const j = await getJSON('/api/tests');
+    if (seq !== mxTestsRefreshSeq) return;
     const shared = j.shared || [];
     const map = j.byPlatform || {};
     const data = platforms.flatMap((p) => [
@@ -130,6 +136,7 @@ async function refreshMxTestFiles() {
       ? `${sel.length}/${data.length} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`
       : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/<platform>/.`;
   } catch {
+    if (seq !== mxTestsRefreshSeq) return;
     note.textContent = 'Could not list test files.';
   }
 }
@@ -267,6 +274,39 @@ export async function checkMatrixLock() {
     const ms = await getJSON('/api/matrix/status');
     if (ms && ms.running) setMatrixActive(true);
   } catch (_) {}
+}
+
+// Prefill the matrix form from the server-side MATRIX_CONFIG file (if any), so a
+// terminal-provided config is reflected in the UI. The API key never reaches the
+// browser — hasApiKey only flips the field's placeholder; the server falls back to
+// the config's key when the field is submitted empty.
+export async function applyServerMatrixConfig() {
+  let cfg: any;
+  try { cfg = (await getJSON('/api/matrix/config')).config; } catch { return; }
+  if (!cfg) return;
+  // Setting .checked programmatically doesn't fire igcChange — updateMxCount below
+  // does the recount that the change handlers would have.
+  document.querySelectorAll<any>('#mxPlatforms igc-checkbox')
+    .forEach((c) => { c.checked = cfg.platforms.includes(c.value); });
+  $('#mxVariants').innerHTML = '';
+  (cfg.variants || []).forEach((v: any) => addVariantRow(v));
+  $('#mxModel').value = cfg.model || '';
+  $('#mxPrompt').value = cfg.prompt || '';
+  if (cfg.customMcp) $('#mxCustomMcp').value = cfg.customMcp;
+  if (cfg.hasApiKey) $('#mxKey').placeholder = 'using key from server config';
+  updateMxCount();
+  // The combo must be populated before the config's selection can be applied; the
+  // seq guard makes this awaited refresh the one that owns the combo.
+  await refreshMxTestFiles();
+  if (cfg.selectedTests !== null && cfg.selectedTests !== undefined) {
+    const combo = $('#mxTestsCombo');
+    const avail = new Set((combo.data || []).map((d: any) => d.id));
+    combo.value = (cfg.selectedTests as string[]).filter((id) => avail.has(id));
+    const total = (combo.data || []).length;
+    if (total) $('#mxTestsNote').textContent =
+      `${(combo.value || []).length}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
+  }
+  if (cfg.dropped) $('#mxOverall').textContent = `config capped — ${cfg.dropped} entr${cfg.dropped === 1 ? 'y' : 'ies'} dropped`;
 }
 
 $('#mxForm').addEventListener('submit', async (e: any) => {

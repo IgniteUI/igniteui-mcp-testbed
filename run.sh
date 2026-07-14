@@ -3,9 +3,12 @@
 # Generated project + logs land in ./sessions/<timestamp> on the host and
 # survive container teardown (the container itself is --rm).
 #
-#   ./run.sh build           build the image
-#   ./run.sh build --prune   build, then remove dangling (<none>) images left behind
-#   ./run.sh                 run a fresh container
+#   ./run.sh build                      build the image
+#   ./run.sh build --prune              build, then remove dangling (<none>) images left behind
+#   ./run.sh                            run a fresh container
+#   ./run.sh --matrix-config <file>     run with a matrix JSON config (auto-runs the
+#                                       matrix headlessly unless the file sets
+#                                       "autoRun": false; the UI reflects the config)
 set -euo pipefail
 
 IMAGE=localhost/igniteui-testbed:latest
@@ -44,6 +47,33 @@ if [[ "${1:-}" == "build" ]]; then
   exit 0
 fi
 
+# Run-mode arguments.
+MATRIX_CONFIG_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --matrix-config)
+      MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
+    *)
+      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file>])" >&2
+      exit 2 ;;
+  esac
+done
+if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
+  [[ -f "$MATRIX_CONFIG_FILE" ]] || { echo "matrix config not found: $MATRIX_CONFIG_FILE" >&2; exit 2; }
+  MATRIX_CONFIG_FILE="$(cd "$(dirname "$MATRIX_CONFIG_FILE")" && pwd)/$(basename "$MATRIX_CONFIG_FILE")"
+fi
+
+# Provider API keys: source .env (the same file the build reads) and forward any set
+# key vars into the container so a matrix config's apiKeyEnv — or the provider default
+# for its model — resolves. `-e VAR` passes the value through without echoing it into
+# the process listing.
+[[ -f "$PWD/.env" ]] && { set -a; . "$PWD/.env"; set +a; }
+ENVFLAGS=()
+for v in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_AI_API_KEY CUSTOM_API_KEY; do
+  [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
+done
+[[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
+
 mkdir -p "$OUT"
 # Run history persists across containers, so it lives in a stable shared dir
 # (not the per-session $OUT). Mounted at /history inside the container.
@@ -80,11 +110,18 @@ case "$(uname -s)" in
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
     VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${TESTS_HOST}:/tests:ro")
+    if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
+      MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
+      VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
+    fi
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
     VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${TESTS}:/tests:ro,Z")
+    if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
+      VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
+    fi
     USERNS=("--userns=keep-id")
     ;;
 esac
@@ -95,9 +132,14 @@ PORTS=(
   -p "${HOST_BIND}5000:5000"
 )
 
-exec podman run --rm -it \
+# Allocate a TTY only when we actually have one, so CI / piped invocations
+# (e.g. a matrix-config run driven from a script) don't fail on `-t`.
+if [[ -t 0 ]]; then TTY=(-it); else TTY=(-i); fi
+
+exec podman run --rm "${TTY[@]}" \
   --name "igniteui-testbed-$SESSION" \
   "${PORTS[@]}" \
   "${VOL[@]}" \
   "${USERNS[@]}" \
+  "${ENVFLAGS[@]}" \
   "$IMAGE"
