@@ -102,12 +102,12 @@ const html = (...args: any[]) => {
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
 // Format a framework id for display in the History grid.
-// IgniteUI-native frameworks (angular, react, webcomponents, blazor) have no hyphen;
-// external provider frameworks do (e.g. react-aggrid).  Append " - Ignite UI" to the
-// native ones so entries are distinguishable at a glance.
+// Only the four known IgniteUI-native ids get the " - Ignite UI" suffix so
+// external provider frameworks (e.g. "react-aggrid", "svelte") are shown as-is.
+const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
 function fmtFramework(fw: string | undefined): string {
   if (!fw) return '—';
-  return fw.includes('-') ? fw : `${fw} - Ignite UI`;
+  return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
 }
 
 function skillSummary(c: any): string {

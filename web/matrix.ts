@@ -166,6 +166,11 @@ export function applyExternalProvidersMatrix(packs: ProviderPack[]): void {
     btn.textContent = pack.displayName;
     providerGroup.appendChild(btn);
   }
+  // Re-select the active provider button if it is still present after the rebuild.
+  if (mxProvider !== 'igniteui') {
+    const activeBtn = (providerGroup as Element).querySelector<any>(`[value="${CSS.escape(mxProvider)}"]`);
+    if (activeBtn) activeBtn.selected = true;
+  }
 
   // Render external platform groups into #mxExternalPlatforms.
   const platformContainer = document.getElementById('mxExternalPlatforms')!;

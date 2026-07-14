@@ -44,9 +44,12 @@ export function parseVariants(raw: any): Variant[] {
   const seen = new Set<string>();
   const out: Variant[] = [];
   for (const v of Array.isArray(raw) ? raw : []) {
-    // Accept any non-empty alphanumeric+hyphen string as a valid MCP class.
+    // Accept any non-empty string matching SAFE_ID (letters, digits, hyphens, underscores)
+    // and normalize to lowercase so mixed-case variants deduplicate correctly.
     const mcps = Array.isArray(v?.mcps)
-      ? v.mcps.filter((c: any) => typeof c === 'string' && /^[a-z0-9-]+$/.test(c))
+      ? v.mcps
+          .filter((c: any) => typeof c === 'string' && /^[a-zA-Z0-9_-]+$/.test(c))
+          .map((c: string) => c.toLowerCase())
       : [];
     const skills = !!(v && v.skills);
     const localSkills = !!(v && v.localSkills);

@@ -13,6 +13,9 @@ import type { FrameworkDef, ProviderPack } from './types.ts';
 
 const packs = new Map<string, ProviderPack>();
 
+// Framework ids owned by the built-in IgniteUI provider — never overwriteable.
+const BUILTIN_FRAMEWORK_IDS = new Set(Object.keys(FRAMEWORKS));
+
 // Safe identifier — only alphanumerics, hyphens, underscores.
 // Applied to pack.name (used in file paths) and fw.id (used as object keys) to
 // prevent path-traversal and prototype-pollution attacks from untrusted JSON.
@@ -44,11 +47,18 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
 /** Register a pack into the in-memory FRAMEWORKS map. */
 export function registerPack(pack: ProviderPack): void {
   assertSafeId(pack.name, 'pack name');
-  packs.set(pack.name, pack);
+  // Remove stale framework ids from a previous version of this pack before re-adding.
+  unregisterPack(pack.name);
   for (const fw of pack.frameworks) {
     assertSafeId(fw.id, `framework id in pack "${pack.name}"`);
+    if (BUILTIN_FRAMEWORK_IDS.has(fw.id)) {
+      throw new Error(
+        `framework id "${fw.id}" in pack "${pack.name}" conflicts with a built-in framework id`,
+      );
+    }
     FRAMEWORKS[fw.id] = packFwToDef(fw);
   }
+  packs.set(pack.name, pack);
 }
 
 /** Remove a pack from memory and from the FRAMEWORKS map. */

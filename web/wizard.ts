@@ -81,6 +81,11 @@ export function applyExternalProviders(packs: ProviderPack[]): void {
     btn.textContent = pack.displayName;
     providerGroup.appendChild(btn);
   }
+  // Re-select the active provider button if it is still present after the rebuild.
+  if (provider !== 'igniteui') {
+    const activeBtn = (providerGroup as Element).querySelector<any>(`[value="${CSS.escape(provider)}"]`);
+    if (activeBtn) activeBtn.selected = true;
+  }
 
   // Render external framework button groups into #externalFwGroups.
   const fwContainer = document.getElementById('externalFwGroups')!;
@@ -115,7 +120,7 @@ export function applyExternalProviders(packs: ProviderPack[]): void {
     div.hidden = true;
     div.innerHTML = (pack.configure?.mcpServers || []).map((s) =>
       `<igc-checkbox data-mcp="${esc(s.class)}" checked>${esc(s.label)}` +
-      (s.description ? `<small>${s.description}</small>` : '') +
+      (s.description ? `<small>${esc(s.description)}</small>` : '') +
       `</igc-checkbox>`,
     ).join('');
     mcpContainer.appendChild(div);

@@ -124,7 +124,7 @@ export async function runPipeline(
         if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
           throw new Error(`invalid skills.github value "${githubRef}" — expected "owner/repo" with only safe characters`);
         }
-        const tmpDir = `/tmp/skills-clone-${Date.now()}`;
+        const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
         emit('log', `cloning skills from github.com/${githubRef}`);
         await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
         let count = 0;
@@ -147,7 +147,7 @@ export async function runPipeline(
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
     const mcpBlock: Record<string, any> = Object.create(null); // prototype-safe
     for (const s of pack.configure.mcpServers) {
-      const on = selected.has(s.class);
+      const on = selected.has(s.class.toLowerCase());
       emit('log', `mcp "${s.name}" → class "${s.class}" → ${on ? 'enabled' : 'disabled'}`);
       if (on) mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
     }
