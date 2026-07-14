@@ -53,11 +53,9 @@ export interface TestComboItem { id: string; file: string; category: string }
 export function syncTestsCombo(combo: any, data: TestComboItem[], known: Set<string>): string[] {
   const prevSel = new Set<string>((combo.value || []) as string[]);
   const value = data.filter((d) => !known.has(d.id) || prevSel.has(d.id)).map((d) => d.id);
-  combo.valueKey = 'id';
-  combo.displayKey = 'file';
-  combo.groupKey = 'category';
   combo.data = data;
   combo.value = value;
+  known.clear();
   for (const d of data) known.add(d.id);
   return value;
 }
