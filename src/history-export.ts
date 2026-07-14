@@ -88,6 +88,7 @@ tbody tr.detail-row.open{display:table-row}
 .pill.success{background:rgba(43,179,104,.15);color:var(--green)}
 .pill.error{background:rgba(224,106,85,.16);color:var(--red)}
 .pill.build-error{background:rgba(202,162,60,.18);color:var(--amber)}
+.pill.test-failed{background:rgba(224,106,85,.16);color:var(--red)}
 .pill.running,.pill.pending{background:rgba(202,162,60,.16);color:var(--amber)}
 .pill.cancelled,.pill.interrupted{background:rgba(142,166,164,.15);color:var(--steel)}
 .mxtag{display:inline-block;padding:.05rem .45rem;border-radius:10px;font-size:.7rem;border:1px solid currentColor}

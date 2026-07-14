@@ -67,12 +67,27 @@ function spawnRunner(
       cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
     });
     if (onChild) onChild(child);
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; killTree(child, 'SIGTERM'); }, TEST_TIMEOUT_MS);
+    let timedOut = false, settled = false;
+    let killTimer: NodeJS.Timeout | null = null, hardTimer: NodeJS.Timeout | null = null;
+    const done = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer); if (killTimer) clearTimeout(killTimer); if (hardTimer) clearTimeout(hardTimer);
+      resolve({ code, timedOut });
+    };
+    // On timeout escalate SIGTERM -> SIGKILL, and hard-resolve even if the runner never
+    // emits 'close' (a wedged headless Chromium can ignore signals), so the verify stage
+    // — and the sequential matrix waiting on it — can never hang indefinitely.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child, 'SIGTERM');
+      killTimer = setTimeout(() => killTree(child, 'SIGKILL'), 5000);
+      hardTimer = setTimeout(() => done(null), 10000);
+    }, TEST_TIMEOUT_MS);
     child.stdout?.on('data', (d) => emit('log', d.toString().trimEnd()));
     child.stderr?.on('data', (d) => emit('log', d.toString().trimEnd()));
-    child.on('error', (e) => { clearTimeout(timer); reject(e); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code, timedOut }); });
+    child.on('error', (e) => { if (settled) return; settled = true; clearTimeout(timer); if (killTimer) clearTimeout(killTimer); if (hardTimer) clearTimeout(hardTimer); reject(e); });
+    child.on('close', (code) => done(code));
   });
 }
 
