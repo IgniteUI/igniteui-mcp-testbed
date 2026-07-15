@@ -115,7 +115,7 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
 };
 
 // ── External provider frameworks ──────────────────────────────────────────────
-// Additional frameworks (e.g. 3rd party UI frameworks) are loaded at runtime from ProviderPack
+// Additional frameworks (e.g. @angular/material) are loaded at runtime from ProviderPack
 // JSON files by src/provider-registry.ts.  They are inserted into FRAMEWORKS by
 // registerPack() and carry configure: 'external' so the pipeline drives them
 // through the pack's MCP server list and skills config instead of ig ai-config.
