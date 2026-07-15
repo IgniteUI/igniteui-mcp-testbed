@@ -102,17 +102,18 @@ export async function runPipeline(
     // Write .vscode/mcp.json (used as a record; opencode.json is written below).
     const vscodeMcpDir = path.join(appDir, '.vscode');
     fs.mkdirSync(vscodeMcpDir, { recursive: true });
-    // Build an entries array and convert with Object.fromEntries() so that no
-    // user-supplied server name is ever used as a bracket-assignment key
-    // (CodeQL js/remote-property-injection sink).
-    const vsServerEntries = pack.configure.mcpServers.map(
-      s => [s.name, { type: 'stdio', command: s.command, args: s.args || [] }] as [string, object],
-    );
-    fs.writeFileSync(
-      path.join(vscodeMcpDir, 'mcp.json'),
-      JSON.stringify({ servers: Object.fromEntries(vsServerEntries) }, null, 2),
-    );
-    emit('log', `wrote .vscode/mcp.json (${vsServerEntries.length} server(s) from pack "${pack.name}")`);
+    // Object.create(null) gives a null-prototype object so writing '__proto__' is
+    // harmless (it becomes a plain enumerable key rather than the prototype setter).
+    // The explicit forbidden-key guard is the barrier CodeQL requires to resolve
+    // js/remote-property-injection — Object.fromEntries() is not recognised.
+    const vsServers: Record<string, any> = Object.create(null);
+    for (const s of pack.configure.mcpServers) {
+      if (s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
+        vsServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
+      }
+    }
+    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify({ servers: vsServers }, null, 2));
+    emit('log', `wrote .vscode/mcp.json (${Object.keys(vsServers).length} server(s) from pack "${pack.name}")`);
 
     // Optionally install skills.
     if (cfg.skills) {
@@ -148,16 +149,18 @@ export async function runPipeline(
     // Write opencode.json directly — pack commands are already correct,
     // so the translate step is not needed.
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-    // Collect MCP entries as [key, value] pairs so no user-supplied server name is
-    // ever assigned via bracket notation (CodeQL js/remote-property-injection).
-    const mcpEntries: [string, object][] = [];
+    // Null-prototype object + explicit forbidden-key guard: same pattern as vsServers
+    // above. The guard is the barrier CodeQL needs to close js/remote-property-injection.
+    const mcpBlock: Record<string, any> = Object.create(null);
     for (const s of pack.configure.mcpServers) {
       const on = selected.has(s.class.toLowerCase());
       // Sanitize server name and class before emitting to logs (CodeQL js/log-injection).
       const safeName = s.name.replace(/[\r\n]/g, ' ');
       const safeClass = s.class.replace(/[\r\n]/g, ' ');
       emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
-      if (on) mcpEntries.push([s.name, { type: 'local', command: [s.command, ...(s.args || [])] }]);
+      if (on && s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
+        mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+      }
     }
     // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
     // when the 'custom' class is enabled. Uses translate() to convert from vscode MCP
@@ -182,14 +185,15 @@ export async function runPipeline(
           workspaceFolder: appDir,
         });
         for (const [name, def] of Object.entries(customMcp)) {
-          mcpEntries.push([name, def]);
+          if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
+            mcpBlock[name] = def;
+          }
           emit('log', `mcp "${name}" → custom → enabled`);
         }
       } catch (e: any) {
         emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
       }
     }
-    const mcpBlock = Object.fromEntries(mcpEntries);
     writeOpencodeConfig(cfg, mcpBlock, appDir);
     emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
 
