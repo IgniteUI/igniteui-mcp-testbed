@@ -8,7 +8,9 @@ import { getLoadedMatrixConfig } from '../matrix/matrix-config.ts';
 export default function registerMatrixRoutes(app: Express): void {
   // Kick off a matrix: body = { prompt, platforms[], variants[], model, apiKey, ... }.
   // Axes are platforms × variants (each variant = a set of MCPs + skills on/off); the
-  // model + API key are one fixed config applied to every entry.
+  // model + API key are one fixed config applied to every entry. Platform ids may be
+  // built-in frameworks or any registered provider pack's framework ids —
+  // normalizeMatrixRequest validates them provider-aware via getFramework().
   app.post('/api/matrix', (req, res) => {
     if (matrix.isRunning()) return res.status(409).json({ ok: false, error: 'a matrix run is already in progress' });
     const body = { ...(req.body || {}) };

@@ -2,11 +2,19 @@
 
 import * as fs from 'fs';
 import { PROVIDER_ENV } from '../config.ts';
+import { FRAMEWORKS } from '../frameworks.ts';
+import { registerPack, validatePack, getPackForFramework } from '../provider-registry.ts';
 import { sharedTests, frameworkTests } from '../verify/tests.ts';
 import * as matrix from './matrix.ts';
 import { normalizeMatrixRequest, type NormalizedMatrixRequest } from './request.ts';
 
 // A MATRIX_CONFIG file is the POST /api/matrix body as JSON, plus:
+//   providers   — array of ProviderPack definitions registered (in-memory) before the
+//                 request is normalized, so `platforms` can name their framework ids
+//                 and `variants[].mcps` their MCP classes. Unlike a Configuration-tab
+//                 upload these are NOT persisted to /providers — the config file is
+//                 the source of truth and re-registers them on every startup (a
+//                 same-named disk pack is replaced for this container's lifetime).
 //   apiKeyEnv   — name of an env var holding the key (instead of a plaintext apiKey);
 //                 with neither, the PROVIDER_ENV var for the model's prefix is used.
 //   customMcp   — may be an object (stringified here; the pipeline expects a string).
@@ -49,6 +57,30 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
 
   const warnings: string[] = [];
 
+  // Register inline provider packs BEFORE normalizing — `platforms` may name their
+  // framework ids. Validation is the same as POST /api/providers; any invalid or
+  // conflicting pack is a hard error (fail-fast, like the rest of the file).
+  if (raw.providers !== undefined) {
+    if (!Array.isArray(raw.providers)) {
+      throw new Error(`matrix config ${filePath}: providers must be an array of provider pack objects`);
+    }
+    for (let i = 0; i < raw.providers.length; i++) {
+      const v = validatePack(raw.providers[i]);
+      if ('error' in v) throw new Error(`matrix config ${filePath}: providers[${i}]: ${v.error}`);
+      try {
+        registerPack(v.pack); // in-memory only; rejects 'igniteui' + framework-id collisions
+      } catch (e: any) {
+        throw new Error(`matrix config ${filePath}: providers[${i}] ('${v.pack.name}'): ${e.message}`);
+      }
+      if (v.pack.containerDeps?.npmGlobal?.length) {
+        warnings.push(
+          `provider '${v.pack.name}' needs global npm package(s) ${v.pack.containerDeps.npmGlobal.join(', ')} ` +
+          'baked into the image (see the Containerfile "3rd-party provider dependencies" section) — ' +
+          'scaffold/dev commands may fail without a rebuild');
+      }
+    }
+  }
+
   // Resolve the API key before normalizing: apiKey > apiKeyEnv > provider default var.
   if (!raw.apiKey) {
     const envName = typeof raw.apiKeyEnv === 'string' && raw.apiKeyEnv.trim()
@@ -76,6 +108,28 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
   const r = normalizeMatrixRequest(raw);
   if (!r.ok) throw new Error(`matrix config ${filePath}: ${r.error}`);
   warnings.push(...r.req.warnings);
+
+  // Warn about variant MCP classes no selected platform's provider declares — an
+  // unknown class simply enables nothing at configure time, which headlessly would
+  // read as "MCP silently missing". Built-in platforms use the fixed wizard classes;
+  // external platforms declare theirs in the pack ('custom' works everywhere).
+  const knownClasses = new Set(['custom']);
+  for (const p of r.req.platforms) {
+    if (FRAMEWORKS[p]) {
+      for (const c of ['igniteui', 'theming', 'angular']) knownClasses.add(c);
+      continue;
+    }
+    for (const s of getPackForFramework(p)?.configure?.mcpServers || []) {
+      knownClasses.add(s.class.toLowerCase());
+    }
+  }
+  for (const v of r.req.variants) {
+    for (const c of v.mcps) {
+      if (!knownClasses.has(c.toLowerCase())) {
+        warnings.push(`variant MCP class '${c}' is not declared by any selected platform's provider`);
+      }
+    }
+  }
 
   // selectedTests should name discovered specs (same `<platform>::<category>/<file>`
   // keys the UI combo uses). Unknown keys just match nothing at verify time, so warn

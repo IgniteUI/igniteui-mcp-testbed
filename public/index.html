@@ -16,6 +16,7 @@
   <span class="dot" id="statusDot"></span>
   <h1>Ignite UI Testbed</h1>
   <nav class="views" role="tablist">
+    <button class="tab" data-view="config" role="tab" aria-selected="false">Configuration</button>
     <button class="tab active" data-view="wizard" role="tab" aria-selected="true">Interactive</button>
     <button class="tab" data-view="matrix" role="tab" aria-selected="false">Matrix</button>
     <button class="tab" data-view="history" role="tab" aria-selected="false">History</button>
@@ -29,22 +30,41 @@
     <p class="eyebrow">Session setup</p>
     <form id="form">
       <fieldset>
+        <legend>Provider</legend>
+        <!-- IgniteUI is hardcoded; external provider buttons are appended by JS
+             (refreshProviders in web/wizard.ts) when packs are loaded. -->
+        <igc-button-group id="provider" selection="single-required">
+          <igc-toggle-button value="igniteui" selected>Ignite UI</igc-toggle-button>
+        </igc-button-group>
+      </fieldset>
+
+      <fieldset>
         <legend>Framework</legend>
+        <!-- IgniteUI frameworks (shown when provider = igniteui) -->
         <igc-button-group id="fw" selection="single-required">
           <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
           <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
           <igc-toggle-button value="react">React</igc-toggle-button>
           <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
         </igc-button-group>
+        <!-- External provider framework button groups (appended by JS per pack) -->
+        <div id="externalFwGroups"></div>
+        <!-- Project type + theme: only meaningful for ig new (IgniteUI) -->
         <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav"></igc-input>
         <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default"></igc-input>
       </fieldset>
 
       <fieldset>
         <legend>MCP servers</legend>
-        <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
-        <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
-        <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        <!-- IgniteUI MCPs -->
+        <div id="mcpsIg">
+          <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
+          <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
+          <igc-checkbox data-mcp="angular" id="ngMcp" hidden>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        </div>
+        <!-- External provider MCPs (appended by JS per pack) -->
+        <div id="externalMcpGroups"></div>
+        <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
         <igc-checkbox data-mcp="custom" id="customMcpEnable">Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
         <igc-textarea id="customMcp" class="mcp-ta" rows="4" hidden placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
         <p class="note err" id="customMcpErr" hidden></p>
@@ -55,7 +75,10 @@
 
       <fieldset>
         <legend>Agent skills</legend>
-        <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-checkbox id="skills" checked>
+          <span id="skillsLabelIg">Install Ignite UI skills</span><span id="skillsLabelExt" hidden>Install skills</span><small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small>
+        </igc-checkbox>
+        <!-- Exclude: only relevant for IgniteUI (individual skill folders); hidden for other (3rd party) UI frameworks -->
         <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
         <igc-checkbox id="overrideSkills">Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly">Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
@@ -192,13 +215,25 @@
     <p class="eyebrow">Matrix setup</p>
     <form id="mxForm">
       <fieldset>
+        <legend>Provider</legend>
+        <!-- IgniteUI is hardcoded; external provider buttons are appended by JS
+             (refreshProviders in web/matrix.ts) when packs are loaded. -->
+        <igc-button-group id="mxProvider" selection="single-required">
+          <igc-toggle-button value="igniteui" selected>Ignite UI</igc-toggle-button>
+        </igc-button-group>
+      </fieldset>
+
+      <fieldset>
         <legend>Platforms <small style="color:var(--steel);font-weight:400">(axis)</small></legend>
-        <div id="mxPlatforms">
+        <!-- IgniteUI platforms -->
+        <div id="mxPlatformsIg">
           <igc-checkbox value="angular" checked>Angular</igc-checkbox>
           <igc-checkbox value="blazor">Blazor</igc-checkbox>
           <igc-checkbox value="react">React</igc-checkbox>
           <igc-checkbox value="webcomponents">Web Comps</igc-checkbox>
         </div>
+        <!-- External provider platforms (appended by JS per pack) -->
+        <div id="mxExternalPlatforms"></div>
       </fieldset>
 
       <fieldset>
@@ -300,6 +335,28 @@
     <igc-column id="historyDuration" field="durationMs" header="Duration" data-type="number" sortable="true" resizable="true" width="5%" min-width="0"></igc-column>
     <igc-column id="historyActions" field="actions" header="Actions" resizable="true" width="6%" min-width="0"></igc-column>
   </igc-grid>
+</section>
+
+<!-- Configuration tab: load / manage external provider packs. -->
+<section class="config-view" id="configView" hidden>
+  <section class="panel">
+    <p class="eyebrow">Provider configurations</p>
+    <p class="note">Ignite UI is built-in and always available. Load a provider pack to enable an additional library (frameworks + MCP server + skills) in the Interactive and Matrix tabs.</p>
+    <div id="providerList"><!-- populated by JS --></div>
+    <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <igc-button id="loadPackBtn" variant="outlined">Load pack (.json)…</igc-button>
+      <input type="file" id="packFile" accept=".json" hidden>
+      <span class="note" id="packLoadStatus" hidden></span>
+    </div>
+    <details class="help" style="margin-top:1.25rem">
+      <summary>About provider packs</summary>
+      <div class="help-body">
+        <p>A provider pack is a JSON file that teaches the testbed how to scaffold a project for a specific library, which MCP server to wire up, and where to fetch the agent skills. Pre-built pack files live in the <code>3rdPartyConfigurations/</code> folder of this repository.</p>
+        <p>Once a pack is loaded it is persisted to the <code>providers-data/</code> folder on the host (bind-mounted at <code>/providers</code>) and survives container restarts. Use the <strong>✕</strong> button to remove a pack.</p>
+        <p><strong>Container note:</strong> if a pack lists container dependencies (npm global packages), those must already be installed in the running image or the scaffold will fail at the configure step.</p>
+      </div>
+    </details>
+  </section>
 </section>
 
 <!-- API-key prompt for re-running a matrix configuration from the History tab. -->

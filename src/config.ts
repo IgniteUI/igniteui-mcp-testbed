@@ -16,6 +16,10 @@ export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
 // skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
 export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 
+// Provider packs loaded at runtime — persists across container restarts via the
+// /providers bind mount (see run.sh / run.ps1).  Each .json file in this dir is
+// one ProviderPack describing how to scaffold and configure a 3rd-party library.
+export const PROVIDERS_DIR = process.env.PROVIDERS_DIR || '/providers';
 // Host-supplied Playwright verification tests, bind-mounted in read-only (see
 // run.sh/run.ps1). A run collects TESTS_DIR/shared plus TESTS_DIR/<framework> and runs
 // them against the freshly-built app in the post-generation `verify` stage (headless
@@ -39,9 +43,9 @@ export const APP_READY_TIMEOUT_MS = Number(process.env.APP_READY_TIMEOUT_MS || 6
 // ephemeral container. opencode honours XDG_DATA_HOME for its storage location.
 process.env.XDG_DATA_HOME = process.env.XDG_DATA_HOME || path.join(WORK, '.opencode-data');
 
-// Reliable launch commands for the known Ignite UI MCP servers, run from the
-// globally-installed packages (see Containerfile) instead of the broken/network
-// `npx` invocations ig ai-config writes. Keyed by the wizard's server class.
+// Reliable launch commands for the known MCP servers, run from globally-installed
+// packages (see Containerfile) instead of the `npx` invocations that cold-fetch
+// from npm on each run. Keyed by the wizard's server class.
 export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = {
   igniteui: ['ig', 'mcp'],
   theming: ['igniteui-theming-mcp'],

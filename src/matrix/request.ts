@@ -1,7 +1,7 @@
 'use strict';
 
-import { FRAMEWORKS } from '../frameworks.ts';
 import { MATRIX_MAX_ENTRIES } from '../config.ts';
+import { getFramework } from '../provider-registry.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, Variant } from '../types.ts';
 
@@ -26,9 +26,11 @@ export type MatrixRequestResult =
 export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   const body = raw || {};
   const requested: string[] = Array.isArray(body.platforms) ? body.platforms : [];
-  const platforms = requested.filter((p: string) => FRAMEWORKS[p]);
+  // Provider-aware: a platform is any built-in framework id OR a framework id
+  // registered by an external provider pack (provider-registry.getFramework).
+  const platforms = requested.filter((p: string) => getFramework(p));
   const warnings: string[] = requested
-    .filter((p: string) => !FRAMEWORKS[p])
+    .filter((p: string) => !getFramework(p))
     .map((p: string) => `unknown platform '${p}' ignored`);
   const variants = parseVariants(body.variants);
   const model = String(body.model || '').trim();

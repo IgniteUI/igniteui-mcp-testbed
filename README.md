@@ -129,9 +129,10 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `platforms` | yes | Any of `angular`, `blazor`, `react`, `webcomponents`. Unknown names are ignored with a warning. |
-| `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. `mcps` ⊆ `igniteui` / `theming` / `custom`; `localSkills` without `skills` = local-only. Deduped. |
+| `platforms` | yes | Built-in framework ids (`angular`, `blazor`, `react`, `webcomponents`) **or any registered provider pack's framework ids** (from `./providers-data/` or this file's `providers` field). Unknown names are ignored with a warning. |
+| `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. For built-in platforms `mcps` ⊆ `igniteui` / `theming` / `custom`; for provider platforms use the pack's MCP server `class` names (+ `custom`). Classes no selected platform declares warn at load. `localSkills` without `skills` = local-only. Deduped. |
 | `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
+| `providers` | no | Array of **provider pack definitions** (same JSON shape the Configuration tab uploads: `name`, `displayName`, `frameworks[]`, `configure.mcpServers[]`, …). Registered in-memory at startup *before* the request is validated, so `platforms`/`mcps` can reference them — a terminal run is fully self-contained in one file. Unlike UI uploads they are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
 | `prompt` | yes | The shared prompt every entry runs. |
 | `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
 | `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
@@ -145,6 +146,21 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 The API key is never written to disk inside the container and never echoed back to the
 browser; a matrix submitted from the prefilled UI with an empty key field falls back to
 the config's key automatically.
+
+[`matrix.example.angular-material.json`](matrix.example.angular-material.json) is a
+complete self-contained example of the `providers` field: it defines an
+**Angular Material** provider inline (Angular CLI scaffold + `@angular/material` /
+`@angular/cdk` installed post-scaffold — the *agent* is left to do the Material wiring,
+which is the thing being tested) with the Angular CLI MCP as its toggleable server
+(class `angular`), then runs one prompt with and without that MCP:
+
+```bash
+./run.sh --matrix-config ./matrix.example.angular-material.json
+```
+
+Its `containerDeps.npmGlobal` lists `@angular/cli`; the scaffold works without baking it
+in (npx fetches on demand, slower per entry) — add it to the Containerfile's
+"3rd-party provider dependencies" section and rebuild to skip the per-session fetch.
 
 ## How a session works
 
