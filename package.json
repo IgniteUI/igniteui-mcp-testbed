@@ -12,6 +12,7 @@
     "dev:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js --watch"
   },
   "dependencies": {
+    "@playwright/test": "^1.49.1",
     "express": "^4.19.2",
     "playwright": "^1.49.1"
   },

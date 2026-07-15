@@ -1,0 +1,2 @@
+# Blazor-only verification tests. Add `*.spec.ts` files here; they run in addition to
+# `tests/shared/**` for Blazor matrix entries. Delete this file once you add real tests.

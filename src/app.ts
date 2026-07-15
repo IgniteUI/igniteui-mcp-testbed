@@ -8,6 +8,7 @@ import registerMatrixRoutes from './routes/matrix.ts';
 import registerHistoryRoutes from './routes/history.ts';
 import registerStatsRoutes from './routes/stats.ts';
 import registerSkillsRoutes from './routes/skills.ts';
+import registerTestsRoutes from './routes/tests.ts';
 
 const app = express();
 app.use(express.json());
@@ -20,5 +21,6 @@ registerMatrixRoutes(app);
 registerHistoryRoutes(app);
 registerStatsRoutes(app);
 registerSkillsRoutes(app);
+registerTestsRoutes(app);
 
 export default app;

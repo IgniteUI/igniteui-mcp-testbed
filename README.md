@@ -98,8 +98,9 @@ The header switches between three views:
   in "How a session works" below.
 - **Matrix** — run one shared prompt across a grid of **platform × variant** (a
   variant = a set of MCPs + skills on/off). Each cell is a one-shot **headless** agent
-  run: it scaffolds, runs `opencode run "<prompt>"`, then builds the edited app once
-  and screenshots every route. Use it to compare, say, "with skills" vs "without"
+  run: it scaffolds, runs `opencode run "<prompt>"`, builds the edited app once,
+  screenshots every route, and runs any injected Playwright tests (see "Verification
+  tests"). Use it to compare, say, "with skills" vs "without"
   across Angular / React / Blazor / Web Components. Results land in History.
 - **History** — a sortable Ignite UI grid of every run (config, stage timings,
   token / cost stats, screenshots, logs), with expandable detail rows, a 1–5★ rating
@@ -126,8 +127,8 @@ wizard (:8080) — pick framework · MCPs · skills · model
 ```
 
 Matrix mode shares stages 1–4, then differs: instead of launching opencode web it runs
-the agent **headless** once, builds the app, and screenshots the routes (stage 5 runs
-*after* the agent there, not before).
+the agent **headless** once, builds the app, screenshots the routes, and runs the injected
+verification tests (stage 5 runs *after* the agent there, not before).
 
 The generated project and logs live in `./sessions/<timestamp>/` on the host
 (bind-mounted to `/work`), so they survive container teardown even though the container
@@ -150,6 +151,74 @@ is `--rm`.
   OpenAI-compatible base URL declares a provider instead. You can switch model
   mid-session from the "Switch model" panel (it rewrites the config and restarts
   opencode).
+
+## Verification tests
+
+The testbed can run your own **Playwright** end-to-end tests against each generated app
+as a post-generation quality gate. Drop specs on the host under `./tests/` (bind-mounted
+read-only at `/tests`); after a matrix entry's app builds and starts serving, the
+pipeline's **verify** stage runs them, and any failure marks that run `test-failed` in
+History (distinct from `success` / `build-error`).
+
+> Verification runs in **matrix (headless) mode**, where there's a clear
+> post-generation checkpoint. The interactive wizard lets you pick specs and records the
+> selection, but doesn't execute them (its session hands off to a live opencode editor
+> with no fixed checkpoint).
+
+### Authoring tests
+
+Tests are split into a **shared** set that runs for every platform plus optional
+**per-framework** overlays:
+
+```
+tests/
+  shared/                 # runs for every platform
+    smoke.spec.ts
+    auth-flow.spec.ts
+  angular/                # runs only for Angular entries (in addition to shared/)
+    grid.spec.ts
+  react/
+  webcomponents/
+  blazor/
+```
+
+A run collects `tests/shared/**` **plus** `tests/<its-platform>/**`. Specs are matched by
+name (`*.spec.ts` / `*.test.ts`, also `.js`, `.tsx`, `.mts`, …).
+
+Write plain Playwright specs — no `node_modules`, `playwright.config`, or `package.json`
+in this folder. `@playwright/test` and a headless Chromium are provided by the container;
+each spec runs against the served app via Playwright's configured `baseURL`, so navigate
+with **relative** paths:
+
+```ts
+import { test, expect } from '@playwright/test';
+
+test('home page renders a grid', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('igc-grid, igx-grid, .igr-grid')).toBeVisible();
+});
+```
+
+Notes:
+
+- **Don't wait for `networkidle`** — framework dev servers keep an HMR WebSocket open, so
+  the network never goes idle and the wait would stall. Use `waitUntil: 'domcontentloaded'`
+  plus a short fixed pause to let custom elements upgrade.
+- Each spec has a 30s per-test timeout; the whole suite is capped by `TEST_TIMEOUT_MS`
+  (default 5 min).
+- The raw Playwright JSON report is saved with the run (History → run detail → **Tests**),
+  and pass/fail counts show in the History grid's **Tests** column.
+
+### Choosing what runs
+
+Both the interactive wizard and the matrix setup have a **Verification tests** picker — a
+grouped multi-select combo grouped **by framework**. Each framework group lists the specs
+that run for it: its own overlay (`tests/<framework>/`) plus the shared set, so a shared
+spec appears under every framework it runs for and can be toggled per framework. **Only
+the selected files run**; every discovered spec starts selected, and clearing the
+selection skips verification entirely. In matrix mode the picker has one group per
+selected platform, and each entry runs only its own group's selected specs. See
+[`tests/README.md`](tests/README.md) for the full reference.
 
 ## Adapting it to your packages
 

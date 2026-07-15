@@ -90,6 +90,29 @@
         </details>
       </fieldset>
 
+      <fieldset>
+        <legend>Verification tests</legend>
+        <igc-combo id="testsCombo" label="Tests to run" placeholder="Select test files…"
+          value-key="id" display-key="file" group-key="category"></igc-combo>
+        <p class="note" id="testsNote"></p>
+        <details class="help">
+          <summary>How verification tests work</summary>
+          <div class="help-body">
+            <p>Drop <strong>Playwright</strong> specs on the host under <code>./tests/</code> —
+            a <code>shared/</code> set that runs for every platform plus optional per-framework
+            overlays (<code>tests/&lt;framework&gt;/</code>). They’re bind-mounted read-only at
+            <code>/tests</code> and run against the built app in the pipeline’s
+            <strong>verify</strong> stage.</p>
+            <p>The combo groups specs by <strong>framework</strong>; the group lists every spec
+            that runs for the selected framework (its own overlay plus the shared set).
+            <strong>Only the selected files execute</strong> — clear the selection to skip
+            verification entirely. Verification executes during <strong>matrix runs</strong>
+            (each entry, once its app builds and serves); a suite with any failing test marks
+            that run <code>test-failed</code> in History.</p>
+          </div>
+        </details>
+      </fieldset>
+
       <!-- Model fieldset: converted to Ignite UI Web Components (igc-input).
            Each igc-input exposes a `value` property, so the existing JS that
            reads $('#model').value / $('#key').value / $('#base').value is unchanged. -->
@@ -224,6 +247,15 @@
         <p class="note">One key applied to every entry. Mixing providers in one matrix needs them to share a key.</p>
       </fieldset>
 
+      <fieldset>
+        <legend>Verification tests</legend>
+        <igc-combo id="mxTestsCombo" label="Tests to run" placeholder="Select test files…"
+          value-key="id" display-key="file" group-key="category"></igc-combo>
+        <p class="note" id="mxTestsNote">Grouped by framework — each platform's group lists the specs that run for it
+        (its own overlay plus the shared set). Only the selected files run per entry; clear the selection to skip.
+        A failing suite marks that entry <code>test-failed</code> in History.</p>
+      </fieldset>
+
       <p class="mx-count" id="mxCount">0 runs</p>
       <igc-button type="submit" id="mxGo" variant="contained">Run matrix</igc-button>
     </form>
@@ -255,11 +287,12 @@
     </igc-grid-toolbar>
     <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="13%" min-width="0"></igc-column>
     <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="7%" min-width="0"></igc-column>
-    <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="9%" min-width="0"></igc-column>
-    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="13%" min-width="0"></igc-column>
+    <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="8%" min-width="0"></igc-column>
+    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="11%" min-width="0"></igc-column>
     <igc-column id="historySkills" field="skills" header="Skills" sortable="false" resizable="true" width="4%" min-width="0"></igc-column>
     <igc-column id="historyMcps" field="mcps" header="MCPs" sortable="true" resizable="true" width="10%" min-width="0"></igc-column>
     <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>
+    <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>
     <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="8%" min-width="0"></igc-column>
     <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%" min-width="0"></igc-column>
     <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%" min-width="0"></igc-column>

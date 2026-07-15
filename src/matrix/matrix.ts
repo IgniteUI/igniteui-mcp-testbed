@@ -19,6 +19,7 @@ interface Fixed {
   apiKey?: string;
   customBaseUrl?: string;
   customMcp?: string;
+  selectedTests?: string[];
 }
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
@@ -47,6 +48,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     excludedSkills: [],
     overrideSkills: !!c.variant.localSkills,
     localSkillsOnly: !!c.variant.localSkills && !c.variant.skills,
+    selectedTests: fixed.selectedTests,
     model: fixed.model,
     apiKey: fixed.apiKey,
     customBaseUrl: fixed.customBaseUrl || undefined,
@@ -142,18 +144,28 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);
       // The agent ran fine but the edited app may not compile — flag that distinctly
-      // from a clean success so "0 shots" isn't mistaken for "app had no routes".
-      const status = (matrixCancelled || cancelledEntries.has(runId)) ? 'cancelled'
-        : (result.appReady === false ? 'build-error' : 'success');
-      const buildErr = status === 'build-error' ? (result.appError || 'app build failed') : null;
-      history.finish(runId, { status, error: buildErr, completed, timings, screenshots: result.screenshots || [], logs: entry.logs || [] });
+      // from a clean success so "0 shots" isn't mistaken for "app had no routes". A
+      // built app whose injected Playwright tests fail becomes 'test-failed'.
+      const cancelled = matrixCancelled || cancelledEntries.has(runId);
+      const tests = result.tests || null;
+      const status = cancelled ? 'cancelled'
+        : result.appReady === false ? 'build-error'
+        : (tests && !tests.ok) ? 'test-failed'
+        : 'success';
+      const outcomeErr = status === 'build-error' ? (result.appError || 'app build failed')
+        : status === 'test-failed' ? (tests?.error || `${tests?.failed} test(s) failed`)
+        : null;
+      history.finish(runId, { status, error: outcomeErr, completed, timings, screenshots: result.screenshots || [], tests, logs: entry.logs || [] });
       entry.status = status;
       // Retain the summary label so a reload shows the outcome, not the last live step.
-      if (status === 'success') entry.step = `${(result.screenshots || []).filter((s) => s.ok).length} shots`;
-      else if (status === 'build-error') entry.step = 'build failed';
+      if (status === 'success') {
+        const shots = `${(result.screenshots || []).filter((s) => s.ok).length} shots`;
+        entry.step = tests && tests.ran ? `${shots} · ${tests.passed}/${tests.total} tests` : shots;
+      } else if (status === 'build-error') entry.step = 'build failed';
+      else if (status === 'test-failed') entry.step = tests ? `tests failed (${tests.failed}/${tests.total})` : 'tests failed';
       broadcast({
         type: 'entry-done', index: i, status, runId,
-        screenshots: result.screenshots || [], stats: result.stats || null, error: buildErr,
+        screenshots: result.screenshots || [], stats: result.stats || null, tests, error: outcomeErr,
       });
     } catch (err: any) {
       closeStep();

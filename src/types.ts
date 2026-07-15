@@ -14,6 +14,9 @@ export interface RunConfig {
   excludedSkills?: string[];
   overrideSkills?: boolean;
   localSkillsOnly?: boolean;
+  // Which injected test files to run in the verify stage, as `<category>/<file>` keys
+  // (category = 'shared' or a framework). undefined ⇒ run all discovered; [] ⇒ run none.
+  selectedTests?: string[];
   model: string;
   apiKey?: string;
   customBaseUrl?: string | null;
@@ -74,6 +77,7 @@ export interface StoredConfig {
   excludedSkills: string[];
   overrideSkills: boolean;
   localSkillsOnly: boolean;
+  selectedTests: string[];
   models: string[];
   customBaseUrl: string | null;
 }
@@ -83,6 +87,31 @@ export interface Screenshot {
   file: string;
   ok: boolean;
   error?: string;
+}
+
+// One failed Playwright test, surfaced in the run log + History detail.
+export interface TestFailure {
+  title: string;
+  file: string;
+  error: string;
+}
+
+// Outcome of the post-generation Playwright verification stage (headless/matrix only).
+// `ran` is whether the runner executed; `ok` is whether every test passed. A run with
+// no injected test files never produces a TestResult (the stage is skipped).
+export interface TestResult {
+  ran: boolean;
+  ok: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  flaky: number;
+  durationMs: number | null;
+  files: string[];
+  failures: TestFailure[];
+  reportFile?: string | null; // artifact filename (served under /history/artifacts/<id>/)
+  error?: string | null;      // harness-level error (runner couldn't execute / parse)
 }
 
 export interface HistoryRecord {
@@ -100,6 +129,7 @@ export interface HistoryRecord {
   stages: { completed: string[]; timings: Record<string, number> };
   stats: Stats | null;
   screenshots: Screenshot[];
+  tests: TestResult | null;
   logs: string[];
 }
 
@@ -164,4 +194,5 @@ export interface HeadlessResult {
   skipped: SkippedRoute[];
   appReady: boolean;
   appError?: string;
+  tests?: TestResult | null;
 }

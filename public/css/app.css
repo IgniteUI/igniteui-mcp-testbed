@@ -43,6 +43,9 @@ legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
 body { --ig-size: 1; }
 form igc-input { display:block; margin-top:.7rem; }
 igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+form igc-combo { display:block; margin-top:.5rem; }
+igc-combo::part(label) { font-size:.85rem; }
+igc-combo::part(item selected) { background:transparent; color:var(--ink); }
 .mcp-ta { display:block; width:100%; margin-top:.5rem; font-family:var(--mono); font-size:.8rem; }
 .mcp-ta::part(input) { font-family:var(--mono); font-size:.8rem; }
 
@@ -234,6 +237,7 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
 .pill.error { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
+.pill.test-failed { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
 .detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem 1.6rem;
   contain:layout paint style;
@@ -247,6 +251,20 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .detail-note { margin:0; color:#bfe6df; }
 .detail-log { max-height:320px; overflow:auto; white-space:pre-wrap; }
 .log-summary { cursor:pointer; color:var(--steel); }
+/* injected-test verification: grid cell + detail summary */
+.tests-cell { display:block; text-align:right; font-variant-numeric:tabular-nums; }
+.tests-cell.pass { color:var(--green); }
+.tests-cell.fail { color:var(--red); font-weight:600; }
+.tests-cell.error { color:var(--amber); }
+.tests-cell.none { color:var(--steel); }
+.test-summary { margin:.1rem 0 .4rem; }
+.test-summary.pass { color:var(--green); }
+.test-summary.fail { color:#ff9c8a; }
+.test-summary.error { color:var(--amber); }
+.test-summary a { color:var(--teal); }
+.test-failures { display:flex; flex-direction:column; gap:.5rem; margin-top:.4rem; }
+.test-failure small { color:var(--steel); margin-left:.4rem; }
+.test-failure pre { margin:.2rem 0 0; max-height:200px; }
 .pill.matrix { background:rgba(26,169,158,.16); color:var(--teal); }
 .pill.pending, .pill.cancelled, .pill.interrupted { background:rgba(142,166,164,.15); color:var(--steel); }
 /* per-matrix tag: hue set inline from a hash of the matrixId so same-matrix rows match */
