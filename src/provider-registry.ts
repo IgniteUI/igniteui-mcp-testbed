@@ -25,6 +25,12 @@ const externalFrameworkOwner = new Map<string, string>();
 // the CodeQL js/remote-property-injection rule entirely.
 const externalFrameworks = new Map<string, FrameworkDef>();
 
+// Normalize dynamic values before writing to plain-text logs to prevent log forging.
+// Removes CR/LF and other ASCII control characters that could alter log structure.
+function sanitizeForLog(value: unknown): string {
+  return String(value).replace(/[\u0000-\u001f\u007f]/g, ' ');
+}
+
 // Safe identifier — only alphanumerics, hyphens, underscores; must start with a
 // letter or digit so names like __proto__ (starts with _) are also rejected.
 // Applied to pack.name (used in file paths) and fw.id (used as object keys) to
@@ -122,10 +128,9 @@ export function loadAll(): void {
       registerPack(pack);
       loaded++;
     } catch (e: any) {
-      // Sanitize f and e.message before logging — both could contain newlines that
-      // would inject fake log entries (CodeQL js/log-injection).
-      const safeF = f.replace(/[\r\n]/g, ' ');
-      const safeMsg = String(e?.message ?? e).replace(/[\r\n]/g, ' ');
+      // Sanitize dynamic values before logging to prevent log injection/forgery.
+      const safeF = sanitizeForLog(f);
+      const safeMsg = sanitizeForLog(e?.message ?? e);
       console.warn(`provider-registry: failed to load ${safeF}: ${safeMsg}`);
     }
   }
