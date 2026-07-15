@@ -173,7 +173,7 @@ $('#mxTestsCombo').addEventListener('igcChange', () => {
   if (total) $('#mxTestsNote').textContent =
     `${sel}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
 });
-document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
 
 // Provider toggle: show/hide platform groups, clear + re-seed variant rows.
