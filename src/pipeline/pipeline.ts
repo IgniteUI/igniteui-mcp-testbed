@@ -102,14 +102,17 @@ export async function runPipeline(
     // Write .vscode/mcp.json (used as a record; opencode.json is written below).
     const vscodeMcpDir = path.join(appDir, '.vscode');
     fs.mkdirSync(vscodeMcpDir, { recursive: true });
-    // Use Object.create(null) so that user-supplied server names like "__proto__"
-    // cannot pollute Object.prototype via bracket-assignment.
-    const vsServers: Record<string, any> = Object.create(null);
-    for (const s of pack.configure.mcpServers) {
-      vsServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
-    }
-    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify({ servers: vsServers }, null, 2));
-    emit('log', `wrote .vscode/mcp.json (${Object.keys(vsServers).length} server(s) from pack "${pack.name}")`);
+    // Build an entries array and convert with Object.fromEntries() so that no
+    // user-supplied server name is ever used as a bracket-assignment key
+    // (CodeQL js/remote-property-injection sink).
+    const vsServerEntries = pack.configure.mcpServers.map(
+      s => [s.name, { type: 'stdio', command: s.command, args: s.args || [] }] as [string, object],
+    );
+    fs.writeFileSync(
+      path.join(vscodeMcpDir, 'mcp.json'),
+      JSON.stringify({ servers: Object.fromEntries(vsServerEntries) }, null, 2),
+    );
+    emit('log', `wrote .vscode/mcp.json (${vsServerEntries.length} server(s) from pack "${pack.name}")`);
 
     // Optionally install skills.
     if (cfg.skills) {
@@ -145,11 +148,16 @@ export async function runPipeline(
     // Write opencode.json directly — pack commands are already correct,
     // so the translate step is not needed.
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-    const mcpBlock: Record<string, any> = Object.create(null); // prototype-safe
+    // Collect MCP entries as [key, value] pairs so no user-supplied server name is
+    // ever assigned via bracket notation (CodeQL js/remote-property-injection).
+    const mcpEntries: [string, object][] = [];
     for (const s of pack.configure.mcpServers) {
       const on = selected.has(s.class.toLowerCase());
-      emit('log', `mcp "${s.name}" → class "${s.class}" → ${on ? 'enabled' : 'disabled'}`);
-      if (on) mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+      // Sanitize server name and class before emitting to logs (CodeQL js/log-injection).
+      const safeName = s.name.replace(/[\r\n]/g, ' ');
+      const safeClass = s.class.replace(/[\r\n]/g, ' ');
+      emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
+      if (on) mcpEntries.push([s.name, { type: 'local', command: [s.command, ...(s.args || [])] }]);
     }
     // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
     // when the 'custom' class is enabled. Uses translate() to convert from vscode MCP
@@ -174,13 +182,14 @@ export async function runPipeline(
           workspaceFolder: appDir,
         });
         for (const [name, def] of Object.entries(customMcp)) {
-          mcpBlock[name] = def;
+          mcpEntries.push([name, def]);
           emit('log', `mcp "${name}" → custom → enabled`);
         }
       } catch (e: any) {
         emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
       }
     }
+    const mcpBlock = Object.fromEntries(mcpEntries);
     writeOpencodeConfig(cfg, mcpBlock, appDir);
     emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
 
