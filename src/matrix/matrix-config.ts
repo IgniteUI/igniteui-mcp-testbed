@@ -55,7 +55,7 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
       ? raw.apiKeyEnv.trim()
       : PROVIDER_ENV[String(raw.model || '').split('/')[0]];
     if (raw.apiKeyEnv && !process.env[String(raw.apiKeyEnv).trim()]) {
-      warnings.push(`apiKeyEnv '${raw.apiKeyEnv}' is not set in the environment`);
+      warnings.push('configured apiKeyEnv is not set in the environment');
     }
     if (envName && process.env[envName]) raw.apiKey = process.env[envName];
   }
