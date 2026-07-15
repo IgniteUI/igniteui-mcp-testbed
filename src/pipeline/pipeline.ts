@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ChildProcess } from 'child_process';
-import { FRAMEWORKS, APP_PORT, subst } from '../frameworks.ts';
+import { APP_PORT, subst } from '../frameworks.ts';
 import { translate } from '../mcp-translate.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
@@ -20,7 +20,7 @@ import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencod
 import { classify } from './mcp-classify.ts';
 import { pruneSkills, overlaySkills } from './skills.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
-import { getPackForFramework } from '../provider-registry.ts';
+import { getPackForFramework, getFramework } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
 
 export interface PipelineOpts {
@@ -44,7 +44,7 @@ export async function runPipeline(
   cfg: RunConfig,
   { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
-  const fw = FRAMEWORKS[cfg.framework];
+  const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
 
   // Report every spawned child to `onChild` (matrix cancel kills whatever is current)

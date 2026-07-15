@@ -20,6 +20,11 @@ const BUILTIN_FRAMEWORK_IDS = new Set(Object.keys(FRAMEWORKS));
 // cannot silently overwrite each other's frameworks.
 const externalFrameworkOwner = new Map<string, string>();
 
+// External frameworks are stored in a Map (not a plain object) so user-supplied
+// framework ids are NEVER used as property keys on any plain object.  This avoids
+// the CodeQL js/remote-property-injection rule entirely.
+const externalFrameworks = new Map<string, FrameworkDef>();
+
 // Safe identifier — only alphanumerics, hyphens, underscores; must start with a
 // letter or digit so names like __proto__ (starts with _) are also rejected.
 // Applied to pack.name (used in file paths) and fw.id (used as object keys) to
@@ -81,28 +86,27 @@ export function registerPack(pack: ProviderPack): void {
   unregisterPack(pack.name);
   for (const fw of pack.frameworks) {
     externalFrameworkOwner.set(fw.id, pack.name);
-    // Use Object.defineProperty so a user-supplied key (even a theoretically dangerous
-    // one that slipped through assertSafeId) cannot modify Object.prototype via
-    // bracket-assignment — a pattern CodeQL's remote-property-injection rule flags.
-    Object.defineProperty(FRAMEWORKS, fw.id, {
-      value: packFwToDef(fw),
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    });
+    // Store in a Map — user-supplied fw.id is never used as a plain-object property
+    // key, which eliminates the CodeQL js/remote-property-injection finding.
+    externalFrameworks.set(fw.id, packFwToDef(fw));
   }
   packs.set(pack.name, pack);
 }
 
-/** Remove a pack from memory and from the FRAMEWORKS map. */
+/** Remove a pack from memory and from the external-frameworks Map. */
 export function unregisterPack(name: string): void {
   const pack = packs.get(name);
   if (!pack) return;
   for (const fw of pack.frameworks) {
-    delete FRAMEWORKS[fw.id];
+    externalFrameworks.delete(fw.id);
     externalFrameworkOwner.delete(fw.id);
   }
   packs.delete(name);
+}
+
+/** Look up a framework by id — checks built-ins first, then external packs. */
+export function getFramework(id: string): FrameworkDef | undefined {
+  return FRAMEWORKS[id] ?? externalFrameworks.get(id);
 }
 
 /** Read all *.json files from PROVIDERS_DIR and register them. */
@@ -118,7 +122,11 @@ export function loadAll(): void {
       registerPack(pack);
       loaded++;
     } catch (e: any) {
-      console.warn(`provider-registry: failed to load ${f}: ${e.message}`);
+      // Sanitize f and e.message before logging — both could contain newlines that
+      // would inject fake log entries (CodeQL js/log-injection).
+      const safeF = f.replace(/[\r\n]/g, ' ');
+      const safeMsg = String(e?.message ?? e).replace(/[\r\n]/g, ' ');
+      console.warn(`provider-registry: failed to load ${safeF}: ${safeMsg}`);
     }
   }
   if (loaded) console.log(`provider-registry: loaded ${loaded} pack(s) from ${PROVIDERS_DIR}`);
