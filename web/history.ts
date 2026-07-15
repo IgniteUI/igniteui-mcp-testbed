@@ -106,7 +106,7 @@ const html = (...args: any[]) => {
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
 // Format a framework id for display in the History grid.
 // Only the four known IgniteUI-native ids get the " - Ignite UI" suffix so
-// external provider frameworks (e.g. "react-aggrid", "svelte") are shown as-is.
+// external 3rd party UI frameworks are shown as-is.
 const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
 function fmtFramework(fw: string | undefined): string {
   if (!fw) return '—';

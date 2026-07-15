@@ -72,7 +72,7 @@ export async function runPipeline(
     writePrepareFile(path.join(appDir, rel), subst([body], vars)[0], emit, appDir);
   }
 
-  // 1b. Post-scaffold package install (e.g. ag-grid packages into a plain Vite project).
+  // 1b. Post-scaffold package install (e.g. 3rd party UI framework packages into a plain Vite project).
   if (fw.install && fw.install.length) {
     emit('log', `installing packages: ${fw.install.join(' ')}`);
     await runStep('npm', ['install', ...fw.install], appDir, emit);
@@ -274,7 +274,7 @@ export async function runPipeline(
     emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
   } // end if (configureStrategy !== 'none')
 
-  // 4. Prune deselected skills (IgniteUI only — ag-grid skills have no per-skill exclusion).
+  // 4. Prune deselected skills (IgniteUI only).
   if (configureStrategy === 'igniteui' && cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);

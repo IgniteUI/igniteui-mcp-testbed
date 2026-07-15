@@ -90,7 +90,7 @@ export interface ProviderPack {
 
 export interface FrameworkDef {
   scaffold: ScaffoldDef;
-  // npm packages to install into the scaffolded project after scaffold (e.g. ag-grid-community).
+  // npm packages to install into the scaffolded project after scaffold (e.g. 3rd party UI framework).
   install?: string[];
   // How to set up AI tooling. Defaults to 'igniteui' when omitted.
   configure?: ConfigureStrategy;
