@@ -25,7 +25,10 @@ fi
 
 for n in "${names[@]}"; do
   echo "Stopping $n …"
-  podman stop "$n" >/dev/null
+  # A failed stop (already gone / not running) must not abort the loop under `set -e`,
+  # so the remaining containers are still stopped and the summary still prints — matching
+  # stop.ps1, where a native non-zero exit doesn't throw.
+  podman stop "$n" >/dev/null || true
 done
 
 echo "Stopped ${#names[@]} container(s)."

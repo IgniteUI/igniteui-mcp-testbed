@@ -22,6 +22,10 @@ local-skills/*/*
 # Logs
 *.log
 
+# Playwright output from any host-side test runs (in-container output lives under sessions/)
+test-results/
+playwright-report/
+
 # Environment / secrets
 .env
 .env.*

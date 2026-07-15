@@ -20,6 +20,12 @@ export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 // /providers bind mount (see run.sh / run.ps1).  Each .json file in this dir is
 // one ProviderPack describing how to scaffold and configure a 3rd-party library.
 export const PROVIDERS_DIR = process.env.PROVIDERS_DIR || '/providers';
+// Host-supplied Playwright verification tests, bind-mounted in read-only (see
+// run.sh/run.ps1). A run collects TESTS_DIR/shared plus TESTS_DIR/<framework> and runs
+// them against the freshly-built app in the post-generation `verify` stage (headless
+// mode only). Timeout caps the whole runner; 0/absent tests => the stage is skipped.
+export const TESTS_DIR = process.env.TESTS_DIR || '/tests';
+export const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS || 5 * 60 * 1000);
 
 // Matrix-mode tunables.
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);

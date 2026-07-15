@@ -13,6 +13,9 @@ interface HistoryGridRow {
   mcps: string;
   status: string;
   rating: number;
+  testsSort: number;
+  testsDisplay: string;
+  testsState: string;
   msgs: number;
   tok: number;
   costSort: number | null;
@@ -120,10 +123,20 @@ function skillSummary(c: any): string {
   return gen || 'off';
 }
 
+// One-word summary of a run's injected-test verification outcome for the grid.
+function testSummary(t: any): { display: string; sort: number; state: string } {
+  if (!t) return { display: '—', sort: -1, state: 'none' };
+  if (!t.ran) return { display: 'error', sort: -2, state: 'error' };
+  // Sort key: failing runs first (negative), then by pass ratio.
+  const sort = t.failed > 0 ? -100 - t.failed : (t.total ? t.passed / t.total : 1) * 100;
+  return { display: `${t.passed}/${t.total}`, sort, state: t.ok ? 'pass' : 'fail' };
+}
+
 // Flatten a record into the comparable values shown in the grid.
 function rowVals(r: any): HistoryGridRow {
   const st = r.stats || {};
   const cost = st.cost && st.cost.available ? st.cost.amount : null;
+  const ts = testSummary(r.tests);
   return {
     id: r.id,
     whenTs: Date.parse(r.startedAt) || 0,
@@ -135,6 +148,9 @@ function rowVals(r: any): HistoryGridRow {
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
     status: r.status || '—',
     rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
+    testsSort: ts.sort,
+    testsDisplay: ts.display,
+    testsState: ts.state,
     msgs: (st.messages || {}).total || 0,
     tok: (st.tokens || {}).total || 0,
     costSort: cost,
@@ -227,6 +243,7 @@ function bindGridTemplates() {
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : html``}
         </dl></div>
@@ -259,6 +276,24 @@ function bindGridTemplates() {
                 : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
               </div>
             </details>
+          </div>` : html``}
+        ${r.tests ? html`
+          <div class="shots"><h4>Tests</h4>
+            <div class="test-summary ${r.tests.ran ? (r.tests.ok ? 'pass' : 'fail') : 'error'}">
+              ${r.tests.ran
+                ? html`${r.tests.passed}/${r.tests.total} passed${r.tests.failed ? ` · ${r.tests.failed} failed` : ''}${r.tests.flaky ? ` · ${r.tests.flaky} flaky` : ''}${r.tests.skipped ? ` · ${r.tests.skipped} skipped` : ''}`
+                : html`could not run: ${r.tests.error || 'unknown error'}`}
+              ${r.tests.reportFile ? html` · <a href="${art(r.tests.reportFile)}" target="_blank" rel="noopener">report.json</a>` : html``}
+            </div>
+            ${(r.tests.failures && r.tests.failures.length) ? html`
+              <details class="shot-details">
+                <summary>${r.tests.failures.length} failing test${r.tests.failures.length === 1 ? '' : 's'}</summary>
+                <div class="test-failures">${r.tests.failures.map((f: any) => html`
+                  <div class="test-failure"><strong>${f.title}</strong> <small>${f.file}</small>
+                    <pre class="usage detail-log">${f.error}</pre></div>`)}
+                </div>
+              </details>` : html``}
+            ${(r.tests.files && r.tests.files.length) ? html`<div class="note detail-note">files: ${r.tests.files.join(', ')}</div>` : html``}
           </div>` : html``}
         ${r.logs && r.logs.length ? html`
           <div class="shots"><h4>Log</h4><details>
@@ -295,6 +330,12 @@ function bindGridTemplates() {
         }}>#${tag.label}</span>`;
   };
   $('#historyStatus').bodyTemplate = (ctx: any) => html`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  $('#historyTests').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    return html`<span class="tests-cell ${row.testsState}" title="Playwright verification">${row.testsDisplay}</span>`;
+  };
+  // The exporter ignores body templates; map the numeric sort field back to the display.
+  $('#historyTests').formatter = (_v: number, row: any) => (row && row.testsDisplay) || '—';
   $('#historyRating').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     const readonly = !isRateable(row.status);
@@ -521,6 +562,7 @@ async function confirmRerun() {
     prompt: r.prompt,
     apiKey,
     customBaseUrl: c.customBaseUrl || undefined,
+    selectedTests: Array.isArray(c.selectedTests) ? c.selectedTests : undefined,
   };
   try {
     const j = await postJSON('/api/matrix', body);

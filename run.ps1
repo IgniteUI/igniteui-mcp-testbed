@@ -67,7 +67,11 @@ $Skills = Join-Path $PSScriptRoot 'local-skills'
 # Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
 # make additional libraries available in the wizard and matrix views.
 $Providers = Join-Path $PSScriptRoot 'providers-data'
-New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers | Out-Null
+# Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
+# collects tests/shared + tests/<framework> and runs them against the freshly-built app
+# in the post-generation verify stage. Created so the mount always resolves.
+$Tests = Join-Path $PSScriptRoot 'tests'
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests | Out-Null
 
 Write-Host "Session artifacts -> $Out"
 Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
@@ -82,7 +86,7 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z")
   $userns = @('--userns=keep-id')
 }
 else {
@@ -91,7 +95,8 @@ else {
   $histHost      = $Hist      -replace '\\', '/'
   $skillsHost    = $Skills    -replace '\\', '/'
   $providersHost = $Providers -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers")
+  $testsHost     = $Tests     -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro")
   $userns = @()
 }
 

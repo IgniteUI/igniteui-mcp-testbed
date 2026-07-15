@@ -1,5 +1,5 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, esc, fmt, validateMcpJson } from './util.ts';
+import { $, esc, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
 
@@ -142,6 +142,7 @@ $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
   $('#ngMcp').hidden = provider !== 'igniteui' || framework !== 'angular';
   refreshLocalSkills();
+  refreshTestFiles();
 });
 // reflect the default selection (angular) into the Angular-MCP toggle's visibility.
 $('#ngMcp').hidden = framework !== 'angular';
@@ -184,6 +185,7 @@ function collect() {
     excludedSkills: excl,
     overrideSkills: $('#overrideSkills').checked,
     localSkillsOnly: $('#overrideSkills').checked && $('#localSkillsOnly').checked,
+    selectedTests: ($('#testsCombo').value || []) as string[],
     model: $('#model').value.trim(),
     apiKey: $('#key').value,
     customBaseUrl: $('#base').value.trim() || undefined,
@@ -212,6 +214,40 @@ async function refreshLocalSkills() {
 }
 $('#overrideSkills').addEventListener('igcChange', refreshLocalSkills);
 refreshLocalSkills();
+
+// Populate the tests combo, grouped by framework: the group is the selected framework
+// and its items are the specs that run for it — its own overlay plus the shared set
+// (a shared spec appears under each framework it runs for). All discovered specs start
+// selected; clearing the selection skips verification. Selection is preserved across
+// framework switches for specs that still exist.
+const testsKnownIds = new Set<string>();
+async function refreshTestFiles() {
+  const combo = $('#testsCombo');
+  const note = $('#testsNote');
+  try {
+    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(framework)}`);
+    const data = [
+      ...(j.shared || []).map((f: string) => ({ id: `${framework}::shared/${f}`, file: f, category: framework })),
+      ...(j.framework || []).map((f: string) => ({ id: `${framework}::${framework}/${f}`, file: f, category: framework })),
+    ];
+    const sel = syncTestsCombo(combo, data, testsKnownIds);
+    combo.disabled = !data.length;
+    note.textContent = data.length
+      ? `${sel.length}/${data.length} test file(s) selected — only these run during matrix verification.`
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${framework}/.`;
+  } catch {
+    note.textContent = 'Could not list test files.';
+  }
+}
+$('#testsCombo').addEventListener('igcChange', () => {
+  const combo = $('#testsCombo');
+  const total = (combo.data || []).length;
+  const sel = (combo.value || []).length;
+  $('#testsNote').textContent = total
+    ? `${sel}/${total} test file(s) selected — only these run during matrix verification.`
+    : '';
+});
+refreshTestFiles();
 
 $('#form').addEventListener('submit', async (e: any) => {
   e.preventDefault();

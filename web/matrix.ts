@@ -1,5 +1,5 @@
 // Matrix view: platform × variant grid of one-shot headless runs, streamed live.
-import { $, esc, validateMcpJson } from './util.ts';
+import { $, esc, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
@@ -112,6 +112,7 @@ export function updateMxCount() {
   const p = mxPlatforms().length, v = mxVariants().length;
   $('#mxCount').textContent = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
   refreshMxLocalSkills();
+  refreshMxTestFiles();
   syncMxCustomMcpEnabled();
 }
 
@@ -137,6 +138,42 @@ async function refreshMxLocalSkills() {
 }
 // IgniteUI platforms change listener (static; external ones are wired in applyExternalProvidersMatrix).
 document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+
+// Populate the tests combo, grouped by framework: one group per selected platform, whose
+// items are the specs that run for it — its own overlay plus the shared set (a shared spec
+// is listed under each platform, so it can be toggled per framework). All discovered specs
+// start selected; each entry runs only its own group's selected specs. Selection is
+// preserved as platforms are toggled.
+const mxTestsKnownIds = new Set<string>();
+async function refreshMxTestFiles() {
+  const combo = $('#mxTestsCombo');
+  const note = $('#mxTestsNote');
+  const platforms = mxPlatforms();
+  try {
+    const j = await getJSON('/api/tests');
+    const shared = j.shared || [];
+    const map = j.byPlatform || {};
+    const data = platforms.flatMap((p) => [
+      ...shared.map((f: string) => ({ id: `${p}::shared/${f}`, file: f, category: p })),
+      ...(map[p] || []).map((f: string) => ({ id: `${p}::${p}/${f}`, file: f, category: p })),
+    ]);
+    const sel = syncTestsCombo(combo, data, mxTestsKnownIds);
+    combo.disabled = !data.length;
+    note.textContent = data.length
+      ? `${sel.length}/${data.length} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/<platform>/.`;
+  } catch {
+    note.textContent = 'Could not list test files.';
+  }
+}
+$('#mxTestsCombo').addEventListener('igcChange', () => {
+  const combo = $('#mxTestsCombo');
+  const total = (combo.data || []).length;
+  const sel = (combo.value || []).length;
+  if (total) $('#mxTestsNote').textContent =
+    `${sel}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
+});
+document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
 
 // Provider toggle: show/hide platform groups, clear + re-seed variant rows.
@@ -303,8 +340,11 @@ function handleMx(m: any) {
     else if (m.type === 'entry-done') {
       mxStatus(rec, m.status);
       mxDone += 1; mxOverall();
-      if (m.status === 'success') rec.step.textContent = `${(m.screenshots || []).filter((s: any) => s.ok).length} shots`;
-      else if (m.status === 'build-error') rec.step.textContent = 'build failed';
+      if (m.status === 'success') {
+        const shots = `${(m.screenshots || []).filter((s: any) => s.ok).length} shots`;
+        rec.step.textContent = m.tests && m.tests.ran ? `${shots} · ${m.tests.passed}/${m.tests.total} tests` : shots;
+      } else if (m.status === 'build-error') rec.step.textContent = 'build failed';
+      else if (m.status === 'test-failed') rec.step.textContent = m.tests ? `tests failed (${m.tests.failed}/${m.tests.total})` : 'tests failed';
     }
   }
 }
@@ -326,7 +366,7 @@ $('#mxForm').addEventListener('submit', async (e: any) => {
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
-  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined };
+  const body = { platforms, variants, model, prompt, apiKey: $('#mxKey').value, customMcp: $('#mxCustomMcp').value.trim() || undefined, selectedTests: ($('#mxTestsCombo').value || []) as string[] };
   $('#mxGo').disabled = true;
   try {
     const j = await postJSON('/api/matrix', body);

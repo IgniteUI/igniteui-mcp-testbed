@@ -1,0 +1,2 @@
+# Web Components-only verification tests. Add `*.spec.ts` files here; they run in addition
+# to `tests/shared/**` for Web Components matrix entries. Delete once you add real tests.

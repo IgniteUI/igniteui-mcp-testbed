@@ -19,7 +19,17 @@ if [[ "${1:-}" == "build" ]]; then
   # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
-  [[ -f "$PWD/.env" ]] && { set -a; . "$PWD/.env"; set +a; }
+  # Pull only the licensed-feed creds from .env (matching run.ps1) rather than sourcing
+  # the whole file: a targeted parse tolerates `KEY = value` spacing and never executes
+  # arbitrary shell from .env.
+  if [[ -f "$PWD/.env" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ "$line" =~ ^[[:space:]]*(IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL)[[:space:]]*=[[:space:]]*(.+)$ ]] || continue
+      val="${BASH_REMATCH[2]}"
+      val="${val%"${val##*[![:space:]]}"}"   # trim trailing whitespace
+      export "${BASH_REMATCH[1]}=$val"
+    done < "$PWD/.env"
+  fi
   NPMRC="$PWD/.npmrc"
   : > "$NPMRC"                       # always present (empty = trial) so the bind mount resolves
   trap 'rm -f "$NPMRC"' EXIT
@@ -59,6 +69,11 @@ mkdir -p "$SKILLS"
 # make additional libraries available in the wizard and matrix views.
 PROVIDERS="$PWD/providers-data"
 mkdir -p "$PROVIDERS"
+# Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
+# collects tests/shared + tests/<framework> and runs them against the freshly-built app
+# in the post-generation verify stage. Created so the mount always resolves.
+TESTS="$PWD/tests"
+mkdir -p "$TESTS"
 echo "Session artifacts -> $OUT"
 echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
 echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
@@ -79,12 +94,13 @@ case "$(uname -s)" in
     HIST_HOST="$(cygpath -m "$HIST")"
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
     PROV_HOST="$(cygpath -m "$PROVIDERS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers")
+    TESTS_HOST="$(cygpath -m "$TESTS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z")
     USERNS=("--userns=keep-id")
     ;;
 esac
