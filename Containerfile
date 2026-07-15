@@ -80,13 +80,13 @@ RUN --mount=type=bind,source=.npmrc,target=/tmp/ig/.npmrc \
       echo "Ignite UI: licensed (@infragistics) build"; \
       export npm_config_userconfig=/tmp/ig/.npmrc; \
       GRID_PKG="@infragistics/igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.2.1 ${GRID_PKG}@~7.1.0 igniteui-i18n-resources@^1.0.3"; \
+      INSTALL="${BASE_PKG}@7.2.4 ${GRID_PKG}@~7.2.1 igniteui-i18n-resources@^1.0.5"; \
       NAMES="${BASE_PKG} ${GRID_PKG} igniteui-i18n-resources"; \
       ALIAS="--alias:igniteui-webcomponents-grids=${GRID_PKG}"; \
     else \
       echo "Ignite UI: trial (watermarked) build — empty .npmrc"; \
       GRID_PKG="igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.2.1 ${GRID_PKG}@~7.1.0"; \
+      INSTALL="${BASE_PKG}@7.2.4 ${GRID_PKG}@~7.2.1"; \
       NAMES="${BASE_PKG} ${GRID_PKG}"; \
       ALIAS=""; \
     fi; \
