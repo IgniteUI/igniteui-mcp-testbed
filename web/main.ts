@@ -1,10 +1,14 @@
-// Bootstrap: wire view switching and, on load, re-attach to any active session
-// and lock the launch if a matrix is mid-run. Importing the view modules runs
-// their top-level listener registrations.
+// Bootstrap: render the three lit views into their mount sections, wire view
+// switching, and on load re-attach to any active session, lock the launch if a
+// matrix is mid-run, and prefill the matrix form from a server-side config file.
 import { $ } from './util.ts';
-import { checkActiveSession } from './wizard.ts';
-import { updateMxCount, ensureMatrixStream, checkMatrixLock, applyServerMatrixConfig } from './matrix.ts';
-import { loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
+import { mountWizard, checkActiveSession } from './wizard.ts';
+import { mountMatrix, updateMxCount, ensureMatrixStream, checkMatrixLock, applyServerMatrixConfig } from './matrix.ts';
+import { mountHistory, loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
+
+mountWizard($('#wizardMain'));
+mountMatrix($('#matrix'));
+mountHistory($('#history'));
 
 const VIEWS: Record<string, string> = { wizard: '#wizardMain', matrix: '#matrix', history: '#history' };
 

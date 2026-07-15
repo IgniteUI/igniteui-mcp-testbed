@@ -1,58 +1,88 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
+// Rendered with lit-html from a single state object; ids/classes match app.css.
+import { html, render, nothing, classMap } from './lit.ts';
 import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 
-let framework = 'angular';
-let sessionLive = false;
+const STEPS: Array<[string, string]> = [
+  ['scaffold', 'Scaffold project'],
+  ['configure', 'Configure AI toolchain'],
+  ['translate', 'Translate MCP config'],
+  ['prune', 'Prune skills'],
+  ['overlay-skills', 'Overlay local skills'],
+  ['launch-app', 'Start app (watch)'],
+  ['launch-opencode', 'Start opencode web'],
+];
+const ORDER = STEPS.map(([k]) => k);
+
+interface WizardState {
+  framework: string;
+  busy: boolean;          // a launch is streaming
+  sessionLive: boolean;
+  matrixLock: boolean;    // a matrix run owns the ports
+  steps: Record<string, string>; // step -> pending | active | done | error
+  logs: Array<{ msg: string; cls: string }>;
+  customMcpOn: boolean;
+  customMcpErr: string | null;
+  overrideSkills: boolean;
+  localSkillsNote: string | null;
+  testsNote: string;
+  showResult: boolean;
+  ocUrl: string;
+  appUrl: string;
+  redirect: string;
+  stats: any | null;
+  statsLive: boolean;
+  usageText: string;
+}
+
+const st: WizardState = {
+  framework: 'angular',
+  busy: false,
+  sessionLive: false,
+  matrixLock: false,
+  steps: {},
+  logs: [],
+  customMcpOn: false,
+  customMcpErr: null,
+  overrideSkills: false,
+  localSkillsNote: null,
+  testsNote: '',
+  showResult: false,
+  ocUrl: '#',
+  appUrl: '#',
+  redirect: '',
+  stats: null,
+  statsLive: false,
+  usageText: 'No stats yet — run the agent, then Refresh.',
+};
 
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
-export const isSessionLive = () => sessionLive;
+export const isSessionLive = () => st.sessionLive;
+
+// The matrix view locks the wizard while a matrix run owns the fixed ports.
+export function setMatrixLock(on: boolean) {
+  st.matrixLock = on;
+  update();
+}
+
+const launchDisabled = () => st.busy || st.sessionLive || st.matrixLock;
+
+function logLine(msg: string, cls = '') {
+  st.logs.push({ msg, cls });
+}
+
+function setStep(step: string, state: string) {
+  st.steps[step] = state;
+}
 
 // Live-validate the pasted custom MCP JSON so a typo is caught immediately instead of
 // silently being dropped deep in the pipeline (see pipeline.ts's parse warning).
 function refreshCustomMcpErr(): boolean {
-  if (!$('#customMcpEnable').checked) { $('#customMcpErr').hidden = true; return true; }
-  const err = validateMcpJson($('#customMcp').value);
-  $('#customMcpErr').textContent = err || '';
-  $('#customMcpErr').hidden = !err;
-  return !err;
+  st.customMcpErr = st.customMcpOn ? validateMcpJson($('#customMcp').value) : null;
+  return !st.customMcpErr;
 }
-$('#customMcp').addEventListener('igcInput', refreshCustomMcpErr);
-
-// The JSON field only matters once the checkbox is on — hide it otherwise.
-function syncCustomMcpEnabled() {
-  const on = $('#customMcpEnable').checked;
-  $('#customMcp').hidden = !on;
-  refreshCustomMcpErr();
-}
-$('#customMcpEnable').addEventListener('igcChange', syncCustomMcpEnabled);
-syncCustomMcpEnabled();
-
-// framework button group: igcSelect.detail is the selected toggle's value.
-$('#fw').addEventListener('igcSelect', (e: any) => {
-  framework = e.detail || framework;
-  $('#ngMcp').hidden = framework !== 'angular';
-  refreshLocalSkills();
-  refreshTestFiles();
-});
-// reflect the default selection (angular) into the Angular-MCP toggle's visibility.
-$('#ngMcp').hidden = framework !== 'angular';
-
-function setStep(step: string, state: string) {
-  const li = $(`.rail li[data-step="${step}"]`);
-  if (li) li.dataset.state = state;
-}
-function logLine(msg: string, cls?: string) {
-  const el = $('#log');
-  const span = document.createElement('div');
-  if (cls) span.className = cls;
-  span.textContent = msg;
-  el.appendChild(span);
-  el.scrollTop = el.scrollHeight;
-}
-
-const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'overlay-skills', 'launch-app', 'launch-opencode'];
 
 function collect() {
   // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
@@ -60,7 +90,7 @@ function collect() {
   const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
   const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
   return {
-    framework,
+    framework: st.framework,
     projectType: $('#ptype').value.trim(),
     theme: $('#theme').value.trim(),
     enabledMcps: mcps,
@@ -80,23 +110,18 @@ function collect() {
 // (and show what's available for the selected platform under ./local-skills/<fw>) when
 // the override toggle is off.
 async function refreshLocalSkills() {
-  const on = $('#overrideSkills').checked;
-  $('#localSkillsOnly').disabled = !on;
-  const note = $('#localSkillsList');
-  if (!on) { note.hidden = true; return; }
+  if (!st.overrideSkills) { st.localSkillsNote = null; update(); return; }
   try {
-    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(framework)}`);
+    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(st.framework)}`);
     const valid = (j.skills || []).filter((s: any) => s.valid).map((s: any) => s.name);
-    note.textContent = valid.length
-      ? `Local ${framework} skills: ${valid.join(', ')}`
+    st.localSkillsNote = valid.length
+      ? `Local ${st.framework} skills: ${valid.join(', ')}`
       : `No skills found under ${j.dir} — add folders (each with a SKILL.md) before launching.`;
   } catch {
-    note.textContent = 'Could not list local skills.';
+    st.localSkillsNote = 'Could not list local skills.';
   }
-  note.hidden = false;
+  update();
 }
-$('#overrideSkills').addEventListener('igcChange', refreshLocalSkills);
-refreshLocalSkills();
 
 // Populate the tests combo, grouped by framework: the group is the selected framework
 // and its items are the specs that run for it — its own overlay plus the shared set
@@ -104,43 +129,74 @@ refreshLocalSkills();
 // selected; clearing the selection skips verification. Selection is preserved across
 // framework switches for specs that still exist.
 const testsKnownIds = new Set<string>();
+let testsRefreshSeq = 0;
 async function refreshTestFiles() {
+  const seq = ++testsRefreshSeq;
   const combo = $('#testsCombo');
-  const note = $('#testsNote');
   try {
-    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(framework)}`);
+    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(st.framework)}`);
+    if (seq !== testsRefreshSeq) return;
     const data = [
-      ...(j.shared || []).map((f: string) => ({ id: `${framework}::shared/${f}`, file: f, category: framework })),
-      ...(j.framework || []).map((f: string) => ({ id: `${framework}::${framework}/${f}`, file: f, category: framework })),
+      ...(j.shared || []).map((f: string) => ({ id: `${st.framework}::shared/${f}`, file: f, category: st.framework })),
+      ...(j.framework || []).map((f: string) => ({ id: `${st.framework}::${st.framework}/${f}`, file: f, category: st.framework })),
     ];
     const sel = syncTestsCombo(combo, data, testsKnownIds);
     combo.disabled = !data.length;
-    note.textContent = data.length
+    st.testsNote = data.length
       ? `${sel.length}/${data.length} test file(s) selected — only these run during matrix verification.`
-      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${framework}/.`;
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${st.framework}/.`;
   } catch {
-    note.textContent = 'Could not list test files.';
+    if (seq !== testsRefreshSeq) return;
+    st.testsNote = 'Could not list test files.';
   }
+  update();
 }
-$('#testsCombo').addEventListener('igcChange', () => {
+
+// ---------- event handlers ----------
+
+function onFrameworkSelect(e: any) {
+  st.framework = e.detail || st.framework;
+  refreshLocalSkills();
+  refreshTestFiles();
+  update();
+}
+
+function onCustomMcpToggle(e: any) {
+  st.customMcpOn = !!e.target.checked;
+  refreshCustomMcpErr();
+  update();
+}
+
+function onCustomMcpInput() {
+  refreshCustomMcpErr();
+  update();
+}
+
+function onOverrideSkillsToggle(e: any) {
+  st.overrideSkills = !!e.target.checked;
+  refreshLocalSkills();
+}
+
+function onTestsComboChange() {
   const combo = $('#testsCombo');
   const total = (combo.data || []).length;
   const sel = (combo.value || []).length;
-  $('#testsNote').textContent = total
+  st.testsNote = total
     ? `${sel}/${total} test file(s) selected — only these run during matrix verification.`
     : '';
-});
-refreshTestFiles();
+  update();
+}
 
-$('#form').addEventListener('submit', async (e: any) => {
+async function onSubmit(e: Event) {
   e.preventDefault();
-  if (!refreshCustomMcpErr()) { $('#customMcp').scrollIntoView({ block: 'center' }); return; }
-  $('#go').disabled = true;
-  $('#fw').disabled = true;
-  sessionLive = false;
-  $('#log').textContent = '';
-  $('#result').classList.remove('show');
+  if (!refreshCustomMcpErr()) { update(); $('#customMcp').scrollIntoView({ block: 'center' }); return; }
+  st.busy = true;
+  st.sessionLive = false;
+  st.logs = [];
+  st.showResult = false;
+  st.steps = {};
   ORDER.forEach((s) => setStep(s, 'pending'));
+  update();
   let activeIdx = -1;
 
   const res = await fetch('/api/run', {
@@ -159,10 +215,12 @@ $('#form').addEventListener('submit', async (e: any) => {
       if (!line.trim()) continue;
       let ev; try { ev = JSON.parse(line); } catch { continue; }
       handle(ev, () => activeIdx, (i) => { activeIdx = i; });
+      update();
     }
   }
-  if (!sessionLive) { $('#go').disabled = false; $('#fw').disabled = false; }
-});
+  st.busy = false;
+  update();
+}
 
 function handle(ev: any, getIdx: () => number, setIdx: (i: number) => void) {
   if (ev.type === 'step') {
@@ -185,48 +243,46 @@ function handle(ev: any, getIdx: () => number, setIdx: (i: number) => void) {
 // Lock the launch controls and wire up live stats. Shared by a fresh launch and
 // by re-attaching to an already-running session on page load.
 function enterLiveState({ opencodePort, appPort, model }: { opencodePort: number; appPort: number; model?: string }) {
-  sessionLive = true;
+  st.sessionLive = true;
   $('#statusDot').classList.add('live');
   const host = location.hostname;
-  const ocUrl = `http://${host}:${opencodePort}`;
-  const appUrl = `http://${host}:${appPort}`;
-  $('#openOc').href = ocUrl;
-  $('#openApp').href = appUrl;
+  st.ocUrl = `http://${host}:${opencodePort}`;
+  st.appUrl = `http://${host}:${appPort}`;
   if (model) { $('#model').value = model; $('#m2').value = model; }
-  $('#result').classList.add('show');
-  $('#go').disabled = true;
-  $('#fw').disabled = true;
+  st.showResult = true;
   loadUsage();
   startStatsStream();
-  return ocUrl;
+  update();
+  return st.ocUrl;
 }
 
 function onDone(ev: any) {
   const ocUrl = enterLiveState({ opencodePort: ev.opencodePort, appPort: ev.appPort, model: $('#model').value });
   const tab = window.open(ocUrl, '_blank', 'noopener');
-  $('#redirect').textContent = tab
+  st.redirect = tab
     ? 'opencode opened in a new tab — this wizard stays open for live stats.'
     : 'Pop-up blocked — use the “Open opencode →” button above (opens in a new tab).';
 }
 
 // Repaint the pipeline rail + console from a server-side run snapshot.
 // Returns the active step index (or -1).
-function applyRunState(st: any): number {
-  $('#log').textContent = '';
-  (st.logs || []).forEach((m: string) => logLine(m, /^warning:/i.test(m) ? 'w' : ''));
+function applyRunState(state: any): number {
+  st.logs = [];
+  (state.logs || []).forEach((m: string) => logLine(m, /^warning:/i.test(m) ? 'w' : ''));
+  st.steps = {};
   ORDER.forEach((s) => setStep(s, 'pending'));
-  (st.completed || []).forEach((s: string) => setStep(s, 'done'));
+  (state.completed || []).forEach((s: string) => setStep(s, 'done'));
   let idx = -1;
-  if (st.step) { idx = ORDER.indexOf(st.step); setStep(st.step, st.phase === 'error' ? 'error' : 'active'); }
-  if (st.phase === 'error' && st.error) logLine('ERROR: ' + st.error, 'e');
+  if (state.step) { idx = ORDER.indexOf(state.step); setStep(state.step, state.phase === 'error' ? 'error' : 'active'); }
+  if (state.phase === 'error' && state.error) logLine('ERROR: ' + state.error, 'e');
   return idx;
 }
 
 // Follow a pipeline run that's already underway to completion.
 function reattachRun(model: string) {
-  $('#go').disabled = true;
-  $('#fw').disabled = true;
-  sessionLive = false;
+  st.busy = true;
+  st.sessionLive = false;
+  update();
   let activeIdx = -1;
   const goLive = (r: any) => enterLiveState({ opencodePort: r.opencodePort, appPort: r.appPort, model });
   const es = new EventSource('/api/run/stream');
@@ -234,13 +290,21 @@ function reattachRun(model: string) {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     if (ev.type === 'state') {
       activeIdx = applyRunState(ev.state);
-      if (ev.state.phase === 'done' && ev.state.result) { es.close(); goLive(ev.state.result); }
-      else if (ev.state.phase === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
+      if (ev.state.phase === 'done' && ev.state.result) { es.close(); st.busy = false; goLive(ev.state.result); }
+      else if (ev.state.phase === 'error') { es.close(); st.busy = false; }
+      update();
       return;
     }
-    if (ev.type === 'done') { if (activeIdx >= 0) setStep(ORDER[activeIdx], 'done'); es.close(); goLive(ev); $('#redirect').textContent = 'Session ready — opencode is running.'; return; }
+    if (ev.type === 'done') {
+      if (activeIdx >= 0) setStep(ORDER[activeIdx], 'done');
+      es.close(); st.busy = false; goLive(ev);
+      st.redirect = 'Session ready — opencode is running.';
+      update();
+      return;
+    }
     handle(ev, () => activeIdx, (i) => { activeIdx = i; });
-    if (ev.type === 'error') { es.close(); $('#go').disabled = false; $('#fw').disabled = false; }
+    if (ev.type === 'error') { es.close(); st.busy = false; }
+    update();
   };
 }
 
@@ -252,45 +316,227 @@ export async function checkActiveSession() {
     if (s.phase === 'running') { reattachRun(s.model); return; }
     if (s.opencode) {
       enterLiveState({ opencodePort: s.opencodePort, appPort: s.appPort, model: s.model });
-      $('#redirect').textContent = 'Reattached to the active session.';
+      st.redirect = 'Reattached to the active session.';
+      update();
     }
   } catch (_) {}
 }
 
 async function loadUsage() {
-  const pre = $('#usage');
-  pre.textContent = 'loading…';
+  st.usageText = 'loading…';
+  update();
   try {
     const j = await getJSON('/api/usage');
-    pre.textContent = j.ok ? (j.text.trim() || 'No usage data yet.') : `error: ${j.error}`;
+    st.usageText = j.ok ? (j.text.trim() || 'No usage data yet.') : `error: ${j.error}`;
   } catch (e: any) {
-    pre.textContent = `error: ${e.message}`;
+    st.usageText = `error: ${e.message}`;
   }
+  update();
 }
-$('#refreshUsage').addEventListener('click', (e: any) => { e.preventDefault(); loadUsage(); });
 
 let statsES: EventSource | null = null;
 function startStatsStream() {
   if (statsES) statsES.close();
   statsES = new EventSource('/api/stats/stream');
-  statsES.onmessage = (e) => { try { renderStats(JSON.parse(e.data)); } catch {} };
-  statsES.onerror = () => { $('#statsDot2').classList.remove('on'); };
-}
-function renderStats(s: any) {
-  if (!s) return;
-  $('#statsDot2').classList.add('on');
-  const m = s.messages || {}, t = s.tokens || {}, c = s.cost || {};
-  $('#s-messages').textContent = `${fmt(m.total)} (${fmt(m.user)} user / ${fmt(m.assistant)} assistant)`;
-  $('#s-input').textContent = fmt(t.input);
-  $('#s-output').textContent = fmt(t.output);
-  $('#s-reasoning').textContent = fmt(t.reasoning);
-  $('#s-cache').textContent = fmt(t.cache);
-  $('#s-total').textContent = fmt(t.total);
-  $('#s-cost').textContent = c.available ? `$${(c.amount || 0).toFixed(4)} ${c.currency || ''}`.trim() : 'n/a';
-  if (s.updatedAt) $('#s-updated').textContent = `Updated ${new Date(s.updatedAt).toLocaleTimeString()} · model ${s.model || '—'}`;
+  statsES.onmessage = (e) => {
+    try { st.stats = JSON.parse(e.data); st.statsLive = true; update(); } catch {}
+  };
+  statsES.onerror = () => { st.statsLive = false; update(); };
 }
 
-$('#swap').addEventListener('click', async () => {
+async function onSwapModel() {
   const j = await postJSON('/api/model', { model: $('#m2').value.trim(), apiKey: $('#k2').value });
   logLine(j.ok ? `model switched to ${j.model}` : `switch failed: ${j.error}`, j.ok ? '' : 'e');
-});
+  update();
+}
+
+// ---------- templates ----------
+
+function statsRows() {
+  const s = st.stats || {};
+  const m = s.messages || {}, t = s.tokens || {}, c = s.cost || {};
+  const dash = (v: any) => (st.stats ? v : '—');
+  return html`
+    <tr><th>Messages</th><td>${dash(`${fmt(m.total)} (${fmt(m.user)} user / ${fmt(m.assistant)} assistant)`)}</td></tr>
+    <tr><th>Input tokens</th><td>${dash(fmt(t.input))}</td></tr>
+    <tr><th>Output tokens</th><td>${dash(fmt(t.output))}</td></tr>
+    <tr><th>Reasoning</th><td>${dash(fmt(t.reasoning))}</td></tr>
+    <tr><th>Cache</th><td>${dash(fmt(t.cache))}</td></tr>
+    <tr><th>Total tokens</th><td>${dash(fmt(t.total))}</td></tr>
+    <tr><th>Cost</th><td>${dash(c.available ? `$${(c.amount || 0).toFixed(4)} ${c.currency || ''}`.trim() : 'n/a')}</td></tr>`;
+}
+
+const statsUpdated = () => st.stats?.updatedAt
+  ? `Updated ${new Date(st.stats.updatedAt).toLocaleTimeString()} · model ${st.stats.model || '—'}`
+  : 'Waiting for activity — run the agent in opencode.';
+
+function tpl() {
+  return html`
+  <!-- left: flight plan -->
+  <section class="panel">
+    <p class="eyebrow">Session setup</p>
+    <form id="form" @submit=${onSubmit}>
+      <fieldset>
+        <legend>Framework</legend>
+        <igc-button-group id="fw" selection="single-required" .disabled=${launchDisabled()} @igcSelect=${onFrameworkSelect}>
+          <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
+          <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
+          <igc-toggle-button value="react">React</igc-toggle-button>
+          <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
+        </igc-button-group>
+        <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav"></igc-input>
+        <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default"></igc-input>
+      </fieldset>
+
+      <fieldset>
+        <legend>MCP servers</legend>
+        <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
+        <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
+        <igc-checkbox data-mcp="angular" id="ngMcp" ?hidden=${st.framework !== 'angular'}>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        <igc-checkbox data-mcp="custom" id="customMcpEnable" @igcChange=${onCustomMcpToggle}>Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
+        <igc-textarea id="customMcp" class="mcp-ta" rows="4" ?hidden=${!st.customMcpOn} @igcInput=${onCustomMcpInput}
+          placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
+        <p class="note err" id="customMcpErr" ?hidden=${!st.customMcpErr}>${st.customMcpErr || ''}</p>
+        <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
+        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.vscode/mcp.json</code> or
+        <code>.mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Agent skills</legend>
+        <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
+        <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
+        <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
+        <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>
+        <details class="help">
+          <summary>How local skills work</summary>
+          <div class="help-body">
+            <p>A “skill” is just a folder with a <code>SKILL.md</code> inside (plus any
+            files it references). opencode auto-loads every folder under the project’s
+            <code>.claude/skills/</code>. <strong>You can drop in <em>any</em> skill you
+            want</strong> — not only Ignite UI ones: a coding-style guide, a domain
+            cheat-sheet, a “always write tests” rule, anything. The agent picks them up
+            automatically.</p>
+            <p>Put each skill on the host under the matching framework folder
+            (the selected platform is used for this run):</p>
+            <ul>
+              <li><code>local-skills/angular/&lt;your-skill&gt;/SKILL.md</code></li>
+              <li><code>local-skills/react/…</code>, <code>local-skills/webcomponents/…</code>,
+              <code>local-skills/blazor/…</code></li>
+            </ul>
+            <p>When you enable <strong>Use local skills</strong>:</p>
+            <ul>
+              <li><strong>Merge</strong> (default): your local skills are copied on top of
+              the generated ones. A local folder with the <em>same name</em> as a generated
+              skill <strong>replaces</strong> it; new names are simply added.</li>
+              <li><strong>Replace generated skills</strong>: the generated set is wiped
+              first, so the agent sees <em>only</em> your local skills.</li>
+            </ul>
+            <p>Folders without a <code>SKILL.md</code> are skipped. The line above lists
+            what’s currently found for the selected framework.</p>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset>
+        <legend>Verification tests</legend>
+        <igc-combo id="testsCombo" label="Tests to run" placeholder="Select test files…"
+          value-key="id" display-key="file" group-key="category" @igcChange=${onTestsComboChange}></igc-combo>
+        <p class="note" id="testsNote">${st.testsNote}</p>
+        <details class="help">
+          <summary>How verification tests work</summary>
+          <div class="help-body">
+            <p>Drop <strong>Playwright</strong> specs on the host under <code>./tests/</code> —
+            a <code>shared/</code> set that runs for every platform plus optional per-framework
+            overlays (<code>tests/&lt;framework&gt;/</code>). They’re bind-mounted read-only at
+            <code>/tests</code> and run against the built app in the pipeline’s
+            <strong>verify</strong> stage.</p>
+            <p>The combo groups specs by <strong>framework</strong>; the group lists every spec
+            that runs for the selected framework (its own overlay plus the shared set).
+            <strong>Only the selected files execute</strong> — clear the selection to skip
+            verification entirely. Verification executes during <strong>matrix runs</strong>
+            (each entry, once its app builds and serves); a suite with any failing test marks
+            that run <code>test-failed</code> in History.</p>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset class="model-fields">
+        <legend>Model</legend>
+        <igc-input id="model" label="Model id" value="anthropic/claude-haiku-4-5"></igc-input>
+        <igc-input id="key" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
+        <igc-input id="base" label="Custom base URL (OpenAI-compatible, optional)"
+                   placeholder="http://host.containers.internal:11434/v1"></igc-input>
+        <p class="note">Local model? Prefix the id <code>custom/&lt;model&gt;</code> (e.g. <code>custom/llama3.1</code>),
+        use <code>host.containers.internal</code> — not <code>localhost</code> — to reach the host, and put any
+        non-empty API key. The server must bind <code>0.0.0.0</code>.</p>
+      </fieldset>
+
+      <igc-button type="submit" id="go" variant="contained" .disabled=${launchDisabled()}>Launch session</igc-button>
+      <p class="note" id="wizBlocked" ?hidden=${!st.matrixLock}>A matrix run is in progress — launch is disabled until it finishes.</p>
+    </form>
+  </section>
+
+  <!-- right: pipeline + console -->
+  <section class="panel">
+    <p class="eyebrow">Pipeline</p>
+    <ul class="rail" id="rail">
+      ${STEPS.map(([step, label], i) => html`
+        <li data-step=${step} data-state=${st.steps[step] || nothing}><span class="n">${i + 1}</span> ${label}</li>`)}
+    </ul>
+
+    <p class="eyebrow">Console</p>
+    <div class="console" id="log" aria-live="polite">
+      ${st.logs.map((l) => html`<div class=${l.cls || nothing}>${l.msg}</div>`)}
+    </div>
+
+    <div class="result ${classMap({ show: st.showResult })}" id="result">
+      <igc-button id="openOc" href=${st.ocUrl} target="_blank" rel="noopener" variant="contained">Open opencode →</igc-button>
+      <igc-button id="openApp" href=${st.appUrl} target="_blank" rel="noopener" variant="outlined">Open app</igc-button>
+      <p class="note" id="redirect">${st.redirect}</p>
+
+      <details class="switcher" id="usageBox" open>
+        <summary>Live stats <span class="live-dot ${classMap({ on: st.statsLive })}" id="statsDot2"></span></summary>
+        <table class="stats" id="statsTable"><tbody>${statsRows()}</tbody></table>
+        <p class="note" id="s-updated">${statsUpdated()}</p>
+
+        <details class="switcher">
+          <summary>Raw <code>opencode stats</code> <igc-button type="button" id="refreshUsage" variant="outlined"
+            @click=${(e: Event) => { e.preventDefault(); loadUsage(); }}>Refresh</igc-button></summary>
+          <pre class="usage" id="usage">${st.usageText}</pre>
+        </details>
+      </details>
+
+      <details class="switcher">
+        <summary>Switch model</summary>
+        <div class="row">
+          <igc-input id="m2" label="Model id"></igc-input>
+          <igc-input id="k2" label="API key" type="password"></igc-input>
+          <igc-button type="button" id="swap" variant="contained" @click=${onSwapModel}>Apply</igc-button>
+        </div>
+      </details>
+    </div>
+  </section>`;
+}
+
+let mountEl: HTMLElement | null = null;
+
+function update() {
+  if (!mountEl) return;
+  // Stick the console to the newest line unless the user has scrolled up to read.
+  const log = mountEl.querySelector('.console');
+  const nearBottom = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  render(tpl(), mountEl);
+  if (nearBottom) {
+    const after = mountEl.querySelector('.console');
+    if (after) after.scrollTop = after.scrollHeight;
+  }
+}
+
+export function mountWizard(el: HTMLElement) {
+  mountEl = el;
+  update();
+  refreshLocalSkills();
+  refreshTestFiles();
+}

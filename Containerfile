@@ -65,7 +65,7 @@ COPY tsconfig.base.json tsconfig.json ./
 # (Versions track the private feed's `latest` — adjust to your packages.)
 RUN --mount=type=bind,source=.npmrc,target=/tmp/ig/.npmrc \
     set -e; \
-    COMMON="esbuild typescript @types/node @types/express"; \
+    COMMON="esbuild typescript @types/node @types/express lit"; \
     BASE_PKG="igniteui-webcomponents"; \
     if [ -s /tmp/ig/.npmrc ]; then \
       echo "Ignite UI: licensed (@infragistics) build"; \
