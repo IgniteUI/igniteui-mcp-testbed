@@ -2,11 +2,10 @@
 
 import type { Variant } from '../types.ts';
 
-// Known MCP classes a matrix variant may toggle (angular-cli is intentionally not
-// here — it's never enabled). Used to sanitize incoming variant definitions.
-// 'custom' toggles the shared custom MCP JSON blob (see Fixed.customMcp) on/off per
-// variant — it isn't a discovered server class like the others, but reuses the same
-// per-variant mcps toggle list for a consistent, simple UI.
+// Known MCP classes for the built-in IgniteUI provider. External providers add their own
+// classes via ProviderPack.configure.mcpServers[].class — those flow through parseVariants
+// without a whitelist check. 'custom' toggles the shared custom MCP JSON blob.
+// No longer used for strict whitelist validation — kept for reference.
 export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'custom'];
 
 // The four skill modes a variant can express, from {skills, localSkills}:
@@ -39,11 +38,19 @@ export function entryDirName(i: number, platform: string, v: Variant): string {
 }
 
 // Normalize + dedupe the variant rows from the request.
+// Accepts any non-empty string as an MCP class so external provider classes
+// flow through without a whitelist check.
 export function parseVariants(raw: any): Variant[] {
   const seen = new Set<string>();
   const out: Variant[] = [];
   for (const v of Array.isArray(raw) ? raw : []) {
-    const mcps = MATRIX_MCP_CLASSES.filter((c) => Array.isArray(v && v.mcps) && v.mcps.includes(c));
+    // Accept any non-empty string matching SAFE_ID (letters, digits, hyphens, underscores)
+    // and normalize to lowercase so mixed-case variants deduplicate correctly.
+    const mcps = Array.isArray(v?.mcps)
+      ? v.mcps
+          .filter((c: any) => typeof c === 'string' && /^[a-zA-Z0-9_-]+$/.test(c))
+          .map((c: string) => c.toLowerCase())
+      : [];
     const skills = !!(v && v.skills);
     const localSkills = !!(v && v.localSkills);
     const key = mcps.join(',') + '|' + skills + '|' + localSkills;

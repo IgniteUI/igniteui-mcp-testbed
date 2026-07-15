@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ChildProcess } from 'child_process';
-import { FRAMEWORKS, APP_PORT, subst } from '../frameworks.ts';
+import { APP_PORT, subst } from '../frameworks.ts';
 import { translate } from '../mcp-translate.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
@@ -21,6 +21,7 @@ import { classify } from './mcp-classify.ts';
 import { pruneSkills, overlaySkills } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
+import { getPackForFramework, getFramework } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
 
 export interface PipelineOpts {
@@ -44,7 +45,7 @@ export async function runPipeline(
   cfg: RunConfig,
   { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
-  const fw = FRAMEWORKS[cfg.framework];
+  const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
 
   // Report every spawned child to `onChild` (matrix cancel kills whatever is current)
@@ -71,94 +72,210 @@ export async function runPipeline(
     writePrepareFile(path.join(appDir, rel), subst([body], vars)[0], emit, appDir);
   }
 
-  // 2. AI config (skills + MCP definitions), non-interactive via flags.
+  // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project).
+  if (fw.install && fw.install.length) {
+    emit('log', `installing packages: ${fw.install.join(' ')}`);
+    await runStep('npm', ['install', ...fw.install], appDir, emit);
+  }
+
+  // 2. AI config — branches on the framework's configure strategy.
   emit('step', { step: 'configure' });
-  const agents = cfg.skills ? ['claude'] : ['none'];
-  await runStep('ig', [
-    'ai-config',
-    '--framework', fw.aiFramework,
-    '--agents', ...agents,
-    '--assistants', 'vscode',
-  ], appDir, emit);
+  const configureStrategy = fw.configure ?? 'igniteui';
 
-  // 3. Translate .vscode/mcp.json -> opencode.json (with MCP toggles).
-  emit('step', { step: 'translate' });
-  let vscodeMcp: any = {};
-  const mcpPath = path.join(appDir, '.vscode', 'mcp.json');
-  if (fs.existsSync(mcpPath)) {
-    vscodeMcp = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
-  } else {
-    emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
-  }
+  if (configureStrategy === 'igniteui') {
+    // Existing IgniteUI flow: ig ai-config writes .vscode/mcp.json + .claude/skills/.
+    const agents = cfg.skills ? ['claude'] : ['none'];
+    await runStep('ig', [
+      'ai-config',
+      '--framework', fw.aiFramework,
+      '--agents', ...agents,
+      '--assistants', 'vscode',
+    ], appDir, emit);
 
-  // User-supplied custom MCP server(s) (pasted JSON), merged in under their own
-  // fixed "custom" class (bypassing name-based classify) with their own toggle.
-  // Accepts a single server def, a map of named defs, or a whole mcp.json/.mcp.json
-  // (both "servers"/"mcpServers" wrappers are unwrapped).
-  const customNames = new Set<string>();
-  if (cfg.customMcp && cfg.customMcp.trim()) {
-    try {
-      const parsed = JSON.parse(cfg.customMcp);
-      const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
-      const customServers: Record<string, any> =
-        (parsed && parsed.servers && typeof parsed.servers === 'object') ? parsed.servers :
-        (parsed && parsed.mcpServers && typeof parsed.mcpServers === 'object') ? parsed.mcpServers :
-        isServerDef(parsed) ? { custom: parsed } :
-        parsed;
-      vscodeMcp.servers = vscodeMcp.servers || {};
-      // rawName is attacker/user-controlled (pasted JSON). Per CodeQL's guidance for
-      // js/remote-property-injection, a fixed non-empty marker prefix is prepended
-      // before the untrusted string is ever used as an object property key. This
-      // guarantees the resulting key can never equal a dangerous name such as
-      // "__proto__" / "constructor" / "prototype", closing off prototype pollution
-      // regardless of what the pasted JSON contains.
-      for (const [rawName, def] of Object.entries(customServers || {})) {
-        let key = 'custom-' + rawName, n = 1;
-        while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
-        vscodeMcp.servers[key] = def;
-        customNames.add(key);
+  } else if (configureStrategy === 'external') {
+    // External provider flow: driven entirely by the ProviderPack definition.
+    // Write .vscode/mcp.json from the pack's MCP server list, then optionally
+    // clone + copy the pack's skills from GitHub. opencode.json is written here
+    // directly (no translate step needed — the pack supplies correct commands).
+    const pack = getPackForFramework(cfg.framework);
+    if (!pack) throw new Error(`no provider pack found for framework "${cfg.framework}" — is the pack loaded?`);
+
+    // Write .vscode/mcp.json (used as a record; opencode.json is written below).
+    const vscodeMcpDir = path.join(appDir, '.vscode');
+    fs.mkdirSync(vscodeMcpDir, { recursive: true });
+    // Object.create(null) gives a null-prototype object so writing '__proto__' is
+    // harmless (it becomes a plain enumerable key rather than the prototype setter).
+    // The explicit forbidden-key guard is the barrier CodeQL requires to resolve
+    // js/remote-property-injection — Object.fromEntries() is not recognised.
+    const vsServers: Record<string, any> = Object.create(null);
+    for (const s of pack.configure.mcpServers) {
+      if (s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
+        vsServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
       }
-    } catch (e: any) {
-      emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
     }
-  }
+    fs.writeFileSync(path.join(vscodeMcpDir, 'mcp.json'), JSON.stringify({ servers: vsServers }, null, 2));
+    emit('log', `wrote .vscode/mcp.json (${Object.keys(vsServers).length} server(s) from pack "${pack.name}")`);
 
-
-  // The user toggles MCPs by class (igniteui / theming / angular / custom); `classify`
-  // (src/pipeline/mcp-classify.js) maps each server with explicit precedence so the
-  // generic "ignite" match can't swallow the theming server. Only classes the caller
-  // explicitly selected are enabled — everything else (incl. angular-cli and any
-  // unclassified "other" server) stays off, so a variant with no MCPs is a true
-  // clean baseline.
-  const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-  const servers = (vscodeMcp && vscodeMcp.servers) || {};
-  const enabled = new Set<string>();
-  const classByName: Record<string, string> = {};
-  for (const [name, s] of Object.entries(servers)) {
-    const cls = customNames.has(name) ? 'custom' : classify(name, s);
-    classByName[name] = cls;
-    const on = selected.has(cls);
-    if (on) enabled.add(name);
-    emit('log', `mcp "${name}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
-  }
-  const { mcp, warnings } = translate(vscodeMcp, { enabled, workspaceFolder: appDir });
-  warnings.forEach((w) => emit('log', `warning: ${w}`));
-  // The ig ai-config `npx -y <pkg> …` invocations don't resolve to a runnable
-  // bin (igniteui-cli's bins are `ig`/`igniteui`, not `igniteui-cli`; theming's
-  // is `igniteui-theming-mcp`) and cold-fetch from npm in the ephemeral
-  // container. Run the globally-installed bins directly instead.
-  for (const [name, def] of Object.entries(mcp)) {
-    const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
-    if (fix && def.type === 'local') {
-      def.command = fix.slice();
-      emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
+    // Optionally install skills.
+    if (cfg.skills) {
+      const skillsDir = path.join(appDir, '.claude', 'skills');
+      fs.mkdirSync(skillsDir, { recursive: true });
+      const skillsConf = pack.configure.skills;
+      if (skillsConf?.github) {
+        // Clone the GitHub repo and copy every top-level skill folder.
+        // Validate the ref before embedding it in a git argument to prevent
+        // second-order command injection (e.g. "--upload-pack=malicious").
+        const githubRef = skillsConf.github;
+        if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
+          throw new Error(`invalid skills.github value "${githubRef}" — expected "owner/repo" with only safe characters`);
+        }
+        const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
+        emit('log', `cloning skills from github.com/${githubRef}`);
+        await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
+        let count = 0;
+        for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+          fs.cpSync(path.join(tmpDir, entry.name), path.join(skillsDir, entry.name), { recursive: true });
+          count++;
+        }
+        emit('log', `installed ${count} skill(s) from github.com/${githubRef}`);
+        await rmrf(tmpDir);
+      } else if (skillsConf?.installCommand?.length) {
+        const [cmd, ...args] = skillsConf.installCommand;
+        emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
+        await runStep(cmd, args, skillsDir, emit);
+      }
     }
-  }
-  writeOpencodeConfig(cfg, mcp, appDir);
-  emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
 
-  // 4. Prune deselected skills
-  if (cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
+    // Write opencode.json directly — pack commands are already correct,
+    // so the translate step is not needed.
+    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
+    // Null-prototype object + explicit forbidden-key guard: same pattern as vsServers
+    // above. The guard is the barrier CodeQL needs to close js/remote-property-injection.
+    const mcpBlock: Record<string, any> = Object.create(null);
+    for (const s of pack.configure.mcpServers) {
+      const on = selected.has(s.class.toLowerCase());
+      // Sanitize server name and class before emitting to logs (CodeQL js/log-injection).
+      const safeName = s.name.replace(/[\r\n]/g, ' ');
+      const safeClass = s.class.replace(/[\r\n]/g, ' ');
+      emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
+      if (on && s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
+        mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+      }
+    }
+    // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
+    // when the 'custom' class is enabled. Uses translate() to convert from vscode MCP
+    // format to opencode format.
+    if (selected.has('custom') && cfg.customMcp?.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.customMcp);
+        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
+        const rawCustom: Record<string, any> =
+          parsed?.servers && typeof parsed.servers === 'object' ? parsed.servers :
+          parsed?.mcpServers && typeof parsed.mcpServers === 'object' ? parsed.mcpServers :
+          isServerDef(parsed) ? { custom: parsed } :
+          parsed;
+        const tempVscodeMcp: any = { servers: {} };
+        for (const [rawName, def] of Object.entries(rawCustom || {})) {
+          let key = 'custom-' + rawName, n = 1;
+          while (Object.prototype.hasOwnProperty.call(tempVscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
+          tempVscodeMcp.servers[key] = def;
+        }
+        const { mcp: customMcp } = translate(tempVscodeMcp, {
+          enabled: new Set(Object.keys(tempVscodeMcp.servers)),
+          workspaceFolder: appDir,
+        });
+        for (const [name, def] of Object.entries(customMcp)) {
+          if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
+            mcpBlock[name] = def;
+          }
+          emit('log', `mcp "${name}" → custom → enabled`);
+        }
+      } catch (e: any) {
+        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
+      }
+    }
+    writeOpencodeConfig(cfg, mcpBlock, appDir);
+    emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
+
+  } else {
+    // 'none': write a bare opencode.json now (no MCPs, no skills) and skip translate.
+    writeOpencodeConfig(cfg, {}, appDir);
+    emit('log', 'configure=none: wrote bare opencode.json, skipping translate');
+  }
+
+  // 3. Translate .vscode/mcp.json -> opencode.json (IgniteUI only).
+  // The 'external' strategy already wrote opencode.json in step 2.
+  // The 'none' strategy wrote a bare opencode.json in step 2 as well.
+  if (configureStrategy === 'igniteui') {
+    emit('step', { step: 'translate' });
+    let vscodeMcp: any = {};
+    const mcpPath = path.join(appDir, '.vscode', 'mcp.json');
+    if (fs.existsSync(mcpPath)) {
+      vscodeMcp = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+    } else {
+      emit('log', 'no .vscode/mcp.json found; continuing with empty MCP set');
+    }
+    // Inject user-supplied custom MCP servers (pasted JSON) into vscodeMcp before classify/translate.
+    const customNames = new Set<string>();
+    if (cfg.customMcp && cfg.customMcp.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.customMcp);
+        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
+        const customServers: Record<string, any> =
+          (parsed && parsed.servers && typeof parsed.servers === 'object') ? parsed.servers :
+          (parsed && parsed.mcpServers && typeof parsed.mcpServers === 'object') ? parsed.mcpServers :
+          isServerDef(parsed) ? { custom: parsed } :
+          parsed;
+        vscodeMcp.servers = vscodeMcp.servers || {};
+        // rawName is attacker/user-controlled (pasted JSON). Per CodeQL's guidance for
+        // js/remote-property-injection, a fixed non-empty marker prefix is prepended
+        // before the untrusted string is ever used as an object property key. This
+        // guarantees the resulting key can never equal a dangerous name such as
+        // "__proto__" / "constructor" / "prototype", closing off prototype pollution
+        // regardless of what the pasted JSON contains.
+        for (const [rawName, def] of Object.entries(customServers || {})) {
+          let key = 'custom-' + rawName, n = 1;
+          while (Object.prototype.hasOwnProperty.call(vscodeMcp.servers, key)) key = `custom-${rawName}-${n++}`;
+          vscodeMcp.servers[key] = def;
+          customNames.add(key);
+        }
+      } catch (e: any) {
+        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
+      }
+    }
+    // The user toggles MCPs by class (igniteui / theming / angular / custom); `classify`
+    // maps each server with explicit precedence. Only classes the caller explicitly
+    // selected are enabled — everything else stays off, so a variant with no MCPs is a
+    // true clean baseline.
+    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
+    const servers = (vscodeMcp && vscodeMcp.servers) || {};
+    const enabled = new Set<string>();
+    const classByName: Record<string, string> = {};
+    for (const [name, s] of Object.entries(servers)) {
+      const cls = customNames.has(name) ? 'custom' : classify(name, s);
+      classByName[name] = cls;
+      const on = selected.has(cls);
+      if (on) enabled.add(name);
+      emit('log', `mcp "${name}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
+    }
+    const { mcp, warnings } = translate(vscodeMcp, { enabled, workspaceFolder: appDir });
+    warnings.forEach((w) => emit('log', `warning: ${w}`));
+    // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
+    // (ig mcp, igniteui-theming-mcp).
+    for (const [name, def] of Object.entries(mcp)) {
+      const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
+      if (fix && def.type === 'local') {
+        def.command = fix.slice();
+        emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
+      }
+    }
+    writeOpencodeConfig(cfg, mcp, appDir);
+    emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
+  } // end if (configureStrategy !== 'none')
+
+  // 4. Prune deselected skills (IgniteUI only).
+  if (configureStrategy === 'igniteui' && cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
   }

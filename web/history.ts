@@ -104,6 +104,15 @@ const html = (...args: any[]) => {
 };
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
+// Format a framework id for display in the History grid.
+// Only the four known IgniteUI-native ids get the " - Ignite UI" suffix so
+// external 3rd party UI frameworks are shown as-is.
+const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
+function fmtFramework(fw: string | undefined): string {
+  if (!fw) return '—';
+  return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
+}
+
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
   const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
@@ -133,7 +142,7 @@ function rowVals(r: any): HistoryGridRow {
     whenTs: Date.parse(r.startedAt) || 0,
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
-    framework: r.config.framework || '—',
+    framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
     mcps: (r.config.enabledMcps || []).join(', ') || '—',

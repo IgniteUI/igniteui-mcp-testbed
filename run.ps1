@@ -63,11 +63,15 @@ $Hist = Join-Path $PSScriptRoot 'sessions/history'
 # "use local skills" toggle / matrix variants). Created empty so the bind mount always
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 $Skills = Join-Path $PSScriptRoot 'local-skills'
+# Provider packs (3rd-party library configs) persisted across containers.
+# Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
+# make additional libraries available in the wizard and matrix views.
+$Providers = Join-Path $PSScriptRoot 'providers-data'
 # Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
 # collects tests/shared + tests/<framework> and runs them against the freshly-built app
 # in the post-generation verify stage. Created so the mount always resolves.
 $Tests = Join-Path $PSScriptRoot 'tests'
-New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Tests | Out-Null
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests | Out-Null
 
 Write-Host "Session artifacts -> $Out"
 Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
@@ -82,16 +86,17 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Tests}:/tests:ro,Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z")
   $userns = @('--userns=keep-id')
 }
 else {
   # Windows: give Podman a forward-slash path and drop the Linux-only :Z / --userns.
-  $outHost    = $Out    -replace '\\', '/'
-  $histHost   = $Hist   -replace '\\', '/'
-  $skillsHost = $Skills -replace '\\', '/'
-  $testsHost  = $Tests  -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${testsHost}:/tests:ro")
+  $outHost       = $Out       -replace '\\', '/'
+  $histHost      = $Hist      -replace '\\', '/'
+  $skillsHost    = $Skills    -replace '\\', '/'
+  $providersHost = $Providers -replace '\\', '/'
+  $testsHost     = $Tests     -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro")
   $userns = @()
 }
 

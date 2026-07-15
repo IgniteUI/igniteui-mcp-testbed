@@ -339,6 +339,20 @@ igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carous
   .detail { grid-template-columns:1fr; }
 }
 
+/* config view */
+.config-view { background:var(--surface); min-height:calc(100vh - 60px); padding:1.4rem 1.5rem; max-width:680px; }
+.config-view[hidden] { display:none; }
+.config-view > .panel { background:transparent; padding:0; max-width:640px; }
+#providerList { display:flex; flex-direction:column; gap:.7rem; margin-top:1rem; }
+.provider-card { background:#0c1d1b; border:1px solid var(--line); border-radius:8px; padding:.8rem 1rem; }
+.provider-card.builtin { border-color:rgba(26,169,158,.3); }
+.provider-card-head { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.provider-card-head strong { font-size:.9rem; }
+.icon-btn { background:none; border:none; cursor:pointer; padding:.1rem .3rem; border-radius:4px;
+            font-family:var(--mono); font-size:.9rem; line-height:1; color:var(--steel); margin-left:auto; }
+.icon-btn:hover { color:var(--red); background:rgba(224,106,85,.12); }
+.note.warn { color:var(--amber); }
+
 /* matrix view */
 .matrix-view { display:grid; grid-template-columns: minmax(340px,480px) minmax(0,1fr); gap:1px; background:var(--line);
                width:100%; max-width:100vw; min-height:calc(100vh - 60px); overflow:hidden; }

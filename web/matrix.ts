@@ -2,6 +2,9 @@
 import { $, esc, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { isSessionLive } from './wizard.ts';
+import { getPacks, type ProviderPack } from './providers.ts';
+
+let mxProvider = 'igniteui'; // currently selected provider name
 
 // Live-validate the shared custom MCP JSON (mirrors the wizard's own field).
 function refreshMxCustomMcpErr(): boolean {
@@ -22,7 +25,11 @@ function syncMxCustomMcpEnabled() {
 }
 
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-const mxPlatforms = () => [...document.querySelectorAll<any>('#mxPlatforms igc-checkbox')].filter((c) => c.checked).map((c) => c.value);
+// Read only from the currently-visible platform group so hidden entries are excluded.
+const mxPlatforms = () => {
+  const id = mxProvider === 'igniteui' ? '#mxPlatformsIg' : `#mxPlatforms-${mxProvider}`;
+  return [...document.querySelectorAll<any>(`${id} igc-checkbox`)].filter((c) => c.checked).map((c) => c.value);
+};
 
 // Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
 // local = local-only (generated wiped); merge = generated + local overlaid.
@@ -40,16 +47,40 @@ function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } 
 }
 
 // Variant builder: each row = which MCPs are enabled + a skill mode (the axis).
-function addVariantRow(preset: { mcps: string[]; skills: boolean; localSkills: boolean } = { mcps: ['igniteui', 'theming'], skills: true, localSkills: false }) {
+// MCP checkboxes are provider-dependent.
+function variantMcpHtml(preset: { mcps: string[] }): string {
+  const hasCust = preset.mcps.includes('custom') ? 'checked' : '';
+  const customCb = `<igc-checkbox data-mcp="custom" ${hasCust}>Custom MCP</igc-checkbox>`;
+  if (mxProvider === 'igniteui') {
+    const hasIg = preset.mcps.includes('igniteui') ? 'checked' : '';
+    const hasTh = preset.mcps.includes('theming') ? 'checked' : '';
+    return `<igc-checkbox data-mcp="igniteui" ${hasIg}>Ignite UI CLI MCP</igc-checkbox>
+      <igc-checkbox data-mcp="theming" ${hasTh}>Theming MCP</igc-checkbox>
+      ${customCb}`;
+  }
+  const pack = getPacks().find((p) => p.name === mxProvider);
+  if (!pack) return customCb;
+  return (pack.configure?.mcpServers || []).map((s) => {
+    const chk = preset.mcps.includes(s.class) ? 'checked' : '';
+    return `<igc-checkbox data-mcp="${esc(s.class)}" ${chk}>${esc(s.label)}</igc-checkbox>`;
+  }).join('\n') + '\n      ' + customCb;
+}
+
+function defaultVariantPreset(): { mcps: string[]; skills: boolean; localSkills: boolean } {
+  if (mxProvider === 'igniteui') return { mcps: ['igniteui', 'theming'], skills: true, localSkills: false };
+  const pack = getPacks().find((p) => p.name === mxProvider);
+  if (!pack) return { mcps: [], skills: false, localSkills: false };
+  return { mcps: (pack.configure?.mcpServers || []).map((s) => s.class), skills: true, localSkills: false };
+}
+
+function addVariantRow(preset?: { mcps: string[]; skills: boolean; localSkills: boolean }) {
+  const p = preset ?? defaultVariantPreset();
   const row: any = document.createElement('div');
   row.className = 'mx-variant';
-  const has = (m: string) => preset.mcps.includes(m) ? 'checked' : '';
-  const mode = skillModeOf(preset);
+  const mode = skillModeOf(p);
   const sel = (m: string) => mode === m ? 'selected' : '';
   row.innerHTML = `
-    <igc-checkbox data-mcp="igniteui" ${has('igniteui')}>Ignite UI CLI MCP</igc-checkbox>
-    <igc-checkbox data-mcp="theming" ${has('theming')}>Theming MCP</igc-checkbox>
-    <igc-checkbox data-mcp="custom" ${has('custom')}>Custom MCP</igc-checkbox>
+    ${variantMcpHtml(p)}
     <select data-skills title="Skills" class="mx-skills">
       <option value="off" ${sel('off')}>No skills</option>
       <option value="default" ${sel('default')}>Default skills</option>
@@ -105,6 +136,8 @@ async function refreshMxLocalSkills() {
   }
   note.hidden = false;
 }
+// IgniteUI platforms change listener (static; external ones are wired in applyExternalProvidersMatrix).
+document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 
 // Populate the tests combo, grouped by framework: one group per selected platform, whose
 // items are the specs that run for it — its own overlay plus the shared set (a shared spec
@@ -140,9 +173,65 @@ $('#mxTestsCombo').addEventListener('igcChange', () => {
   if (total) $('#mxTestsNote').textContent =
     `${sel}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
 });
-document.querySelectorAll<any>('#mxPlatforms igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
 $('#mxAddVariant').addEventListener('click', () => addVariantRow({ mcps: [], skills: false, localSkills: false }));
-addVariantRow(); // seed one default variant (igniteui+theming, default skills)
+
+// Provider toggle: show/hide platform groups, clear + re-seed variant rows.
+function applyMxProvider(p: string) {
+  mxProvider = p;
+  $('#mxPlatformsIg').hidden = p !== 'igniteui';
+  for (const pack of getPacks()) {
+    const div = document.getElementById(`mxPlatforms-${pack.name}`);
+    if (div) div.hidden = p !== pack.name;
+  }
+  $('#mxVariants').innerHTML = '';
+  addVariantRow();
+}
+$('#mxProvider').addEventListener('igcSelect', (e: any) => applyMxProvider(e.detail || mxProvider));
+
+addVariantRow(); // seed one default variant
+
+/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+export function applyExternalProvidersMatrix(packs: ProviderPack[]): void {
+  // Update provider toggle buttons.
+  const providerGroup = document.getElementById('mxProvider') as any;
+  [...providerGroup.querySelectorAll('[data-external-pack]')].forEach((el: any) => el.remove());
+  for (const pack of packs) {
+    const btn = document.createElement('igc-toggle-button') as any;
+    btn.setAttribute('value', pack.name);
+    btn.setAttribute('data-external-pack', pack.name);
+    btn.textContent = pack.displayName;
+    providerGroup.appendChild(btn);
+  }
+  // Re-select the active provider button if it is still present after the rebuild.
+  if (mxProvider !== 'igniteui') {
+    const activeBtn = (providerGroup as Element).querySelector<any>(`[value="${CSS.escape(mxProvider)}"]`);
+    if (activeBtn) activeBtn.selected = true;
+  }
+
+  // Render external platform groups into #mxExternalPlatforms.
+  const platformContainer = document.getElementById('mxExternalPlatforms')!;
+  platformContainer.innerHTML = '';
+  for (const pack of packs) {
+    const div = document.createElement('div');
+    div.id = `mxPlatforms-${pack.name}`;
+    div.setAttribute('data-external-pack', pack.name);
+    div.hidden = true;
+    div.innerHTML = pack.frameworks.map((fw, i) =>
+      `<igc-checkbox value="${esc(fw.id)}"${i === 0 ? ' checked' : ''}>${esc(fw.label)}</igc-checkbox>`,
+    ).join('');
+    div.querySelectorAll<any>('igc-checkbox').forEach((c) => c.addEventListener('igcChange', updateMxCount));
+    platformContainer.appendChild(div);
+  }
+
+  // If the currently selected provider was removed, revert to igniteui.
+  if (mxProvider !== 'igniteui' && !packs.some((p) => p.name === mxProvider)) {
+    mxProvider = 'igniteui';
+    const igBtn = (providerGroup as Element).querySelector<any>('[value="igniteui"]');
+    if (igBtn) igBtn.selected = true;
+  }
+  applyMxProvider(mxProvider);
+}
 
 let mxES: EventSource | null = null;
 let mxTotal = 0, mxDone = 0;

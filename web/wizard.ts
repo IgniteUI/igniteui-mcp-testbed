@@ -1,8 +1,12 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
-import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
+import { $, esc, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
+import { getPacks, type ProviderPack } from './providers.ts';
 
-let framework = 'angular';
+let framework = 'angular';      // active IgniteUI framework
+let provider = 'igniteui';      // currently selected provider (name)
+// Per-pack selected framework id, so switching back to a pack retains the last choice.
+const extFramework = new Map<string, string>();
 let sessionLive = false;
 
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
@@ -29,10 +33,114 @@ function syncCustomMcpEnabled() {
 $('#customMcpEnable').addEventListener('igcChange', syncCustomMcpEnabled);
 syncCustomMcpEnabled();
 
-// framework button group: igcSelect.detail is the selected toggle's value.
+// Returns the currently active framework key (depends on selected provider).
+const activeFramework = () => provider === 'igniteui' ? framework : (extFramework.get(provider) || '');
+
+// Show/hide provider-specific sections and update visible state.
+function applyProvider(p: string) {
+  provider = p;
+  const ig = p === 'igniteui';
+  // IgniteUI-specific sections
+  $('#fw').hidden = !ig;
+  $('#ptype').hidden = !ig;
+  $('#theme').hidden = !ig;
+  $('#mcpsIg').hidden = !ig;
+  $('#skillsLabelIg').hidden = !ig;
+  $('#excl').hidden = !ig;
+  // External provider sections (one group per pack)
+  for (const pack of getPacks()) {
+    const fwGroup = document.getElementById(`fw-${pack.name}`);
+    const mcpGroup = document.getElementById(`mcps-${pack.name}`);
+    const isThis = p === pack.name;
+    if (fwGroup) fwGroup.hidden = !isThis;
+    if (mcpGroup) mcpGroup.hidden = !isThis;
+  }
+  // Skills label — update text for external provider
+  const extLabel = document.getElementById('skillsLabelExt');
+  if (extLabel) {
+    extLabel.hidden = ig;
+    if (!ig) {
+      const pack = getPacks().find((pk) => pk.name === p);
+      extLabel.textContent = pack?.configure?.skills?.label || 'Install skills';
+    }
+  }
+  // Angular CLI MCP: only shown for angular + igniteui
+  $('#ngMcp').hidden = !(ig && framework === 'angular');
+  refreshLocalSkills();
+}
+
+/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+export function applyExternalProviders(packs: ProviderPack[]): void {
+  // Update provider toggle buttons: remove old external buttons, add new ones.
+  const providerGroup = document.getElementById('provider') as any;
+  [...providerGroup.querySelectorAll('[data-external-pack]')].forEach((el: any) => el.remove());
+  for (const pack of packs) {
+    const btn = document.createElement('igc-toggle-button') as any;
+    btn.setAttribute('value', pack.name);
+    btn.setAttribute('data-external-pack', pack.name);
+    btn.textContent = pack.displayName;
+    providerGroup.appendChild(btn);
+  }
+  // Re-select the active provider button if it is still present after the rebuild.
+  if (provider !== 'igniteui') {
+    const activeBtn = (providerGroup as Element).querySelector<any>(`[value="${CSS.escape(provider)}"]`);
+    if (activeBtn) activeBtn.selected = true;
+  }
+
+  // Render external framework button groups into #externalFwGroups.
+  const fwContainer = document.getElementById('externalFwGroups')!;
+  fwContainer.innerHTML = '';
+  for (const pack of packs) {
+    const group = document.createElement('igc-button-group') as any;
+    group.id = `fw-${pack.name}`;
+    group.setAttribute('selection', 'single-required');
+    group.setAttribute('data-external-pack', pack.name);
+    group.hidden = true;
+    group.innerHTML = pack.frameworks.map((fw, i) =>
+      `<igc-toggle-button value="${esc(fw.id)}"${i === 0 ? ' selected' : ''}>${esc(fw.label)}</igc-toggle-button>`,
+    ).join('');
+    // Seed default selection for this pack if not already set.
+    if (!extFramework.has(pack.name) && pack.frameworks.length > 0) {
+      extFramework.set(pack.name, pack.frameworks[0].id);
+    }
+    group.addEventListener('igcSelect', (e: any) => {
+      extFramework.set(pack.name, e.detail || extFramework.get(pack.name) || '');
+      refreshLocalSkills();
+    });
+    fwContainer.appendChild(group);
+  }
+
+  // Render external MCP sections into #externalMcpGroups.
+  const mcpContainer = document.getElementById('externalMcpGroups')!;
+  mcpContainer.innerHTML = '';
+  for (const pack of packs) {
+    const div = document.createElement('div');
+    div.id = `mcps-${pack.name}`;
+    div.setAttribute('data-external-pack', pack.name);
+    div.hidden = true;
+    div.innerHTML = (pack.configure?.mcpServers || []).map((s) =>
+      `<igc-checkbox data-mcp="${esc(s.class)}" checked>${esc(s.label)}` +
+      (s.description ? `<small>${esc(s.description)}</small>` : '') +
+      `</igc-checkbox>`,
+    ).join('');
+    mcpContainer.appendChild(div);
+  }
+
+  // If the currently selected provider was removed, revert to igniteui.
+  if (provider !== 'igniteui' && !packs.some((p) => p.name === provider)) {
+    provider = 'igniteui';
+    const igBtn = (providerGroup as Element).querySelector<any>('[value="igniteui"]');
+    if (igBtn) igBtn.selected = true;
+  }
+  applyProvider(provider);
+}
+
+// Provider toggle
+$('#provider').addEventListener('igcSelect', (e: any) => applyProvider(e.detail || provider));
+
 $('#fw').addEventListener('igcSelect', (e: any) => {
   framework = e.detail || framework;
-  $('#ngMcp').hidden = framework !== 'angular';
+  $('#ngMcp').hidden = provider !== 'igniteui' || framework !== 'angular';
   refreshLocalSkills();
   refreshTestFiles();
 });
@@ -55,14 +163,22 @@ function logLine(msg: string, cls?: string) {
 const ORDER = ['scaffold', 'configure', 'translate', 'prune', 'overlay-skills', 'launch-app', 'launch-opencode'];
 
 function collect() {
-  // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-  // Scope to the interactive view so the matrix variant checkboxes aren't included.
-  const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
-  const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
+  // Collect MCPs only from the currently-visible provider's container.
+  const mcpContainer = provider === 'igniteui'
+    ? document.getElementById('mcpsIg')
+    : document.getElementById(`mcps-${provider}`);
+  const mcps = mcpContainer
+    ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
+    : [];
+  // Custom MCP is provider-agnostic — collect it independently of the provider container.
+  if ($('#customMcpEnable').checked) mcps.push('custom');
+  const excl = provider === 'igniteui'
+    ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : [];
   return {
-    framework,
-    projectType: $('#ptype').value.trim(),
-    theme: $('#theme').value.trim(),
+    framework: activeFramework(),
+    projectType: provider === 'igniteui' ? $('#ptype').value.trim() : '',
+    theme: provider === 'igniteui' ? $('#theme').value.trim() : '',
     enabledMcps: mcps,
     customMcp: $('#customMcp').value.trim() || undefined,
     skills: $('#skills').checked,
@@ -84,11 +200,12 @@ async function refreshLocalSkills() {
   $('#localSkillsOnly').disabled = !on;
   const note = $('#localSkillsList');
   if (!on) { note.hidden = true; return; }
+  const fw = activeFramework();
   try {
-    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(framework)}`);
+    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(fw)}`);
     const valid = (j.skills || []).filter((s: any) => s.valid).map((s: any) => s.name);
     note.textContent = valid.length
-      ? `Local ${framework} skills: ${valid.join(', ')}`
+      ? `Local ${fw} skills: ${valid.join(', ')}`
       : `No skills found under ${j.dir} — add folders (each with a SKILL.md) before launching.`;
   } catch {
     note.textContent = 'Could not list local skills.';
@@ -161,7 +278,10 @@ $('#form').addEventListener('submit', async (e: any) => {
       handle(ev, () => activeIdx, (i) => { activeIdx = i; });
     }
   }
-  if (!sessionLive) { $('#go').disabled = false; $('#fw').disabled = false; }
+  if (!sessionLive) {
+    $('#go').disabled = false;
+    $('#fw').disabled = false;
+  }
 });
 
 function handle(ev: any, getIdx: () => number, setIdx: (i: number) => void) {

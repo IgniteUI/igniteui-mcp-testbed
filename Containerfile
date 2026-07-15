@@ -13,6 +13,15 @@ RUN apt-get update \
 # `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
 RUN npm install -g opencode-ai igniteui-cli igniteui-theming
 
+# --- 3rd-party provider dependencies ---
+# If a provider pack (loaded via the Configuration tab) lists containerDeps.npmGlobal
+# packages, add them to the RUN line below and rebuild the image:
+#   Windows  : .\run.ps1 build
+#   Linux/macOS: ./run.sh build
+# Example: RUN npm install -g some-tool-lib
+# (Remove the leading '#' and replace the placeholder with the actual package names.)
+# RUN npm install -g <provider-packages-here>
+
 # `opencode web` always tries to open a browser via xdg-open; in a headless
 # container that throws ENOENT. A no-op stub on PATH makes the open silently
 # succeed so the server keeps running.
@@ -98,6 +107,7 @@ EXPOSE 8080 4096 5000
 
 ENV WORK_DIR=/work \
     HISTORY_DIR=/history \
+    PROVIDERS_DIR=/providers \
     WIZARD_PORT=8080 \
     OPENCODE_PORT=4096 \
     APP_PORT=5000

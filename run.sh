@@ -64,6 +64,11 @@ mkdir -p "$HIST"
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 SKILLS="$PWD/local-skills"
 mkdir -p "$SKILLS"
+# Provider packs (3rd-party library configs) persisted across containers.
+# Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
+# make additional libraries available in the wizard and matrix views.
+PROVIDERS="$PWD/providers-data"
+mkdir -p "$PROVIDERS"
 # Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
 # collects tests/shared + tests/<framework> and runs them against the freshly-built app
 # in the post-generation verify stage. Created so the mount always resolves.
@@ -88,13 +93,14 @@ case "$(uname -s)" in
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
     HIST_HOST="$(cygpath -m "$HIST")"
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
+    PROV_HOST="$(cygpath -m "$PROVIDERS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${TESTS_HOST}:/tests:ro")
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro")
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${TESTS}:/tests:ro,Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z")
     USERNS=("--userns=keep-id")
     ;;
 esac

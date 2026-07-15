@@ -1,7 +1,7 @@
 'use strict';
 
 import type { Express } from 'express';
-import { FRAMEWORKS } from '../frameworks.ts';
+import { getFramework } from '../provider-registry.ts';
 import { MATRIX_MAX_ENTRIES } from '../config.ts';
 import * as matrix from '../matrix/matrix.ts';
 import { parseVariants, variantLabel } from '../matrix/variants.ts';
@@ -14,7 +14,7 @@ export default function registerMatrixRoutes(app: Express): void {
   app.post('/api/matrix', (req, res) => {
     if (matrix.isRunning()) return res.status(409).json({ ok: false, error: 'a matrix run is already in progress' });
     const body = req.body || {};
-    const platforms: string[] = (body.platforms || []).filter((p: string) => FRAMEWORKS[p]);
+    const platforms: string[] = (body.platforms || []).filter((p: string) => getFramework(p));
     const variants = parseVariants(body.variants);
     const model = String(body.model || '').trim();
     const prompt = String(body.prompt || '').trim();
