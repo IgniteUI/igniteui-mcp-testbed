@@ -178,7 +178,7 @@ if [[ "$VALIDATE" == 1 ]]; then
     "${USERNS[@]}" \
     "${ENVFLAGS[@]}" \
     "$IMAGE" && RC=0 || RC=$?
-  rmdir "$OUT" 2>/dev/null || true
+  rm -rf "$OUT" 2>/dev/null || true
   exit "$RC"
 fi
 
