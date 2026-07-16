@@ -170,6 +170,7 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
   const { matrixId, total, completion } = matrix.begin(loaded.req.combos, {
     prompt: loaded.req.prompt,
     fixed: loaded.req.fixed,
+    name: loaded.req.name,
   });
   console.log(`matrix config: auto-run started (${matrixId}, ${total} entries)`);
   if (loaded.exitOnDone) {
@@ -178,9 +179,16 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
       const counts: Record<string, number> = {};
       for (const e of entries) counts[e.status] = (counts[e.status] || 0) + 1;
       const summary = Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(', ');
-      const ok = entries.length > 0 && entries.every((e) => e.status === 'success');
-      console.log(`matrix config: run complete (${summary}) — exiting ${ok ? 0 : 1}`);
-      process.exit(ok ? 0 : 1);
+      // Differentiated exit code for CI: 0 = every entry succeeded; 2 = every entry
+      // built but some failed their verification tests; 1 = anything worse
+      // (build-error / error / cancelled / interrupted, or nothing ran).
+      const statuses = entries.map((e) => e.status);
+      const code = statuses.length && statuses.every((s) => s === 'success') ? 0
+        : statuses.length && statuses.every((s) => s === 'success' || s === 'test-failed') ? 2
+        : 1;
+      console.log(`matrix config: run complete (${summary}) — exiting ${code} ` +
+        `(summary: ./sessions/history/reports/${matrixId}/summary.json)`);
+      process.exit(code);
     });
   }
   return { matrixId, total };

@@ -351,7 +351,7 @@
     <details class="help" style="margin-top:1.25rem">
       <summary>About provider packs</summary>
       <div class="help-body">
-        <p>A provider pack is a JSON file that teaches the testbed how to scaffold a project for a specific library, which MCP server to wire up, and where to fetch the agent skills. Pre-built pack files live in the <code>3rdPartyConfigurations/</code> folder of this repository.</p>
+        <p>A provider pack is a JSON file that teaches the testbed how to scaffold a project for a specific library, which MCP server to wire up, and where to fetch the agent skills. Load one here, or drop pack files straight into the <code>providers-data/</code> folder on the host. <code>matrix.example.angular-material.json</code> in the repository root contains a complete example pack (inline, in its <code>providers</code> field).</p>
         <p>Once a pack is loaded it is persisted to the <code>providers-data/</code> folder on the host (bind-mounted at <code>/providers</code>) and survives container restarts. Use the <strong>✕</strong> button to remove a pack.</p>
         <p><strong>Container note:</strong> if a pack lists container dependencies (npm global packages), those must already be installed in the running image or the scaffold will fail at the configure step.</p>
       </div>

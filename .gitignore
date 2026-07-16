@@ -7,6 +7,9 @@ public/vendor/
 # Session artifacts (generated apps, logs, stats)
 sessions/
 
+# User-loaded provider packs (bind-mounted at /providers; created by run.sh/run.ps1)
+providers-data/
+
 # User-supplied local skills (bind-mounted at /local-skills) — preserve the per-platform
 # skeleton (README + empty angular/react/webcomponents/blazor dirs) but ignore the actual
 # skill folders a user drops in.

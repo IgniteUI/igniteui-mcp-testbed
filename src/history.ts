@@ -92,6 +92,7 @@ export interface CreateOpts {
   mode?: HistoryRecord['mode'];
   prompt?: string | null;
   matrixId?: string | null;
+  matrixName?: string | null;
   status?: string;
 }
 
@@ -109,6 +110,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     mode: opts.mode || 'interactive', // 'interactive' | 'matrix'
     prompt: opts.prompt || null, // the one-shot instruction (matrix mode)
     matrixId: opts.matrixId || null, // groups entries of one matrix submission
+    matrixName: opts.matrixName || null, // user-set label for the matrix submission
     config: redact(cfg),
     stages: { completed: [], timings: {} },
     stats: null,

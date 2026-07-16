@@ -9,6 +9,9 @@
 #   ./run.sh --matrix-config <file>     run with a matrix JSON config (auto-runs the
 #                                       matrix headlessly unless the file sets
 #                                       "autoRun": false; the UI reflects the config)
+#   ./run.sh --matrix-config <file> --validate
+#                                       validate the config and exit (no matrix run,
+#                                       no ports published); exit 0 = valid, 1 = invalid
 set -euo pipefail
 
 IMAGE=localhost/igniteui-testbed:latest
@@ -59,18 +62,25 @@ fi
 
 # Run-mode arguments.
 MATRIX_CONFIG_FILE=""
+VALIDATE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --matrix-config)
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
+    --validate)
+      VALIDATE=1; shift ;;
     *)
-      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file>])" >&2
+      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file> [--validate]])" >&2
       exit 2 ;;
   esac
 done
 if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
   [[ -f "$MATRIX_CONFIG_FILE" ]] || { echo "matrix config not found: $MATRIX_CONFIG_FILE" >&2; exit 2; }
   MATRIX_CONFIG_FILE="$(cd "$(dirname "$MATRIX_CONFIG_FILE")" && pwd)/$(basename "$MATRIX_CONFIG_FILE")"
+fi
+if [[ "$VALIDATE" == 1 && -z "$MATRIX_CONFIG_FILE" ]]; then
+  echo "--validate requires --matrix-config <file>" >&2
+  exit 2
 fi
 
 # Provider API keys: source .env (the same file the build reads) and forward any set
@@ -83,6 +93,7 @@ for v in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_A
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
+[[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
 
 mkdir -p "$OUT"
 # Run history persists across containers, so it lives in a stable shared dir
@@ -104,10 +115,14 @@ mkdir -p "$PROVIDERS"
 # in the post-generation verify stage. Created so the mount always resolves.
 TESTS="$PWD/tests"
 mkdir -p "$TESTS"
-echo "Session artifacts -> $OUT"
-echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
-echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
-echo "App:                        http://localhost:5000  (after launch in interactive mode)"
+if [[ "$VALIDATE" == 1 ]]; then
+  echo "Validating matrix config: $MATRIX_CONFIG_FILE"
+else
+  echo "Session artifacts -> $OUT"
+  echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
+  echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
+  echo "App:                        http://localhost:5000  (after launch in interactive mode)"
+fi
 
 # Host interface to publish on. On Windows the podman machine's port forwarder
 # otherwise binds only IPv6 (::1); a browser hitting localhost then connects over
@@ -147,10 +162,25 @@ PORTS=(
   -p "${HOST_BIND}4096:4096"
   -p "${HOST_BIND}5000:5000"
 )
+# Validate mode publishes no ports (it exits immediately and must not conflict with a
+# testbed that is already running).
+[[ "$VALIDATE" == 1 ]] && PORTS=()
 
 # Allocate a TTY only when we actually have one, so CI / piped invocations
 # (e.g. a matrix-config run driven from a script) don't fail on `-t`.
 if [[ -t 0 ]]; then TTY=(-it); else TTY=(-i); fi
+
+if [[ "$VALIDATE" == 1 ]]; then
+  # Not exec: reap the (empty) session dir the mount needed, then forward the exit code.
+  podman run --rm "${TTY[@]}" \
+    --name "igniteui-testbed-validate-$SESSION" \
+    "${VOL[@]}" \
+    "${USERNS[@]}" \
+    "${ENVFLAGS[@]}" \
+    "$IMAGE" && RC=0 || RC=$?
+  rmdir "$OUT" 2>/dev/null || true
+  exit "$RC"
+fi
 
 exec podman run --rm "${TTY[@]}" \
   --name "igniteui-testbed-$SESSION" \

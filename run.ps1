@@ -9,8 +9,11 @@
 #   .\run.ps1 -MatrixConfig <file>       run with a matrix JSON config (auto-runs the
 #                                        matrix headlessly unless the file sets
 #                                        "autoRun": false; the UI reflects the config)
+#   .\run.ps1 -MatrixConfig <file> -Validate
+#                                        validate the config and exit (no matrix run,
+#                                        no ports published); exit 0 = valid, 1 = invalid
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune, [string]$MatrixConfig)
+param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate)
 
 $ErrorActionPreference = 'Stop'
 $Image = 'localhost/igniteui-testbed:latest'
@@ -66,6 +69,10 @@ if ($MatrixConfig) {
   }
   $mcAbs = (Resolve-Path $MatrixConfig).Path
 }
+if ($Validate -and -not $mcAbs) {
+  Write-Host '-Validate requires -MatrixConfig <file>'
+  exit 2
+}
 
 # Provider API keys: source .env (the same file the build reads) and forward any set
 # key vars into the container so a matrix config's apiKeyEnv — or the provider default
@@ -83,6 +90,7 @@ foreach ($v in 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GOO
   if (Test-Path "env:$v") { $envFlags += @('-e', $v) }
 }
 if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
+if ($Validate) { $envFlags += @('-e', 'MATRIX_VALIDATE=1') }
 
 $Session = Get-Date -Format "yyyyMMdd'T'HHmmss"
 $Out  = Join-Path $PSScriptRoot "sessions/$Session"
@@ -103,10 +111,14 @@ $Providers = Join-Path $PSScriptRoot 'providers-data'
 $Tests = Join-Path $PSScriptRoot 'tests'
 New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests | Out-Null
 
-Write-Host "Session artifacts -> $Out"
-Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
-Write-Host 'opencode:                   http://localhost:4096  (after launch in interactive mode)'
-Write-Host 'App:                        http://localhost:5000  (after launch in interactive mode)'
+if ($Validate) {
+  Write-Host "Validating matrix config: $mcAbs"
+} else {
+  Write-Host "Session artifacts -> $Out"
+  Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
+  Write-Host 'opencode:                   http://localhost:4096  (after launch in interactive mode)'
+  Write-Host 'App:                        http://localhost:5000  (after launch in interactive mode)'
+}
 
 # Host interface to publish on. On Windows the podman machine's port forwarder
 # otherwise binds only IPv6 (::1); a browser hitting localhost then connects over
@@ -128,12 +140,28 @@ else {
   $providersHost = $Providers -replace '\\', '/'
   $testsHost     = $Tests     -replace '\\', '/'
   $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro")
+  if ($mcAbs) {
+    $mcHost = $mcAbs -replace '\\', '/'
+    $vol += @('-v', "${mcHost}:/matrix-config.json:ro")
+  }
   $userns = @()
 }
 
 # Allocate a TTY only when we actually have one, so CI / piped invocations
 # (e.g. a matrix-config run driven from a script) don't fail on `-t`.
 if ([Console]::IsInputRedirected) { $tty = @('-i') } else { $tty = @('-it') }
+
+# Validate mode publishes no ports (it exits immediately and must not conflict with a
+# testbed that is already running).
+if ($Validate) {
+  $podmanArgs = @('run', '--rm') + $tty + @('--name', "igniteui-testbed-validate-$Session") +
+    $vol + $userns + $envFlags + $Image
+  podman @podmanArgs
+  $rc = $LASTEXITCODE
+  # Reap the (empty) session dir the mount needed.
+  try { Remove-Item -Path $Out -Force -ErrorAction Stop } catch {}
+  exit $rc
+}
 
 $podmanArgs = @('run', '--rm') + $tty + @(
   '--name', "igniteui-testbed-$Session",

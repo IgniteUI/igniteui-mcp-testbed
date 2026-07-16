@@ -14,6 +14,7 @@ export interface NormalizedMatrixRequest {
   variants: Variant[];
   combos: Combo[];
   prompt: string;
+  name: string | null;
   fixed: MatrixFixed;
   dropped: number;
   warnings: string[];
@@ -35,6 +36,9 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   const variants = parseVariants(body.variants);
   const model = String(body.model || '').trim();
   const prompt = String(body.prompt || '').trim();
+  // Optional human label for the whole matrix, recorded on every entry's history
+  // record so a submission is findable later without decoding timestamps.
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : null;
   if (!platforms.length || !variants.length) {
     return { ok: false, error: 'select at least one platform and one variant' };
   }
@@ -62,5 +66,5 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     customMcp: body.customMcp || undefined,
     selectedTests,
   };
-  return { ok: true, req: { platforms, variants, combos, prompt, fixed, dropped, warnings } };
+  return { ok: true, req: { platforms, variants, combos, prompt, name, fixed, dropped, warnings } };
 }

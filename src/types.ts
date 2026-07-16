@@ -183,6 +183,7 @@ export interface HistoryRecord {
   mode: 'interactive' | 'matrix';
   prompt: string | null;
   matrixId: string | null;
+  matrixName?: string | null; // user-set label from the matrix request / config file
   config: StoredConfig;
   stages: { completed: string[]; timings: Record<string, number> };
   stats: Stats | null;
@@ -231,6 +232,7 @@ export interface MatrixEntry {
 export interface MatrixState {
   running: boolean;
   matrixId: string | null;
+  name?: string | null;
   total: number;
   done: number;
   entries: MatrixEntry[];

@@ -11,6 +11,9 @@ export const LOG_DIR = path.join(WORK, 'logs');
 // under it so they survive container teardown alongside the run records.
 export const HISTORY_DIR = process.env.HISTORY_DIR || path.join(WORK, 'history');
 export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
+// Static per-matrix HTML reports, written when a matrix settles. Under HISTORY_DIR so
+// they persist across containers and can link screenshots relatively.
+export const REPORTS_DIR = path.join(HISTORY_DIR, 'reports');
 
 // Host-supplied skills, bind-mounted in (see run.sh/run.ps1). Each subfolder is one
 // skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
