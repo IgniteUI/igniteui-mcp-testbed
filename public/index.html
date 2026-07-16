@@ -16,6 +16,7 @@
   <span class="dot" id="statusDot"></span>
   <h1>Ignite UI Testbed</h1>
   <nav class="views" role="tablist">
+    <button class="tab" data-view="config" role="tab" aria-selected="false">Configuration</button>
     <button class="tab active" data-view="wizard" role="tab" aria-selected="true">Interactive</button>
     <button class="tab" data-view="matrix" role="tab" aria-selected="false">Matrix</button>
     <button class="tab" data-view="history" role="tab" aria-selected="false">History</button>
@@ -25,6 +26,7 @@
 
 <!-- View mounts — each is rendered by its lit view module in web/ (app.js).
      The markup lives in the view templates, not here. -->
+<section class="config-view" id="configView" hidden></section>
 <main id="wizardMain"></main>
 <section class="matrix-view" id="matrix" hidden></section>
 <section class="history-view" id="history" hidden></section>

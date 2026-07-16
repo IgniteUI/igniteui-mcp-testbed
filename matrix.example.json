@@ -1,4 +1,5 @@
 {
+  "name": "grid+chart baseline",
   "platforms": ["angular", "react"],
   "variants": [
     { "mcps": ["igniteui", "theming"], "skills": true, "localSkills": false },

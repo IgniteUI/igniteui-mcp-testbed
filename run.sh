@@ -9,6 +9,9 @@
 #   ./run.sh --matrix-config <file>     run with a matrix JSON config (auto-runs the
 #                                       matrix headlessly unless the file sets
 #                                       "autoRun": false; the UI reflects the config)
+#   ./run.sh --matrix-config <file> --validate
+#                                       validate the config and exit (no matrix run,
+#                                       no ports published); exit 0 = valid, 1 = invalid
 set -euo pipefail
 
 IMAGE=localhost/igniteui-testbed:latest
@@ -22,7 +25,17 @@ if [[ "${1:-}" == "build" ]]; then
   # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
-  [[ -f "$PWD/.env" ]] && { set -a; . "$PWD/.env"; set +a; }
+  # Pull only the licensed-feed creds from .env (matching run.ps1) rather than sourcing
+  # the whole file: a targeted parse tolerates `KEY = value` spacing and never executes
+  # arbitrary shell from .env.
+  if [[ -f "$PWD/.env" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ "$line" =~ ^[[:space:]]*(IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL)[[:space:]]*=[[:space:]]*(.+)$ ]] || continue
+      val="${BASH_REMATCH[2]}"
+      val="${val%"${val##*[![:space:]]}"}"   # trim trailing whitespace
+      export "${BASH_REMATCH[1]}=$val"
+    done < "$PWD/.env"
+  fi
   NPMRC="$PWD/.npmrc"
   : > "$NPMRC"                       # always present (empty = trial) so the bind mount resolves
   trap 'rm -f "$NPMRC"' EXIT
@@ -49,18 +62,25 @@ fi
 
 # Run-mode arguments.
 MATRIX_CONFIG_FILE=""
+VALIDATE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --matrix-config)
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
+    --validate)
+      VALIDATE=1; shift ;;
     *)
-      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file>])" >&2
+      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file> [--validate]])" >&2
       exit 2 ;;
   esac
 done
 if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
   [[ -f "$MATRIX_CONFIG_FILE" ]] || { echo "matrix config not found: $MATRIX_CONFIG_FILE" >&2; exit 2; }
   MATRIX_CONFIG_FILE="$(cd "$(dirname "$MATRIX_CONFIG_FILE")" && pwd)/$(basename "$MATRIX_CONFIG_FILE")"
+fi
+if [[ "$VALIDATE" == 1 && -z "$MATRIX_CONFIG_FILE" ]]; then
+  echo "--validate requires --matrix-config <file>" >&2
+  exit 2
 fi
 
 # Provider API keys: source .env (the same file the build reads) and forward any set
@@ -73,6 +93,7 @@ for v in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_A
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
+[[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
 
 mkdir -p "$OUT"
 # Run history persists across containers, so it lives in a stable shared dir
@@ -84,15 +105,24 @@ mkdir -p "$HIST"
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 SKILLS="$PWD/local-skills"
 mkdir -p "$SKILLS"
+# Provider packs (3rd-party library configs) persisted across containers.
+# Drop a ProviderPack JSON file here (or use the Configuration tab in the wizard) to
+# make additional libraries available in the wizard and matrix views.
+PROVIDERS="$PWD/providers-data"
+mkdir -p "$PROVIDERS"
 # Host-supplied Playwright verification tests, bind-mounted read-only at /tests. A run
 # collects tests/shared + tests/<framework> and runs them against the freshly-built app
 # in the post-generation verify stage. Created so the mount always resolves.
 TESTS="$PWD/tests"
 mkdir -p "$TESTS"
-echo "Session artifacts -> $OUT"
-echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
-echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
-echo "App:                        http://localhost:5000  (after launch in interactive mode)"
+if [[ "$VALIDATE" == 1 ]]; then
+  echo "Validating matrix config: $MATRIX_CONFIG_FILE"
+else
+  echo "Session artifacts -> $OUT"
+  echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
+  echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
+  echo "App:                        http://localhost:5000  (after launch in interactive mode)"
+fi
 
 # Host interface to publish on. On Windows the podman machine's port forwarder
 # otherwise binds only IPv6 (::1); a browser hitting localhost then connects over
@@ -108,8 +138,9 @@ case "$(uname -s)" in
     OUT_HOST="$(cygpath -m "$OUT")"   # e.g. D:/work/.../sessions/2026...
     HIST_HOST="$(cygpath -m "$HIST")"
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
+    PROV_HOST="$(cygpath -m "$PROVIDERS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${TESTS_HOST}:/tests:ro")
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
       VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
@@ -118,7 +149,7 @@ case "$(uname -s)" in
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${TESTS}:/tests:ro,Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
     fi
@@ -131,10 +162,25 @@ PORTS=(
   -p "${HOST_BIND}4096:4096"
   -p "${HOST_BIND}5000:5000"
 )
+# Validate mode publishes no ports (it exits immediately and must not conflict with a
+# testbed that is already running).
+[[ "$VALIDATE" == 1 ]] && PORTS=()
 
 # Allocate a TTY only when we actually have one, so CI / piped invocations
 # (e.g. a matrix-config run driven from a script) don't fail on `-t`.
 if [[ -t 0 ]]; then TTY=(-it); else TTY=(-i); fi
+
+if [[ "$VALIDATE" == 1 ]]; then
+  # Not exec: reap the (empty) session dir the mount needed, then forward the exit code.
+  podman run --rm "${TTY[@]}" \
+    --name "igniteui-testbed-validate-$SESSION" \
+    "${VOL[@]}" \
+    "${USERNS[@]}" \
+    "${ENVFLAGS[@]}" \
+    "$IMAGE" && RC=0 || RC=$?
+  rm -rf "$OUT" 2>/dev/null || true
+  exit "$RC"
+fi
 
 exec podman run --rm "${TTY[@]}" \
   --name "igniteui-testbed-$SESSION" \

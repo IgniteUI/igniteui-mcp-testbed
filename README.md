@@ -20,6 +20,8 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 - **A model + API key** — e.g. an Anthropic or OpenAI key, or a local
   OpenAI-compatible endpoint (Ollama, LM Studio, …). You type this into the wizard;
   it is passed to opencode as an environment variable and **never written to disk**.
+  Keyless providers (e.g. opencode's free hosted models like `opencode/big-pickle`)
+  need no key at all — just the model id.
 
 ## Quick start
 
@@ -30,6 +32,7 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 .\run.ps1 build -Prune    # build, then delete dangling <none> images the rebuild orphaned
 .\run.ps1                 # run a fresh container; publishes ports 8080 / 4096 / 5000
 .\run.ps1 -MatrixConfig .\matrix.json   # run + execute a matrix from a JSON config (no UI needed)
+.\run.ps1 -MatrixConfig .\matrix.json -Validate   # just validate the config and exit
 ```
 
 **Linux / macOS / Git Bash:**
@@ -39,6 +42,7 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 ./run.sh build --prune    # build, then delete dangling <none> images the rebuild orphaned
 ./run.sh                  # run a fresh container; publishes ports 8080 / 4096 / 5000
 ./run.sh --matrix-config ./matrix.json  # run + execute a matrix from a JSON config (no UI needed)
+./run.sh --matrix-config ./matrix.json --validate  # just validate the config and exit
 ```
 
 Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
@@ -93,8 +97,15 @@ Containers run with `--rm`, so stopping also removes them; your session artifact
 
 ## Modes
 
-The header switches between three views:
+The header switches between four views:
 
+- **Configuration** — manage **provider packs**: JSON files that teach the testbed how
+  to scaffold and configure a 3rd-party library (its own scaffold / dev-server
+  commands, MCP servers, and skills source). Packs loaded here persist in
+  `./providers-data/` on the host (you can also drop pack `.json` files there
+  directly), and their frameworks appear as extra platforms in the Interactive and
+  Matrix views. A matrix config file can alternatively carry packs inline via its
+  `providers` field — see below.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.
@@ -125,13 +136,40 @@ the matrix **auto-runs** immediately. The wizard server still starts, so opening
 live progress — tweak and resubmit from there like any UI-configured matrix. A config
 that fails validation stops the container at startup with a clear error.
 
+Progress is **mirrored to the terminal** (`[2/4 react · none · no-skills] — agent —`,
+per-entry ✔/✖ outcomes), so a config-driven run is followable without the UI. When the
+matrix settles, two artifacts land in `./sessions/history/reports/<matrixId>/` on the
+host: a **static HTML report** (`report.html` — summary table, per-entry stage timings,
+token/cost usage, test results, and embedded screenshots; openable directly from the
+filesystem, no container needed, and served at
+`http://localhost:8080/history/reports/<matrixId>/report.html` while one runs) and a
+machine-readable **`summary.json`** (per-entry status / duration / stage timings /
+tokens / cost / test counts — what a CI job reads to see *which* combo regressed). A
+final console message says where they are and that the container can be stopped. Both
+are generated for UI-submitted matrices too; set `MATRIX_CONSOLE=1` to get the console
+mirror for those as well (e.g. to follow via `podman logs`).
+
+To check a config without running anything, add `--validate` / `-Validate`:
+
+```bash
+./run.sh --matrix-config ./matrix.json --validate    # Bash
+.\run.ps1 -MatrixConfig .\matrix.json -Validate      # PowerShell
+```
+
+It loads and validates the file in the container environment (provider packs and the
+tests dir included), prints what the config resolves to — entries, model, whether the
+API key resolves, warnings — and exits without starting the wizard or publishing ports
+(safe to run while another testbed is up). Exit code 0 = valid, 1 = invalid.
+
 Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `platforms` | yes | Any of `angular`, `blazor`, `react`, `webcomponents`. Unknown names are ignored with a warning. |
-| `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. `mcps` ⊆ `igniteui` / `theming` / `custom`; `localSkills` without `skills` = local-only. Deduped. |
+| `name` | no | Human label for the whole submission (max 80 chars). Recorded on every entry's history record (shown in the History detail panel and the matrix-tag tooltip), in the report header, and in `summary.json` — so "Tuesday's grid run" is findable without decoding timestamps. |
+| `platforms` | yes | Built-in framework ids (`angular`, `blazor`, `react`, `webcomponents`) **or any registered provider pack's framework ids** (from `./providers-data/` or this file's `providers` field). Unknown names are ignored with a warning. |
+| `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. For built-in platforms `mcps` ⊆ `igniteui` / `theming` / `custom`; for provider platforms use the pack's MCP server `class` names (+ `custom`). Classes no selected platform declares warn at load. `localSkills` without `skills` = local-only. Deduped. |
 | `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
+| `providers` | no | Array of **provider pack definitions** (same JSON shape the Configuration tab uploads: `name`, `displayName`, `frameworks[]`, `configure.mcpServers[]`, …). Registered in-memory at startup *before* the request is validated, so `platforms`/`mcps` can reference them — a terminal run is fully self-contained in one file. Unlike UI uploads they are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
 | `prompt` | yes | The shared prompt every entry runs. |
 | `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
 | `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
@@ -140,11 +178,26 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `customBaseUrl` | no | Custom OpenAI-compatible base URL (pairs with `CUSTOM_API_KEY`). |
 | `selectedTests` | no | Verification specs to run, as `<platform>::<category>/<file>` keys (e.g. `angular::shared/smoke.spec.ts`). Omitted = run all discovered; `[]` = run none. Unknown keys warn. |
 | `autoRun` | no | Default `true`. Set `false` to only prefill the UI (the file becomes a saved preset). |
-| `exitOnDone` | no | Default `false` (container keeps serving the UI so results stay browsable). `true` = exit when the matrix finishes — code 0 iff every entry succeeded — for CI. |
+| `exitOnDone` | no | Default `false` (container keeps serving the UI so results stay browsable). `true` = exit when the matrix finishes, for CI — exit code **0** = every entry succeeded, **2** = every entry built but some verification tests failed, **1** = anything worse (build-error / error / cancelled). |
 
 The API key is never written to disk inside the container and never echoed back to the
 browser; a matrix submitted from the prefilled UI with an empty key field falls back to
 the config's key automatically.
+
+[`matrix.example.angular-material.json`](matrix.example.angular-material.json) is a
+complete self-contained example of the `providers` field: it defines an
+**Angular Material** provider inline (Angular CLI scaffold + `@angular/material` /
+`@angular/cdk` installed post-scaffold — the *agent* is left to do the Material wiring,
+which is the thing being tested) with the Angular CLI MCP as its toggleable server
+(class `angular`), then runs one prompt with and without that MCP:
+
+```bash
+./run.sh --matrix-config ./matrix.example.angular-material.json
+```
+
+Its `containerDeps.npmGlobal` lists `@angular/cli`; the scaffold works without baking it
+in (npx fetches on demand, slower per entry) — add it to the Containerfile's
+"3rd-party provider dependencies" section and rebuild to skip the per-session fetch.
 
 ## How a session works
 

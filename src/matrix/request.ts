@@ -1,7 +1,7 @@
 'use strict';
 
-import { FRAMEWORKS } from '../frameworks.ts';
 import { MATRIX_MAX_ENTRIES } from '../config.ts';
+import { getFramework } from '../provider-registry.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, Variant } from '../types.ts';
 
@@ -14,6 +14,7 @@ export interface NormalizedMatrixRequest {
   variants: Variant[];
   combos: Combo[];
   prompt: string;
+  name: string | null;
   fixed: MatrixFixed;
   dropped: number;
   warnings: string[];
@@ -26,13 +27,18 @@ export type MatrixRequestResult =
 export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   const body = raw || {};
   const requested: string[] = Array.isArray(body.platforms) ? body.platforms : [];
-  const platforms = requested.filter((p: string) => FRAMEWORKS[p]);
+  // Provider-aware: a platform is any built-in framework id OR a framework id
+  // registered by an external provider pack (provider-registry.getFramework).
+  const platforms = requested.filter((p: string) => getFramework(p));
   const warnings: string[] = requested
-    .filter((p: string) => !FRAMEWORKS[p])
+    .filter((p: string) => !getFramework(p))
     .map((p: string) => `unknown platform '${p}' ignored`);
   const variants = parseVariants(body.variants);
   const model = String(body.model || '').trim();
   const prompt = String(body.prompt || '').trim();
+  // Optional human label for the whole matrix, recorded on every entry's history
+  // record so a submission is findable later without decoding timestamps.
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : null;
   if (!platforms.length || !variants.length) {
     return { ok: false, error: 'select at least one platform and one variant' };
   }
@@ -60,5 +66,5 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     customMcp: body.customMcp || undefined,
     selectedTests,
   };
-  return { ok: true, req: { platforms, variants, combos, prompt, fixed, dropped, warnings } };
+  return { ok: true, req: { platforms, variants, combos, prompt, name, fixed, dropped, warnings } };
 }

@@ -11,6 +11,7 @@ interface HistoryGridRow {
   whenTs: number;
   whenDisplay: string;
   matrixId: string;
+  matrixName: string;
   framework: string;
   model: string;
   skills: string;
@@ -90,6 +91,15 @@ const gridHtml = (...args: any[]) => {
   return tag(...args);
 };
 
+// Format a framework id for display in the History grid. Only the four known
+// IgniteUI-native ids get the " - Ignite UI" suffix so external 3rd-party UI
+// frameworks are shown as-is.
+const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
+function fmtFramework(fw: string | undefined): string {
+  if (!fw) return '—';
+  return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
+}
+
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
@@ -120,7 +130,8 @@ function rowVals(r: any): HistoryGridRow {
     whenTs: Date.parse(r.startedAt) || 0,
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
-    framework: r.config.framework || '—',
+    matrixName: r.matrixName || '',
+    framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
@@ -198,7 +209,7 @@ function bindGridTemplates() {
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
-          ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : gridHtml``}
+          ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}
         </dl></div>
         <div><h4>Stages</h4><dl>
           <dt>Completed</dt><dd>${completed}</dd>
@@ -275,7 +286,7 @@ function bindGridTemplates() {
     const tag = matrixTagInfo(row.matrixId);
     if (!tag) return gridHtml`<span class="mxtag muted">—</span>`;
     return gridHtml`
-      <span class="mxtag" style="color:${tag.color}" title="${row.matrixId} — click to filter"
+      <span class="mxtag" style="color:${tag.color}" title="${row.matrixName ? `${row.matrixName} — ` : ''}${row.matrixId} — click to filter"
         @click=${(ev: Event) => {
           ev.stopPropagation();
           matrixFilter = matrixFilter === row.matrixId ? null : row.matrixId;

@@ -1,8 +1,9 @@
 // Interactive view: scaffold → configure → launch, then live stats + model switch.
 // Rendered with lit-html from a single state object; ids/classes match app.css.
-import { html, render, nothing, classMap } from './lit.ts';
+import { html, render, nothing, repeat, classMap } from './lit.ts';
 import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
+import { getPacks, type ProviderPack } from './providers.ts';
 
 const STEPS: Array<[string, string]> = [
   ['scaffold', 'Scaffold project'],
@@ -16,7 +17,8 @@ const STEPS: Array<[string, string]> = [
 const ORDER = STEPS.map(([k]) => k);
 
 interface WizardState {
-  framework: string;
+  provider: string;       // 'igniteui' or an external pack name
+  framework: string;      // active IgniteUI framework (external ones live in extFramework)
   busy: boolean;          // a launch is streaming
   sessionLive: boolean;
   matrixLock: boolean;    // a matrix run owns the ports
@@ -37,6 +39,7 @@ interface WizardState {
 }
 
 const st: WizardState = {
+  provider: 'igniteui',
   framework: 'angular',
   busy: false,
   sessionLive: false,
@@ -57,6 +60,9 @@ const st: WizardState = {
   usageText: 'No stats yet — run the agent, then Refresh.',
 };
 
+// Per-pack selected framework id, so switching back to a pack retains the last choice.
+const extFramework = new Map<string, string>();
+
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
 export const isSessionLive = () => st.sessionLive;
@@ -68,6 +74,13 @@ export function setMatrixLock(on: boolean) {
 }
 
 const launchDisabled = () => st.busy || st.sessionLive || st.matrixLock;
+
+// The currently active framework id (depends on the selected provider).
+const activeFramework = () =>
+  st.provider === 'igniteui' ? st.framework : (extFramework.get(st.provider) || '');
+
+const activePack = (): ProviderPack | undefined =>
+  getPacks().find((p) => p.name === st.provider);
 
 function logLine(msg: string, cls = '') {
   st.logs.push({ msg, cls });
@@ -85,14 +98,22 @@ function refreshCustomMcpErr(): boolean {
 }
 
 function collect() {
-  // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
-  // Scope to the interactive view so the matrix variant checkboxes aren't included.
-  const mcps = [...document.querySelectorAll<any>('#wizardMain [data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp);
-  const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
+  // Collect MCPs only from the active provider's container (igc-checkbox exposes
+  // `.checked` as a property, not the CSS :checked pseudo). Custom MCP is
+  // provider-agnostic and collected independently.
+  const ig = st.provider === 'igniteui';
+  const mcpContainer = document.getElementById(ig ? 'mcpsIg' : `mcps-${st.provider}`);
+  const mcps = mcpContainer
+    ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
+    : [];
+  if ($('#customMcpEnable').checked) mcps.push('custom');
+  const excl = ig
+    ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : [];
   return {
-    framework: st.framework,
-    projectType: $('#ptype').value.trim(),
-    theme: $('#theme').value.trim(),
+    framework: activeFramework(),
+    projectType: ig ? $('#ptype').value.trim() : '',
+    theme: ig ? $('#theme').value.trim() : '',
     enabledMcps: mcps,
     customMcp: $('#customMcp').value.trim() || undefined,
     skills: $('#skills').checked,
@@ -111,11 +132,12 @@ function collect() {
 // the override toggle is off.
 async function refreshLocalSkills() {
   if (!st.overrideSkills) { st.localSkillsNote = null; update(); return; }
+  const fw = activeFramework();
   try {
-    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(st.framework)}`);
+    const j = await getJSON(`/api/local-skills?platform=${encodeURIComponent(fw)}`);
     const valid = (j.skills || []).filter((s: any) => s.valid).map((s: any) => s.name);
     st.localSkillsNote = valid.length
-      ? `Local ${st.framework} skills: ${valid.join(', ')}`
+      ? `Local ${fw} skills: ${valid.join(', ')}`
       : `No skills found under ${j.dir} — add folders (each with a SKILL.md) before launching.`;
   } catch {
     st.localSkillsNote = 'Could not list local skills.';
@@ -123,28 +145,35 @@ async function refreshLocalSkills() {
   update();
 }
 
-// Populate the tests combo, grouped by framework: the group is the selected framework
-// and its items are the specs that run for it — its own overlay plus the shared set
-// (a shared spec appears under each framework it runs for). All discovered specs start
-// selected; clearing the selection skips verification. Selection is preserved across
-// framework switches for specs that still exist.
+// Populate the tests combo, grouped by framework: the group is the active framework
+// and its items are the specs that run for it — its own overlay plus the shared set.
+// External provider frameworks aren't in /api/tests' per-platform map, so they get the
+// shared set only (same as the matrix view). All discovered specs start selected;
+// clearing the selection skips verification. Selection is preserved across framework
+// switches for specs that still exist.
 const testsKnownIds = new Set<string>();
 let testsRefreshSeq = 0;
 async function refreshTestFiles() {
   const seq = ++testsRefreshSeq;
   const combo = $('#testsCombo');
+  const fw = activeFramework();
   try {
-    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(st.framework)}`);
+    const ig = st.provider === 'igniteui';
+    const j = ig
+      ? await getJSON(`/api/tests?platform=${encodeURIComponent(fw)}`)
+      : await getJSON('/api/tests');
     if (seq !== testsRefreshSeq) return;
+    const shared = j.shared || [];
+    const overlay = ig ? (j.framework || []) : [];
     const data = [
-      ...(j.shared || []).map((f: string) => ({ id: `${st.framework}::shared/${f}`, file: f, category: st.framework })),
-      ...(j.framework || []).map((f: string) => ({ id: `${st.framework}::${st.framework}/${f}`, file: f, category: st.framework })),
+      ...shared.map((f: string) => ({ id: `${fw}::shared/${f}`, file: f, category: fw })),
+      ...overlay.map((f: string) => ({ id: `${fw}::${fw}/${f}`, file: f, category: fw })),
     ];
     const sel = syncTestsCombo(combo, data, testsKnownIds);
     combo.disabled = !data.length;
     st.testsNote = data.length
       ? `${sel.length}/${data.length} test file(s) selected — only these run during matrix verification.`
-      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${st.framework}/.`;
+      : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/${fw}/.`;
   } catch {
     if (seq !== testsRefreshSeq) return;
     st.testsNote = 'Could not list test files.';
@@ -152,10 +181,41 @@ async function refreshTestFiles() {
   update();
 }
 
+/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+export function applyExternalProviders(packs: ProviderPack[]): void {
+  // Seed each pack's default framework selection once.
+  for (const pack of packs) {
+    if (!extFramework.has(pack.name) && pack.frameworks.length > 0) {
+      extFramework.set(pack.name, pack.frameworks[0].id);
+    }
+  }
+  // If the currently selected provider was removed, revert to igniteui.
+  if (st.provider !== 'igniteui' && !packs.some((p) => p.name === st.provider)) {
+    st.provider = 'igniteui';
+    refreshLocalSkills();
+    refreshTestFiles();
+  }
+  update();
+}
+
 // ---------- event handlers ----------
+
+function onProviderSelect(e: any) {
+  st.provider = e.detail || st.provider;
+  refreshLocalSkills();
+  refreshTestFiles();
+  update();
+}
 
 function onFrameworkSelect(e: any) {
   st.framework = e.detail || st.framework;
+  refreshLocalSkills();
+  refreshTestFiles();
+  update();
+}
+
+function onExtFrameworkSelect(pack: ProviderPack, e: any) {
+  extFramework.set(pack.name, e.detail || extFramework.get(pack.name) || '');
   refreshLocalSkills();
   refreshTestFiles();
   update();
@@ -370,29 +430,59 @@ const statsUpdated = () => st.stats?.updatedAt
   ? `Updated ${new Date(st.stats.updatedAt).toLocaleTimeString()} · model ${st.stats.model || '—'}`
   : 'Waiting for activity — run the agent in opencode.';
 
+const skillsLabel = () => {
+  if (st.provider === 'igniteui') return 'Install Ignite UI skills';
+  return activePack()?.configure?.skills?.label || 'Install skills';
+};
+
 function tpl() {
+  const ig = st.provider === 'igniteui';
   return html`
   <!-- left: flight plan -->
   <section class="panel">
     <p class="eyebrow">Session setup</p>
     <form id="form" @submit=${onSubmit}>
       <fieldset>
+        <legend>Provider</legend>
+        <igc-button-group id="provider" selection="single-required" .disabled=${launchDisabled()} @igcSelect=${onProviderSelect}>
+          <igc-toggle-button value="igniteui" .selected=${ig}>Ignite UI</igc-toggle-button>
+          ${repeat(getPacks(), (p) => p.name, (p) => html`
+            <igc-toggle-button value=${p.name} .selected=${st.provider === p.name}>${p.displayName}</igc-toggle-button>`)}
+        </igc-button-group>
+      </fieldset>
+
+      <fieldset>
         <legend>Framework</legend>
-        <igc-button-group id="fw" selection="single-required" .disabled=${launchDisabled()} @igcSelect=${onFrameworkSelect}>
+        <igc-button-group id="fw" selection="single-required" ?hidden=${!ig} .disabled=${launchDisabled()} @igcSelect=${onFrameworkSelect}>
           <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
           <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
           <igc-toggle-button value="react">React</igc-toggle-button>
           <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
         </igc-button-group>
-        <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav"></igc-input>
-        <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default"></igc-input>
+        ${repeat(getPacks(), (p) => p.name, (pack) => html`
+          <igc-button-group id="fw-${pack.name}" selection="single-required" ?hidden=${st.provider !== pack.name}
+            .disabled=${launchDisabled()} @igcSelect=${(e: any) => onExtFrameworkSelect(pack, e)}>
+            ${pack.frameworks.map((fw) => html`
+              <igc-toggle-button value=${fw.id} .selected=${(extFramework.get(pack.name) || pack.frameworks[0]?.id) === fw.id}>${fw.label}</igc-toggle-button>`)}
+          </igc-button-group>`)}
+        <!-- Project type + theme: only meaningful for ig new (IgniteUI) -->
+        <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav" ?hidden=${!ig}></igc-input>
+        <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default" ?hidden=${!ig}></igc-input>
       </fieldset>
 
       <fieldset>
         <legend>MCP servers</legend>
-        <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
-        <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
-        <igc-checkbox data-mcp="angular" id="ngMcp" ?hidden=${st.framework !== 'angular'}>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        <div id="mcpsIg" ?hidden=${!ig}>
+          <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
+          <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
+          <igc-checkbox data-mcp="angular" id="ngMcp" ?hidden=${!(ig && st.framework === 'angular')}>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
+        </div>
+        ${repeat(getPacks(), (p) => p.name, (pack) => html`
+          <div id="mcps-${pack.name}" ?hidden=${st.provider !== pack.name}>
+            ${pack.configure?.mcpServers?.map((s) => html`
+              <igc-checkbox data-mcp=${s.class} checked>${s.label}${s.description ? html`<small>${s.description}</small>` : nothing}</igc-checkbox>`)}
+          </div>`)}
+        <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
         <igc-checkbox data-mcp="custom" id="customMcpEnable" @igcChange=${onCustomMcpToggle}>Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
         <igc-textarea id="customMcp" class="mcp-ta" rows="4" ?hidden=${!st.customMcpOn} @igcInput=${onCustomMcpInput}
           placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
@@ -404,8 +494,9 @@ function tpl() {
 
       <fieldset>
         <legend>Agent skills</legend>
-        <igc-checkbox id="skills" checked>Install Ignite UI skills<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
-        <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
+        <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
+        <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
         <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>

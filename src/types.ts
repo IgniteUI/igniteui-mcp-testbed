@@ -34,8 +34,66 @@ export interface DevDef {
   env?: Record<string, string>;
 }
 
+// 'igniteui'  (default) — runs `ig ai-config`, writes .vscode/mcp.json + .claude/skills/.
+// 'external'            — drives config from a ProviderPack (MCP servers + skills via
+//                         git clone); opencode.json is written directly, no translate step.
+// 'none'                — skips configure entirely, writes bare opencode.json.
+export type ConfigureStrategy = 'igniteui' | 'external' | 'none';
+
+// ── Provider Pack ─────────────────────────────────────────────────────────────
+// A JSON file (one per 3rd-party library) that describes how to scaffold, install,
+// and configure AI tooling for that library.  Loaded at runtime from PROVIDERS_DIR.
+
+export interface ProviderPackFramework {
+  id: string;
+  label: string;
+  scaffold: ScaffoldDef;
+  install?: string[];
+  dev: DevDef;
+  prepare?: Record<string, string>;
+}
+
+export interface ProviderPackMcpServer {
+  name: string;
+  command: string;
+  args?: string[];
+  /** Logical class used for enable/disable toggling (e.g. 'igniteui'). */
+  class: string;
+  label: string;
+  description?: string;
+}
+
+export interface ProviderPackSkills {
+  /** 'owner/repo' on GitHub — cloned with `git clone --depth 1` and skill folders copied. */
+  github?: string;
+  /** Alternative: run a command directly (e.g. a custom install script). */
+  installCommand?: string[];
+  /** Human label shown in the wizard skills checkbox. */
+  label: string;
+}
+
+export interface ProviderPackConfigure {
+  mcpServers: ProviderPackMcpServer[];
+  skills?: ProviderPackSkills;
+}
+
+export interface ProviderPack {
+  name: string;
+  displayName: string;
+  description?: string;
+  version?: string;
+  frameworks: ProviderPackFramework[];
+  configure: ProviderPackConfigure;
+  /** npm packages that must be installed globally in the container image. */
+  containerDeps?: { npmGlobal?: string[] };
+}
+
 export interface FrameworkDef {
   scaffold: ScaffoldDef;
+  // npm packages to install into the scaffolded project after scaffold (e.g. @angular/material).
+  install?: string[];
+  // How to set up AI tooling. Defaults to 'igniteui' when omitted.
+  configure?: ConfigureStrategy;
   aiFramework: string;
   dev: DevDef;
   prepare?: Record<string, string>;
@@ -125,6 +183,7 @@ export interface HistoryRecord {
   mode: 'interactive' | 'matrix';
   prompt: string | null;
   matrixId: string | null;
+  matrixName?: string | null; // user-set label from the matrix request / config file
   config: StoredConfig;
   stages: { completed: string[]; timings: Record<string, number> };
   stats: Stats | null;
@@ -173,6 +232,7 @@ export interface MatrixEntry {
 export interface MatrixState {
   running: boolean;
   matrixId: string | null;
+  name?: string | null;
   total: number;
   done: number;
   entries: MatrixEntry[];

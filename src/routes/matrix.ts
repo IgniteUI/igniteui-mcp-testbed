@@ -8,7 +8,9 @@ import { getLoadedMatrixConfig } from '../matrix/matrix-config.ts';
 export default function registerMatrixRoutes(app: Express): void {
   // Kick off a matrix: body = { prompt, platforms[], variants[], model, apiKey, ... }.
   // Axes are platforms × variants (each variant = a set of MCPs + skills on/off); the
-  // model + API key are one fixed config applied to every entry.
+  // model + API key are one fixed config applied to every entry. Platform ids may be
+  // built-in frameworks or any registered provider pack's framework ids —
+  // normalizeMatrixRequest validates them provider-aware via getFramework().
   app.post('/api/matrix', (req, res) => {
     if (matrix.isRunning()) return res.status(409).json({ ok: false, error: 'a matrix run is already in progress' });
     const body = { ...(req.body || {}) };
@@ -23,7 +25,7 @@ export default function registerMatrixRoutes(app: Express): void {
     }
     const r = normalizeMatrixRequest(body);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
-    const { matrixId, total } = matrix.begin(r.req.combos, { prompt: r.req.prompt, fixed: r.req.fixed });
+    const { matrixId, total } = matrix.begin(r.req.combos, { prompt: r.req.prompt, fixed: r.req.fixed, name: r.req.name });
     res.json({ ok: true, matrixId, total, dropped: r.req.dropped });
   });
 
@@ -40,6 +42,7 @@ export default function registerMatrixRoutes(app: Express): void {
         variants: c.req.variants,
         model: fixed.model,
         prompt: c.req.prompt,
+        name: c.req.name,
         customMcp: fixed.customMcp || '',
         customBaseUrl: fixed.customBaseUrl || null,
         selectedTests: fixed.selectedTests ?? null, // null = field omitted = "all"
