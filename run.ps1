@@ -159,7 +159,7 @@ if ($Validate) {
   podman @podmanArgs
   $rc = $LASTEXITCODE
   # Reap the (empty) session dir the mount needed.
-  try { Remove-Item -Path $Out -Force -ErrorAction Stop } catch {}
+  try { Remove-Item -Path $Out -Recurse -Force -ErrorAction Stop } catch {}
   exit $rc
 }
 
