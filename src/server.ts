@@ -14,8 +14,8 @@ ensureDirs();
 try { loadAll(); } catch (e: any) { console.error(`provider-registry load failed: ${e.message}`); }
 
 // Validate-only mode (./run.sh --matrix-config <file> --validate): load + validate the
-// config, print what it resolves to, and exit — no server, no state touched (runs
-// before the history reap). Exit 0 = valid, 1 = invalid, 2 = misuse.
+// config, print what it resolves to, and exit — no server started and no history
+// records modified (runs before the history reap). Exit 0 = valid, 1 = invalid, 2 = misuse.
 if (process.env.MATRIX_VALIDATE === '1') {
   if (!MATRIX_CONFIG) {
     console.error('MATRIX_VALIDATE is set but no MATRIX_CONFIG file is configured');
