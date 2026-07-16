@@ -1,7 +1,6 @@
 {
   "name": "igniteui-testbed-wizard",
   "version": "0.1.0",
-  "private": true,
   "description": "Wizard that scaffolds an Ignite UI project, wires the AI toolchain, and hands off to opencode web.",
   "main": "src/server.ts",
   "type": "module",
