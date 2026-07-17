@@ -139,9 +139,24 @@ fi
 # any set key vars into the container so a matrix config's apiKeyEnv — or the provider
 # default for its model — resolves. `-e VAR` passes the value through without echoing
 # it into the process listing.
-read_env_keys 'ANTHROPIC_API_KEY|OPENAI_API_KEY|OPENROUTER_API_KEY|GOOGLE_GENERATIVE_AI_API_KEY|CUSTOM_API_KEY'
+KEY_VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_AI_API_KEY CUSTOM_API_KEY)
+# A matrix config may name a custom env var to hold its key via "apiKeyEnv"; forward
+# that var too (else loadMatrixConfig can't resolve it and the run goes out keyless).
+if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
+  CUSTOM_KEY_ENV="$(grep -oE '"apiKeyEnv"[[:space:]]*:[[:space:]]*"[^"]+"' "$MATRIX_CONFIG_FILE" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)".*/\1/')"
+  if [[ -n "$CUSTOM_KEY_ENV" ]]; then
+    if [[ "$CUSTOM_KEY_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      dup=0; for v in "${KEY_VARS[@]}"; do [[ "$v" == "$CUSTOM_KEY_ENV" ]] && dup=1; done
+      [[ "$dup" == 0 ]] && KEY_VARS+=("$CUSTOM_KEY_ENV")
+    else
+      echo "warning: ignoring invalid apiKeyEnv name '$CUSTOM_KEY_ENV' in $MATRIX_CONFIG_FILE" >&2
+    fi
+  fi
+fi
+KEY_RE="$(IFS='|'; echo "${KEY_VARS[*]}")"
+read_env_keys "$KEY_RE"
 ENVFLAGS=()
-for v in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_AI_API_KEY CUSTOM_API_KEY; do
+for v in "${KEY_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")

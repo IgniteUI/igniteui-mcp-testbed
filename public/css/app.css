@@ -57,9 +57,14 @@ igc-toggle-button::part(toggle) { font-size:.7rem; text-transform:none; padding-
 
 /* checkboxes: smaller box + label (fill color comes from the --ig-secondary-500
    override above). The box size is set by a high-specificity inner
-   [part~=control] rule, so the --size override needs !important to win. */
+   [part~=control] rule, so the --size override needs !important to win.
+   The hover/press halo is the control's PADDING box (its ::before spans 100% and
+   box-sizing:border-box makes the padding the size floor), so --control-padding
+   must shrink in step with --size or a tiny box sits in a huge halo:
+   .75rem box + 2×.75rem padding = 1.5rem halo — the same 1:2 box:halo ratio as
+   the stock 1.25rem-in-2.5rem. */
 igc-checkbox { display:block; margin:.5rem 0; }
-igc-checkbox::part(control) { --size:.75rem !important; }
+igc-checkbox::part(control) { --size:.75rem !important; --control-padding:.75rem; }
 igc-checkbox::part(indicator) { --indicator-size:.6rem !important; }
 igc-checkbox::part(label) { font-size:.75rem; font-weight:500; }
 igc-checkbox small { display:block; color:var(--steel); font-size:.72rem; font-weight:400; margin-top:.05rem; }
@@ -271,7 +276,7 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .mxtag { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem;
   border:1px solid currentColor; cursor:pointer; }
 .mxtag.muted { color:var(--steel); border-color:transparent; cursor:default; }
-.history-actions-cell { display:flex; justify-content:center; gap:.1rem; width:100%; }
+.history-actions-cell { display:flex; gap:.1rem; width:100%; }
 .del { font-family:var(--mono); font-size:.95rem; line-height:1; color:var(--steel);
   background:none; border:none; cursor:pointer; padding:.1rem .3rem; border-radius:4px; }
 .del:hover { color:var(--red); background:rgba(224,106,85,.12); }

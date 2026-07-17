@@ -1,12 +1,17 @@
-// Bootstrap: wire view switching and, on load, re-attach to any active session
-// and lock the launch if a matrix is mid-run. Importing the view modules runs
-// their top-level listener registrations.
+// Bootstrap: render the lit views into their mount sections, wire view switching,
+// and on load re-attach to any active session, lock the launch if a matrix is
+// mid-run, and prefill the matrix form from a server-side config file.
 import { $ } from './util.ts';
-import { checkActiveSession, applyExternalProviders } from './wizard.ts';
-import { updateMxCount, ensureMatrixStream, checkMatrixLock, applyExternalProvidersMatrix, applyServerMatrixConfig } from './matrix.ts';
-import { loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
-import { initConfigView, renderProviderList } from './config-view.ts';
+import { mountWizard, checkActiveSession, applyExternalProviders } from './wizard.ts';
+import { mountMatrix, updateMxCount, ensureMatrixStream, checkMatrixLock, applyExternalProvidersMatrix, applyServerMatrixConfig } from './matrix.ts';
+import { mountHistory, loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
+import { mountConfigView, renderProviderList } from './config-view.ts';
 import { refreshProviders, onProvidersChange } from './providers.ts';
+
+mountConfigView($('#configView'));
+mountWizard($('#wizardMain'));
+mountMatrix($('#matrix'));
+mountHistory($('#history'));
 
 const VIEWS: Record<string, string> = { config: '#configView', wizard: '#wizardMain', matrix: '#matrix', history: '#history' };
 
@@ -30,18 +35,15 @@ document.querySelectorAll<any>('.tab[data-view]').forEach((b) =>
 
 // Defer to `load` so the Ignite UI components have upgraded first.
 window.addEventListener('load', async () => {
-  // Wire Configuration tab (file upload button etc.)
-  initConfigView();
-
-  // Register callbacks so any provider change immediately re-renders all three
-  // views that depend on the provider list.
+  // Any provider-pack change (load / remove) re-renders the three views that
+  // depend on the pack list.
   onProvidersChange((packs) => {
     renderProviderList(packs);
     applyExternalProviders(packs);
     applyExternalProvidersMatrix(packs);
   });
-
-  // Fetch providers once on startup.
+  // Fetch packs once before the session/prefill checks — the matrix prefill may
+  // reference an external provider's platforms.
   await refreshProviders();
 
   checkActiveSession();

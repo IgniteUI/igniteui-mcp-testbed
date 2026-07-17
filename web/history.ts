@@ -1,4 +1,8 @@
 // History view: sortable Ignite UI grid with master-detail run inspection.
+// The view chrome (head, meta, empty note, dialog, lightbox) renders with our bundled
+// lit; the igc-grid's cell/detail templates are built with window.igniteuiHtml so the
+// grid's own lit instance (inside vendor igniteui.js) renders them — see web/lit.ts.
+import { html, render, keyed } from './lit.ts';
 import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 
@@ -34,86 +38,69 @@ let templatesBound = false;
 let defaultSortApplied = false;
 let gridDataBound = false;
 
-// Lightbox state
-let lbShots: Array<{file: string; route: string}> = [];
-let lbArt: (f: string) => string = () => '';
-let lbIdx = 0;
+// View-chrome state (everything the lit template renders from).
+const st = {
+  emptyMsg: 'No runs recorded yet.',
+  emptyVisible: true,
+  gridVisible: false,
+  shownCount: 0,
+  rerunSummary: '',
+  lb: {
+    open: false,
+    gen: 0, // bumped per open — keyed() then builds a FRESH carousel (see openLightbox)
+    shots: [] as Array<{ file: string; route: string }>,
+    art: ((f: string) => '') as (f: string) => string,
+    idx: 0,
+  },
+};
 
-function openLightbox(okShots: Array<{file: string; route: string}>, idx: number, art: (f: string) => string) {
-  lbShots = okShots;
-  lbArt = art;
-  lbIdx = Math.max(0, Math.min(idx, lbShots.length - 1));
-
-  // Create a fresh igc-carousel each time. Re-using the same element with
-  // replaceChildren() leaves the component's internal slide cache stale, which
-  // breaks prev/next navigation. A fresh element always starts with clean state.
-  const carousel = document.createElement('igc-carousel') as any;
-  carousel.id = 'shotCarousel';
-  carousel.className = 'shot-carousel';
-  carousel.setAttribute('loop', 'false');
-
-  for (let i = 0; i < okShots.length; i++) {
-    const s = okShots[i];
-    const slide = document.createElement('igc-carousel-slide') as any;
-    const wrap = document.createElement('div');
-    wrap.className = 'shot-slide';
-    const img = document.createElement('img');
-    img.src = art(s.file);
-    img.alt = s.route;
-    const cap = document.createElement('div');
-    cap.className = 'shot-slide-cap';
-    cap.textContent = `${s.route}  ·  ${i + 1} / ${okShots.length}`;
-    wrap.append(img, cap);
-    slide.append(wrap);
-    if (i === lbIdx) slide.active = true;
-    carousel.append(slide);
-  }
-
-  // Attach igcSlideChanged to this fresh element so lbIdx stays in sync.
-  carousel.addEventListener('igcSlideChanged', () => {
-    if (typeof carousel.current === 'number') lbIdx = carousel.current;
-  });
-
-  // Swap the placeholder (or the previous carousel) with the fresh one.
-  const old = document.getElementById('shotCarousel');
-  if (old) old.replaceWith(carousel);
-  else document.getElementById('shotLightboxContent')!.append(carousel);
-
-  (document.getElementById('shotLightbox') as HTMLElement).hidden = false;
+function openLightbox(okShots: Array<{ file: string; route: string }>, idx: number, art: (f: string) => string) {
+  st.lb.shots = okShots;
+  st.lb.art = art;
+  st.lb.idx = Math.max(0, Math.min(idx, okShots.length - 1));
+  // Re-using a carousel with replaced children leaves its internal slide cache stale,
+  // which breaks prev/next navigation. Bumping the keyed() generation makes lit build
+  // a fresh element each open, which always starts with clean state.
+  st.lb.gen++;
+  st.lb.open = true;
   document.body.style.overflow = 'hidden';
-
+  update();
   // Navigate to the correct starting slide after the component has connected
   // to the DOM and processed its slotchange microtasks.
   Promise.resolve().then(() => {
+    const carousel = document.getElementById('shotCarousel') as any;
+    if (!carousel) return;
     const slides = Array.from(carousel.querySelectorAll('igc-carousel-slide'));
-    if (typeof carousel.select === 'function' && slides[lbIdx]) {
-      carousel.select(slides[lbIdx] as Element);
+    if (typeof carousel.select === 'function' && slides[st.lb.idx]) {
+      carousel.select(slides[st.lb.idx] as Element);
     }
   });
 }
 
 function closeLightbox() {
-  (document.getElementById('shotLightbox') as HTMLElement).hidden = true;
+  st.lb.open = false;
   document.body.style.overflow = '';
+  update();
 }
 
 const grid = () => $('#runsGrid') as any;
-const html = (...args: any[]) => {
+// Grid templates MUST come from the vendor bundle's lit (the grid renders them).
+const gridHtml = (...args: any[]) => {
   const tag = (window as any).igniteuiHtml;
   if (!tag) throw new Error('Ignite UI template helper is not loaded');
   return tag(...args);
 };
 
-// One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
-// Format a framework id for display in the History grid.
-// Only the four known IgniteUI-native ids get the " - Ignite UI" suffix so
-// external 3rd party UI frameworks are shown as-is.
+// Format a framework id for display in the History grid. Only the four known
+// IgniteUI-native ids get the " - Ignite UI" suffix so external 3rd-party UI
+// frameworks are shown as-is.
 const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
 function fmtFramework(fw: string | undefined): string {
   if (!fw) return '—';
   return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
 }
 
+// One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
   const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
@@ -135,8 +122,8 @@ function testSummary(t: any): { display: string; sort: number; state: string } {
 
 // Flatten a record into the comparable values shown in the grid.
 function rowVals(r: any): HistoryGridRow {
-  const st = r.stats || {};
-  const cost = st.cost && st.cost.available ? st.cost.amount : null;
+  const stats = r.stats || {};
+  const cost = stats.cost && stats.cost.available ? stats.cost.amount : null;
   const ts = testSummary(r.tests);
   return {
     id: r.id,
@@ -153,8 +140,8 @@ function rowVals(r: any): HistoryGridRow {
     testsSort: ts.sort,
     testsDisplay: ts.display,
     testsState: ts.state,
-    msgs: (st.messages || {}).total || 0,
-    tok: (st.tokens || {}).total || 0,
+    msgs: (stats.messages || {}).total || 0,
+    tok: (stats.tokens || {}).total || 0,
     costSort: cost,
     costDisplay: cost == null ? 'n/a' : `$${cost.toFixed(4)}`,
     durationMs: r.durationMs,
@@ -170,30 +157,9 @@ function matrixTagInfo(matrixId: string): { label: string; color: string } | nul
   return { label: matrixId.split('-').pop() || matrixId, color: `hsl(${h % 360},55%,62%)` };
 }
 
-function updateHistMeta(shown: number) {
-  const meta = $('#historyMeta');
-  if (matrixFilter) {
-    const label = matrixFilter.split('-').pop();
-    meta.textContent = '';
-    meta.append(
-      document.createTextNode(`${shown} run${shown === 1 ? '' : 's'} in matrix #${label} · `),
-    );
-    const clear = document.createElement('a');
-    clear.href = '#';
-    clear.id = 'historyClear';
-    clear.style.color = 'var(--teal)';
-    clear.textContent = 'show all';
-    clear.onclick = (ev: any) => { ev.preventDefault(); matrixFilter = null; renderRuns(); };
-    meta.append(clear);
-  } else {
-    meta.textContent = `${runsData.length} run${runsData.length === 1 ? '' : 's'}`;
-  }
-}
-
 function setHistoryMessage(message: string, visible: boolean) {
-  const empty = $('#historyEmpty');
-  empty.textContent = message;
-  empty.hidden = !visible;
+  st.emptyMsg = message;
+  st.emptyVisible = visible;
 }
 
 function getCellRow(ctx: any): HistoryGridRow {
@@ -204,12 +170,8 @@ function isRateable(status: string): boolean {
   return !['running', 'pending'].includes(status);
 }
 
-function sameValue(a: any, b: any): boolean {
-  return a === b;
-}
-
 function rowsEqual(a: HistoryGridRow, b: HistoryGridRow): boolean {
-  return Object.keys(a).every((key) => sameValue((a as any)[key], (b as any)[key]));
+  return Object.keys(a).every((key) => (a as any)[key] === (b as any)[key]);
 }
 
 function bindGridTemplates() {
@@ -226,17 +188,17 @@ function bindGridTemplates() {
   g.detailTemplate = (ctx: any) => {
     const row = ctx.implicit as HistoryGridRow;
     const r = runById.get(row.id);
-    if (!r) return html``;
+    if (!r) return gridHtml``;
 
-    const c = r.config, st = r.stats, stg = r.stages || {};
+    const c = r.config, stats = r.stats, stg = r.stages || {};
     const timings = Object.entries(stg.timings || {});
     const completed = (stg.completed || []).join(' → ') || '—';
-    const perModel = st && st.perModel ? Object.entries(st.perModel) : [];
+    const perModel = stats && stats.perModel ? Object.entries(stats.perModel) : [];
     const shots = r.screenshots || [];
     const art = (file: string) => `/history/artifacts/${encodeURIComponent(r.id)}/${encodeURIComponent(file)}`;
     const okShots = shots.filter((s: any) => s.ok);
 
-    return html`
+    return gridHtml`
       <div class="detail" data-run-id=${row.id}>
         <div><h4>Config</h4><dl>
           <dt>Mode</dt><dd>${r.mode || 'interactive'}</dd>
@@ -247,73 +209,73 @@ function bindGridTemplates() {
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
-          ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : html``}
+          ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}
         </dl></div>
         <div><h4>Stages</h4><dl>
           <dt>Completed</dt><dd>${completed}</dd>
           ${timings.length
-            ? timings.map(([k, v]) => html`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
-            : html`<dt>—</dt><dd></dd>`}
+            ? timings.map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
+            : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
         <div><h4>Per model</h4><dl>
           ${perModel.length
             ? perModel.map(([m, pm]: [string, any]) =>
-                html`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
-            : html`<dt>—</dt><dd></dd>`}
+                gridHtml`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
+            : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
         ${r.prompt
-          ? html`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
-          : html``}
-        ${shots.length ? html`
+          ? gridHtml`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
+          : gridHtml``}
+        ${shots.length ? gridHtml`
           <div class="shots">
             <details class="shot-details">
               <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
               <div class="shot-strip">${shots.map((s: any) => s.ok
-                ? html`<button type="button" class="shot" title="View ${s.route}"
+                ? gridHtml`<button type="button" class="shot" title="View ${s.route}"
                     @click=${() => openLightbox(okShots, okShots.indexOf(s), art)}>
                     <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
                       src="${art(s.file)}" alt="${s.route}">
                     <span class="cap">${s.route}</span>
                   </button>`
-                : html`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
+                : gridHtml`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
               </div>
             </details>
-          </div>` : html``}
-        ${r.tests ? html`
+          </div>` : gridHtml``}
+        ${r.tests ? gridHtml`
           <div class="shots"><h4>Tests</h4>
             <div class="test-summary ${r.tests.ran ? (r.tests.ok ? 'pass' : 'fail') : 'error'}">
               ${r.tests.ran
-                ? html`${r.tests.passed}/${r.tests.total} passed${r.tests.failed ? ` · ${r.tests.failed} failed` : ''}${r.tests.flaky ? ` · ${r.tests.flaky} flaky` : ''}${r.tests.skipped ? ` · ${r.tests.skipped} skipped` : ''}`
-                : html`could not run: ${r.tests.error || 'unknown error'}`}
-              ${r.tests.reportFile ? html` · <a href="${art(r.tests.reportFile)}" target="_blank" rel="noopener">report.json</a>` : html``}
+                ? gridHtml`${r.tests.passed}/${r.tests.total} passed${r.tests.failed ? ` · ${r.tests.failed} failed` : ''}${r.tests.flaky ? ` · ${r.tests.flaky} flaky` : ''}${r.tests.skipped ? ` · ${r.tests.skipped} skipped` : ''}`
+                : gridHtml`could not run: ${r.tests.error || 'unknown error'}`}
+              ${r.tests.reportFile ? gridHtml` · <a href="${art(r.tests.reportFile)}" target="_blank" rel="noopener">report.json</a>` : gridHtml``}
             </div>
-            ${(r.tests.failures && r.tests.failures.length) ? html`
+            ${(r.tests.failures && r.tests.failures.length) ? gridHtml`
               <details class="shot-details">
                 <summary>${r.tests.failures.length} failing test${r.tests.failures.length === 1 ? '' : 's'}</summary>
-                <div class="test-failures">${r.tests.failures.map((f: any) => html`
+                <div class="test-failures">${r.tests.failures.map((f: any) => gridHtml`
                   <div class="test-failure"><strong>${f.title}</strong> <small>${f.file}</small>
                     <pre class="usage detail-log">${f.error}</pre></div>`)}
                 </div>
-              </details>` : html``}
-            ${(r.tests.files && r.tests.files.length) ? html`<div class="note detail-note">files: ${r.tests.files.join(', ')}</div>` : html``}
-          </div>` : html``}
-        ${r.logs && r.logs.length ? html`
+              </details>` : gridHtml``}
+            ${(r.tests.files && r.tests.files.length) ? gridHtml`<div class="note detail-note">files: ${r.tests.files.join(', ')}</div>` : gridHtml``}
+          </div>` : gridHtml``}
+        ${r.logs && r.logs.length ? gridHtml`
           <div class="shots"><h4>Log</h4><details>
             <summary class="log-summary">${r.logs.length} lines</summary>
             <pre class="usage detail-log">${r.logs.join('\n')}</pre>
-          </details></div>` : html``}
-        ${r.error ? html`<div class="err"><strong>Error:</strong> ${r.error}</div>` : html``}
-        ${r.matrixId ? html`
+          </details></div>` : gridHtml``}
+        ${r.error ? gridHtml`<div class="err"><strong>Error:</strong> ${r.error}</div>` : gridHtml``}
+        ${r.matrixId ? gridHtml`
           <div class="delgroup">
             <igc-button class="danger-button" variant="contained"
               @click=${(ev: Event) => { ev.stopPropagation(); deleteMatrix(r.matrixId); }}>
               Delete entire matrix #${r.matrixId.split('-').pop()}
             </igc-button>
-          </div>` : html``}
+          </div>` : gridHtml``}
       </div>`;
   };
 
-  $('#historyWhen').bodyTemplate = (ctx: any) => html`<span class="history-when">${getCellRow(ctx).whenDisplay}</span>`;
+  $('#historyWhen').bodyTemplate = (ctx: any) => gridHtml`<span class="history-when">${getCellRow(ctx).whenDisplay}</span>`;
   // The grid shows whenDisplay via the template above, but the Excel exporter ignores
   // body templates and exports the raw field value — which for the numeric whenTs column
   // would be a bare epoch number. The exporter does honour the column formatter, so map
@@ -322,8 +284,8 @@ function bindGridTemplates() {
   $('#historyMatrix').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     const tag = matrixTagInfo(row.matrixId);
-    if (!tag) return html`<span class="mxtag muted">—</span>`;
-    return html`
+    if (!tag) return gridHtml`<span class="mxtag muted">—</span>`;
+    return gridHtml`
       <span class="mxtag" style="color:${tag.color}" title="${row.matrixName ? `${row.matrixName} — ` : ''}${row.matrixId} — click to filter"
         @click=${(ev: Event) => {
           ev.stopPropagation();
@@ -331,17 +293,17 @@ function bindGridTemplates() {
           renderRuns();
         }}>#${tag.label}</span>`;
   };
-  $('#historyStatus').bodyTemplate = (ctx: any) => html`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  $('#historyStatus').bodyTemplate = (ctx: any) => gridHtml`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
   $('#historyTests').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
-    return html`<span class="tests-cell ${row.testsState}" title="Playwright verification">${row.testsDisplay}</span>`;
+    return gridHtml`<span class="tests-cell ${row.testsState}" title="Playwright verification">${row.testsDisplay}</span>`;
   };
   // The exporter ignores body templates; map the numeric sort field back to the display.
   $('#historyTests').formatter = (_v: number, row: any) => (row && row.testsDisplay) || '—';
   $('#historyRating').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     const readonly = !isRateable(row.status);
-    return html`<igc-rating class="history-rating ${readonly ? 'is-readonly' : ''}" max="5" step="1"
+    return gridHtml`<igc-rating class="history-rating ${readonly ? 'is-readonly' : ''}" max="5" step="1"
       .value=${row.rating}
       .readOnly=${readonly}
       @click=${(ev: Event) => ev.stopPropagation()}
@@ -350,10 +312,10 @@ function bindGridTemplates() {
         saveRating(row.id, Number(ev.detail || 0));
       }}></igc-rating>`;
   };
-  $('#historyMsgs').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
-  $('#historyTokens').bodyTemplate = (ctx: any) => html`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
-  $('#historyCost').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
-  $('#historyDuration').bodyTemplate = (ctx: any) => html`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
+  $('#historyMsgs').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
+  $('#historyTokens').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
+  $('#historyCost').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
+  $('#historyDuration').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
   // Export the same human-readable duration as the cell shows, not the raw millisecond
   // field value (the exporter ignores the body template but honours the formatter).
   $('#historyDuration').formatter = (value: number | null) => fmtDur(value);
@@ -367,7 +329,7 @@ function bindGridTemplates() {
       : active ? 'Run is still in progress' : 'Re-run this configuration';
     const stopTitle = !isMatrix ? 'Cancel is only available for matrix runs'
       : active ? 'Cancel this run' : 'Run is not in progress';
-    return html`<span class="history-actions-cell">
+    return gridHtml`<span class="history-actions-cell">
       <button class="play material-icons" title=${playTitle} ?disabled=${playDisabled}
         @click=${(ev: Event) => { ev.stopPropagation(); rerunRun(row.id); }}>play_arrow</button>
       <button class="stop material-icons" title=${stopTitle} ?disabled=${stopDisabled}
@@ -483,29 +445,31 @@ function reconcileGridRows(nextRows: HistoryGridRow[]) {
 
 function renderRuns() {
   bindGridTemplates();
-  const g = grid();
   const data = matrixFilter ? runsData.filter((r) => r.matrixId === matrixFilter) : runsData;
-  updateHistMeta(data.length);
+  st.shownCount = data.length;
   runById.clear();
   for (const r of data) runById.set(r.id, r);
 
   if (!data.length) {
     reconcileGridRows([]);
-    g.hidden = true;
+    st.gridVisible = false;
     setHistoryMessage(matrixFilter ? 'No runs match this matrix filter.' : 'No runs recorded yet.', true);
+    update();
     return;
   }
 
   setHistoryMessage('', false);
-  g.hidden = false;
+  st.gridVisible = true;
+  update();
   reconcileGridRows(data.map(rowVals));
 }
 
 export async function loadHistory() {
   const hadData = runsData.length > 0;
   if (!hadData) {
-    grid().hidden = true;
+    st.gridVisible = false;
     setHistoryMessage('Loading run history...', true);
+    update();
   }
   try {
     const j = await getJSON('/api/history');
@@ -514,8 +478,9 @@ export async function loadHistory() {
     if (matrixFilter && !runsData.some((r) => r.matrixId === matrixFilter)) matrixFilter = null;
     renderRuns();
   } catch (err: any) {
-    grid().hidden = true;
+    st.gridVisible = false;
     setHistoryMessage(`Could not load run history: ${err.message}`, true);
+    update();
   }
 }
 
@@ -546,8 +511,8 @@ function rerunRun(id: string) {
   const c = r.config || {};
   const prompt = (r.prompt || '').trim();
   const snippet = prompt.length > 80 ? prompt.slice(0, 80) + '…' : prompt;
-  $('#rerunSummary').textContent =
-    `${c.framework || '—'} · ${(c.models || [])[0] || '—'}${snippet ? ` · "${snippet}"` : ''}`;
+  st.rerunSummary = `${c.framework || '—'} · ${(c.models || [])[0] || '—'}${snippet ? ` · "${snippet}"` : ''}`;
+  update();
   ($('#rerunKey') as any).value = '';
   ($('#rerunDialog') as any).show();
 }
@@ -617,28 +582,106 @@ async function saveRating(id: string, rating: number) {
   }
 }
 
-$('#historyRefresh').addEventListener('click', loadHistory);
-$('#historyExport').addEventListener('click', () => {
+function download(href: string) {
   const a = document.createElement('a');
-  a.href = '/api/history/export';
+  a.href = href;
   a.download = '';
   a.click();
-});
-$('#historyExportJson').addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = '/api/history/export.json';
-  a.download = '';
-  a.click();
-});
-$('#rerunConfirm').addEventListener('click', confirmRerun);
-$('#rerunCancel').addEventListener('click', () => { pendingRerun = null; ($('#rerunDialog') as any).hide(); });
-document.getElementById('shotLightboxBackdrop')!.addEventListener('click', closeLightbox);
-document.getElementById('shotLightboxClose')!.addEventListener('click', closeLightbox);
-// igcSlideChanged is attached per-carousel inside openLightbox() (fresh element each open).
-document.addEventListener('keydown', (e: KeyboardEvent) => {
-  const lb = document.getElementById('shotLightbox') as HTMLElement;
-  if (lb.hidden) return;
-  if (e.key === 'Escape') { closeLightbox(); }
-  else if (e.key === 'ArrowLeft') { (document.getElementById('shotCarousel') as any).prev?.(); }
-  else if (e.key === 'ArrowRight') { (document.getElementById('shotCarousel') as any).next?.(); }
-});
+}
+
+// ---------- templates ----------
+
+function metaTpl() {
+  if (matrixFilter) {
+    const label = matrixFilter.split('-').pop();
+    return html`${st.shownCount} run${st.shownCount === 1 ? '' : 's'} in matrix #${label} ·
+      <a href="#" id="historyClear" style="color:var(--teal)"
+        @click=${(ev: Event) => { ev.preventDefault(); matrixFilter = null; renderRuns(); }}>show all</a>`;
+  }
+  return html`${runsData.length} run${runsData.length === 1 ? '' : 's'}`;
+}
+
+function lightboxTpl() {
+  const { shots, art, idx, gen, open } = st.lb;
+  return html`
+  <div id="shotLightbox" ?hidden=${!open} role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+    <div id="shotLightboxBackdrop" @click=${closeLightbox}></div>
+    <div id="shotLightboxContent">
+      <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)" @click=${closeLightbox}>&times;</button>
+      ${keyed(gen, html`
+        <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"
+          @igcSlideChanged=${(ev: any) => { if (typeof ev.target.current === 'number') st.lb.idx = ev.target.current; }}>
+          ${shots.map((s, i) => html`
+            <igc-carousel-slide .active=${i === idx}>
+              <div class="shot-slide">
+                <img src=${art(s.file)} alt=${s.route}>
+                <div class="shot-slide-cap">${s.route}  ·  ${i + 1} / ${shots.length}</div>
+              </div>
+            </igc-carousel-slide>`)}
+        </igc-carousel>`)}
+    </div>
+  </div>`;
+}
+
+function tpl() {
+  return html`
+  <div class="history-head">
+    <p class="eyebrow" style="margin:0">Run history</p>
+    <igc-button type="button" id="historyRefresh" class="history-refresh" variant="outlined" @click=${() => loadHistory()}>Refresh</igc-button>
+    <igc-button type="button" id="historyExport" class="history-refresh" variant="outlined" @click=${() => download('/api/history/export')}>Export HTML</igc-button>
+    <igc-button type="button" id="historyExportJson" class="history-refresh" variant="outlined" @click=${() => download('/api/history/export.json')}>Export JSON</igc-button>
+    <span class="note" id="historyMeta" style="margin:0">${metaTpl()}</span>
+  </div>
+  <p class="note" id="historyEmpty" ?hidden=${!st.emptyVisible}>${st.emptyMsg}</p>
+  <igc-grid id="runsGrid" class="runs-grid" auto-generate="false" primary-key="id" cell-selection="none" ?hidden=${!st.gridVisible}>
+    <igc-grid-toolbar>
+      <igc-grid-toolbar-actions>
+        <igc-grid-toolbar-exporter id="historyExcelExporter"></igc-grid-toolbar-exporter>
+      </igc-grid-toolbar-actions>
+    </igc-grid-toolbar>
+    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="13%"></igc-column>
+    <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="7%"></igc-column>
+    <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="7%"></igc-column>
+    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="11%"></igc-column>
+    <igc-column id="historySkills" field="skills" header="Skills" sortable="false" resizable="true" width="4%"></igc-column>
+    <igc-column id="historyMcps" field="mcps" header="MCPs" sortable="false" resizable="true"></igc-column>
+    <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="110px"></igc-column>
+    <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" sortable="false" resizable="true" width="5%"></igc-column>
+    <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="135px"></igc-column>
+    <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%"></igc-column>
+    <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
+    <igc-column id="historyCost" field="costSort" header="Cost (USD)" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
+    <igc-column id="historyDuration" field="durationMs" header="Duration" data-type="number" sortable="true" resizable="true" width="5%"></igc-column>
+    <igc-column id="historyActions" field="actions" header="Actions" resizable="true" width="6%" max-width="85px"></igc-column>
+  </igc-grid>
+
+  <!-- API-key prompt for re-running a matrix configuration from the History tab. -->
+  <igc-dialog id="rerunDialog" title="Re-run configuration">
+    <p class="note" id="rerunSummary">${st.rerunSummary}</p>
+    <igc-input id="rerunKey" label="API key" type="password" autocomplete="off"></igc-input>
+    <igc-button slot="footer" id="rerunCancel" variant="flat"
+      @click=${() => { pendingRerun = null; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
+    <igc-button slot="footer" id="rerunConfirm" variant="contained" @click=${confirmRerun}>Re-run</igc-button>
+  </igc-dialog>
+
+  <!-- Screenshot viewer — igc-carousel inside a fullscreen overlay. -->
+  ${lightboxTpl()}`;
+}
+
+let mountEl: HTMLElement | null = null;
+
+function update() {
+  if (!mountEl) return;
+  render(tpl(), mountEl);
+}
+
+export function mountHistory(el: HTMLElement) {
+  mountEl = el;
+  update();
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (!st.lb.open) return;
+    if (e.key === 'Escape') { closeLightbox(); }
+    else if (e.key === 'ArrowLeft') { (document.getElementById('shotCarousel') as any)?.prev?.(); }
+    else if (e.key === 'ArrowRight') { (document.getElementById('shotCarousel') as any)?.next?.(); }
+  });
+}

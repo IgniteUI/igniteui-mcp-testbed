@@ -4,10 +4,6 @@
 // elements (igc-*) whose properties (.checked/.value/...) aren't in the DOM lib.
 export const $ = (s: string): any => document.querySelector(s);
 
-const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-export const esc = (s: any): string =>
-  String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ENTITIES[c]);
-
 export const fmt = (n: number): string => (n || 0).toLocaleString();
 
 // Format an ISO timestamp as DD/Mon/YYYY HH:MM:SS in the user's local timezone
