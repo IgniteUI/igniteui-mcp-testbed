@@ -104,8 +104,9 @@ The header switches between four views:
   commands, MCP servers, and skills source). Packs loaded here persist in
   `./providers-data/` on the host (you can also drop pack `.json` files there
   directly), and their frameworks appear as extra platforms in the Interactive and
-  Matrix views. A matrix config file can alternatively carry packs inline via its
-  `providers` field — see below.
+  Matrix views. [`provider.example.angular-material.json`](provider.example.angular-material.json)
+  is a ready-to-load example (Angular Material). A matrix config file can alternatively
+  carry packs inline via its `providers` field — see below.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.

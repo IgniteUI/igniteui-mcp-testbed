@@ -1,0 +1,35 @@
+{
+  "name": "angular-material",
+  "displayName": "Angular Material",
+  "description": "Angular scaffolded by the Angular CLI with @angular/material installed — the agent does the Material wiring (theme, typography, components).",
+  "version": "22.0.0",
+  "frameworks": [
+    {
+      "id": "angular-material",
+      "label": "Angular Material",
+      "scaffold": {
+        "cmd": "npx",
+        "argv": ["-y", "@angular/cli", "new", "{{name}}", "--defaults", "--style", "scss", "--skip-git"],
+        "cwdIsParent": true
+      },
+      "install": ["@angular/material", "@angular/cdk"],
+      "dev": {
+        "cmd": "npx",
+        "argv": ["ng", "serve", "--host", "0.0.0.0", "--port", "{{port}}", "--poll", "1500"]
+      }
+    }
+  ],
+  "configure": {
+    "mcpServers": [
+      {
+        "name": "angular-cli",
+        "command": "npx",
+        "args": ["-y", "@angular/cli", "mcp"],
+        "class": "angular",
+        "label": "Angular CLI MCP",
+        "description": "Angular CLI's built-in MCP server — docs, best practices, project queries"
+      }
+    ]
+  },
+  "containerDeps": { "npmGlobal": ["@angular/cli"] }
+}

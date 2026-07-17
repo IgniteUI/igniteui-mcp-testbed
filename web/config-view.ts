@@ -95,8 +95,9 @@ function tpl() {
         <p>A provider pack is a JSON file that teaches the testbed how to scaffold a project for a specific
         library, which MCP server to wire up, and where to fetch the agent skills. Load one here, or drop pack
         files straight into the <code>providers-data/</code> folder on the host.
-        <code>matrix.example.angular-material.json</code> in the repository root contains a complete example
-        pack (inline, in its <code>providers</code> field).</p>
+        <code>provider.example.angular-material.json</code> in the repository root is a complete, loadable
+        example (Angular Material); <code>matrix.example.angular-material.json</code> carries the same pack
+        inline in a matrix config's <code>providers</code> field for terminal-driven runs.</p>
         <p>Once a pack is loaded it is persisted to the <code>providers-data/</code> folder on the host
         (bind-mounted at <code>/providers</code>) and survives container restarts. Use the <strong>✕</strong>
         button to remove a pack.</p>

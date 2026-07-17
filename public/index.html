@@ -1,45 +1,45 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ignite UI · MCP / Skills Testbed</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
-<!-- Ignite UI design tokens (--ig-* custom properties on :root). The igc-*
-     components' shadow styles read these; without them they render unstyled.
-     Tokens-only — does not touch the page's own element styling below. -->
-<link rel="stylesheet" href="/vendor/igniteui-theme.css" />
-<link rel="stylesheet" href="/css/app.css" />
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1" />
+     <title>Ignite UI · MCP / Skills Testbed</title>
+     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+     <!-- Ignite UI design tokens (--ig-* custom properties on :root). The igc-*
+          components' shadow styles read these; without them they render unstyled.
+          Tokens-only — does not touch the page's own element styling below. -->
+     <link rel="stylesheet" href="/vendor/igniteui-theme.css" />
+     <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
-<header>
-  <span class="dot" id="statusDot"></span>
-  <h1>Ignite UI Testbed</h1>
-  <nav class="views" role="tablist">
-    <button class="tab" data-view="config" role="tab" aria-selected="false">Configuration</button>
-    <button class="tab active" data-view="wizard" role="tab" aria-selected="true">Interactive</button>
-    <button class="tab" data-view="matrix" role="tab" aria-selected="false">Matrix</button>
-    <button class="tab" data-view="history" role="tab" aria-selected="false">History</button>
-  </nav>
-  <span class="sub">scaffold → configure → launch</span>
-</header>
+     <header>
+          <span class="dot" id="statusDot"></span>
+          <h1>Ignite UI Testbed</h1>
+          <nav class="views" role="tablist">
+          <button class="tab" data-view="config" role="tab" aria-selected="false">Configuration</button>
+          <button class="tab active" data-view="wizard" role="tab" aria-selected="true">Interactive</button>
+          <button class="tab" data-view="matrix" role="tab" aria-selected="false">Matrix</button>
+          <button class="tab" data-view="history" role="tab" aria-selected="false">History</button>
+          </nav>
+          <span class="sub">scaffold → configure → launch</span>
+     </header>
 
-<!-- View mounts — each is rendered by its lit view module in web/ (app.js).
-     The markup lives in the view templates, not here. -->
-<section class="config-view" id="configView" hidden></section>
-<main id="wizardMain"></main>
-<section class="matrix-view" id="matrix" hidden></section>
-<section class="history-view" id="history" hidden></section>
+     <!-- View mounts — each is rendered by its lit view module in web/ (app.js).
+          The markup lives in the view templates, not here. -->
+     <section class="config-view" id="configView" hidden></section>
+     <main id="wizardMain"></main>
+     <section class="matrix-view" id="matrix" hidden></section>
+     <section class="history-view" id="history" hidden></section>
 
-<!-- Register the Ignite UI Web Components the views render. This is a single
-     self-contained bundle (lit + all deps inlined) produced by esbuild at
-     image-build time and served from the wizard's own origin — no CDN requests
-     at page load. It calls configureTheme('material','dark') + defineAllComponents();
-     the matching --ig-* design tokens are linked from <head>. -->
-<script type="module" src="/vendor/igniteui.js"></script>
+     <!-- Register the Ignite UI Web Components the views render. This is a single
+          self-contained bundle (lit + all deps inlined) produced by esbuild at
+          image-build time and served from the wizard's own origin — no CDN requests
+          at page load. It calls configureTheme('material','dark') + defineAllComponents();
+          the matching --ig-* design tokens are linked from <head>. -->
+     <script type="module" src="/vendor/igniteui.js"></script>
 
-<!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
-     (main renders the three lit views and bootstraps view switching). -->
-<script type="module" src="/vendor/app.js"></script>
+     <!-- App logic: TypeScript sources under web/, bundled by esbuild to /vendor/app.js
+          (main renders the three lit views and bootstraps view switching). -->
+     <script type="module" src="/vendor/app.js"></script>
 </body>
 </html>
