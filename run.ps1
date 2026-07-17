@@ -144,9 +144,23 @@ if ($Validate -and -not $mcAbs) {
 # any set key vars into the container so a matrix config's apiKeyEnv — or the provider
 # default for its model — resolves. `-e VAR` passes the value through without echoing
 # it into the process listing.
-Read-EnvKeys ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, CUSTOM_API_KEY
+$keyVars = @('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'CUSTOM_API_KEY')
+# A matrix config may name a custom env var to hold its key via "apiKeyEnv"; forward
+# that var too (else loadMatrixConfig can't resolve it and the run goes out keyless).
+if ($mcAbs) {
+  $mc = Get-Content -Raw $mcAbs
+  if ($mc -match '"apiKeyEnv"\s*:\s*"([^"]+)"') {
+    $customKeyEnv = $Matches[1]
+    if ($customKeyEnv -match '^[A-Za-z_][A-Za-z0-9_]*$') {
+      if ($keyVars -notcontains $customKeyEnv) { $keyVars += $customKeyEnv }
+    } else {
+      Write-Host "warning: ignoring invalid apiKeyEnv name '$customKeyEnv' in $mcAbs"
+    }
+  }
+}
+Read-EnvKeys $keyVars
 $envFlags = @()
-foreach ($v in 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'CUSTOM_API_KEY') {
+foreach ($v in $keyVars) {
   if (Test-Path "env:$v") { $envFlags += @('-e', $v) }
 }
 if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
