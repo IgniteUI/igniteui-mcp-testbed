@@ -14,6 +14,42 @@
 #                                       no ports published); exit 0 = valid, 1 = invalid
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Ignite UI MCP Testbed — build and run the containerized testbed.
+
+Usage:
+  ./run.sh build [--prune]         build the image
+                                   (--prune: then remove dangling <none> images)
+  ./run.sh                         run a fresh ephemeral session container
+  ./run.sh --matrix-config <file>  run + execute a matrix from a JSON config
+                                   (auto-runs headlessly unless the file sets
+                                   "autoRun": false; the UI prefills from it)
+  ./run.sh --matrix-config <file> --validate
+                                   validate the config and exit — no matrix run,
+                                   no ports published (exit 0 = valid, 1 = invalid)
+  ./run.sh -h | --help | help      show this help
+
+Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app dev server
+
+.env (gitignored) is read for:
+  - provider API keys forwarded into the container: ANTHROPIC_API_KEY,
+    OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, CUSTOM_API_KEY
+  - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
+
+Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
+screenshots persist in ./sessions/history/ across containers.
+
+Examples:
+  ./run.sh build --prune
+  ./run.sh
+  ./run.sh --matrix-config ./matrix.example.json
+  ./run.sh --matrix-config ./matrix.json --validate
+EOF
+}
+
+case "${1:-}" in -h|--help|help) usage; exit 0 ;; esac
+
 IMAGE=localhost/igniteui-testbed:latest
 SESSION="$(date +%Y%m%dT%H%M%S)"
 OUT="$PWD/sessions/$SESSION"
@@ -69,8 +105,12 @@ while [[ $# -gt 0 ]]; do
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
     --validate)
       VALIDATE=1; shift ;;
+    -h|--help|help)
+      usage; exit 0 ;;
     *)
-      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file> [--validate]])" >&2
+      echo "unknown argument: $1" >&2
+      echo >&2
+      usage >&2
       exit 2 ;;
   esac
 done

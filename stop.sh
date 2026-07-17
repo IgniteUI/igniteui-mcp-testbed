@@ -8,6 +8,24 @@
 # artifacts in ./sessions/<timestamp>/ are on the host and are left untouched.
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Stop running Ignite UI MCP Testbed container(s) started by run.sh.
+
+Usage:
+  ./stop.sh                 stop every running igniteui-testbed-* container
+  ./stop.sh <session>       stop just igniteui-testbed-<session>
+                            (<session> is the timestamp printed at container start,
+                            e.g. 20260716T114237; the full container name works too)
+  ./stop.sh -h | --help | help   show this help
+
+Containers run with --rm, so stopping also removes them; session artifacts in
+./sessions/<timestamp>/ stay on the host, untouched.
+EOF
+}
+
+case "${1:-}" in -h|--help|help) usage; exit 0 ;; esac
+
 PREFIX=igniteui-testbed-
 
 if [[ -n "${1:-}" ]]; then

@@ -12,10 +12,61 @@
 #   .\run.ps1 -MatrixConfig <file> -Validate
 #                                        validate the config and exit (no matrix run,
 #                                        no ports published); exit 0 = valid, 1 = invalid
+
+<#
+.SYNOPSIS
+Build and run the Ignite UI MCP Testbed container (PowerShell port of run.sh).
+
+.DESCRIPTION
+Builds the testbed image, or launches a fresh ephemeral session container publishing
+127.0.0.1 ports 8080 (wizard UI), 4096 (opencode web), and 5000 (app dev server).
+
+Reads the gitignored .env for provider API keys forwarded into the container
+(ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
+CUSTOM_API_KEY) and, at build time only, IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL
+for the licensed History grid.
+
+Session artifacts land in .\sessions\<timestamp>\; run history, matrix reports, and
+screenshots persist in .\sessions\history\ across containers.
+
+.PARAMETER Command
+'build' to build the image; 'help' to show this help; omit to run a session container.
+
+.PARAMETER Prune
+With build: remove dangling <none> images after a successful build.
+
+.PARAMETER MatrixConfig
+Path to a matrix JSON config. Bind-mounted into the container; the matrix auto-runs
+headlessly unless the file sets "autoRun": false (the UI prefills from it either way).
+
+.PARAMETER Validate
+With -MatrixConfig: validate the config and exit — no matrix run, no ports published.
+Exit code 0 = valid, 1 = invalid.
+
+.PARAMETER Help
+Show this help and exit.
+
+.EXAMPLE
+.\run.ps1 build -Prune
+
+.EXAMPLE
+.\run.ps1
+
+.EXAMPLE
+.\run.ps1 -MatrixConfig .\matrix.example.json
+
+.EXAMPLE
+.\run.ps1 -MatrixConfig .\matrix.json -Validate
+#>
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate)
+param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate, [switch]$Help)
 
 $ErrorActionPreference = 'Stop'
+
+if ($Help -or $Command -eq 'help') {
+  Get-Help $PSCommandPath -Detailed
+  exit 0
+}
 $Image = 'localhost/igniteui-testbed:latest'
 
 if ($Command -eq 'build') {
