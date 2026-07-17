@@ -145,12 +145,18 @@ document.querySelectorAll<any>('#mxPlatformsIg igc-checkbox').forEach((c) => c.a
 // start selected; each entry runs only its own group's selected specs. Selection is
 // preserved as platforms are toggled.
 const mxTestsKnownIds = new Set<string>();
+// Generation counter: updateMxCount fires this un-awaited on every platform/variant
+// change, so during a burst (e.g. config prefill rebuilding rows) only the newest
+// call may apply its result — a stale response must not clobber the combo.
+let mxTestsRefreshSeq = 0;
 async function refreshMxTestFiles() {
+  const seq = ++mxTestsRefreshSeq;
   const combo = $('#mxTestsCombo');
   const note = $('#mxTestsNote');
   const platforms = mxPlatforms();
   try {
     const j = await getJSON('/api/tests');
+    if (seq !== mxTestsRefreshSeq) return;
     const shared = j.shared || [];
     const map = j.byPlatform || {};
     const data = platforms.flatMap((p) => [
@@ -163,6 +169,7 @@ async function refreshMxTestFiles() {
       ? `${sel.length}/${data.length} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`
       : `No test files found under ${j.dir} — add Playwright specs to ./tests/shared/ or ./tests/<platform>/.`;
   } catch {
+    if (seq !== mxTestsRefreshSeq) return;
     note.textContent = 'Could not list test files.';
   }
 }
@@ -356,6 +363,62 @@ export async function checkMatrixLock() {
     const ms = await getJSON('/api/matrix/status');
     if (ms && ms.running) setMatrixActive(true);
   } catch (_) {}
+}
+
+// Prefill the matrix form from the server-side MATRIX_CONFIG file (if any), so a
+// terminal-provided config is reflected in the UI. The API key never reaches the
+// browser — hasApiKey only flips the field's placeholder; the server falls back to
+// the config's key when the field is submitted empty.
+export async function applyServerMatrixConfig() {
+  let cfg: any;
+  try { cfg = (await getJSON('/api/matrix/config')).config; } catch { return; }
+  if (!cfg) return;
+  const platforms: string[] = cfg.platforms || [];
+
+  // The form shows one provider at a time, so pick the provider that owns the
+  // config's platforms: the pack owning the first external platform, else the
+  // built-in Ignite UI. (main.ts awaits refreshProviders() before calling this,
+  // so the provider toggle buttons + platform groups already exist.)
+  const ownerPack = platforms
+    .map((fw) => getPacks().find((p) => p.frameworks.some((f) => f.id === fw)))
+    .find(Boolean);
+  const provider = ownerPack ? ownerPack.name : 'igniteui';
+  document.querySelectorAll<any>('#mxProvider igc-toggle-button')
+    .forEach((b) => { b.selected = b.value === provider; });
+  applyMxProvider(provider); // shows the right platform group (and reseeds variants — replaced below)
+
+  // Setting .checked programmatically doesn't fire igcChange — updateMxCount below
+  // does the recount that the change handlers would have.
+  const groupSel = provider === 'igniteui' ? '#mxPlatformsIg' : `#mxPlatforms-${provider}`;
+  const group = [...document.querySelectorAll<any>(`${groupSel} igc-checkbox`)];
+  group.forEach((c) => { c.checked = platforms.includes(c.value); });
+  // A config may mix providers' platforms (the API runs them all); the form can only
+  // display one provider's group — note the ones it can't show.
+  const shown = new Set(group.map((c) => c.value));
+  const unshown = platforms.filter((p) => !shown.has(p));
+
+  $('#mxVariants').innerHTML = '';
+  (cfg.variants || []).forEach((v: any) => addVariantRow(v));
+  $('#mxModel').value = cfg.model || '';
+  $('#mxPrompt').value = cfg.prompt || '';
+  if (cfg.customMcp) $('#mxCustomMcp').value = cfg.customMcp;
+  if (cfg.hasApiKey) $('#mxKey').placeholder = 'using key from server config';
+  updateMxCount();
+  // The combo must be populated before the config's selection can be applied; the
+  // seq guard makes this awaited refresh the one that owns the combo.
+  await refreshMxTestFiles();
+  if (cfg.selectedTests !== null && cfg.selectedTests !== undefined) {
+    const combo = $('#mxTestsCombo');
+    const avail = new Set((combo.data || []).map((d: any) => d.id));
+    combo.value = (cfg.selectedTests as string[]).filter((id) => avail.has(id));
+    const total = (combo.data || []).length;
+    if (total) $('#mxTestsNote').textContent =
+      `${(combo.value || []).length}/${total} test file(s) selected across the selected platforms. Each entry runs only its own group's specs; clear to skip.`;
+  }
+  const notes: string[] = [];
+  if (cfg.dropped) notes.push(`config capped — ${cfg.dropped} entr${cfg.dropped === 1 ? 'y' : 'ies'} dropped`);
+  if (unshown.length) notes.push(`config also runs: ${unshown.join(', ')} (other provider — not shown in this form)`);
+  if (notes.length) $('#mxOverall').textContent = notes.join(' · ');
 }
 
 $('#mxForm').addEventListener('submit', async (e: any) => {

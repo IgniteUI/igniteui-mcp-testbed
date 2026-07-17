@@ -9,23 +9,21 @@ import { killWatcher } from '../proc/watcher.ts';
 import { createSSE } from '../stream/sse.ts';
 import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
+import { writeMatrixReport } from './report.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
-import type { Combo, MatrixEntry, MatrixState, RunConfig } from '../types.ts';
-
-interface Fixed {
-  projectType?: string;
-  theme?: string;
-  model: string;
-  apiKey?: string;
-  customBaseUrl?: string;
-  customMcp?: string;
-  selectedTests?: string[];
-}
+import type { Combo, MatrixEntry, MatrixState, MatrixFixed as Fixed, RunConfig } from '../types.ts';
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
 // (the app + opencode bind fixed ports, so only one entry can be live at a time).
 export const sse = createSSE();
-const broadcast = (obj: any) => sse.broadcast(obj);
+// Extra event sinks beside the SSE clients (e.g. the console mirror for terminal-driven
+// runs) — they receive every broadcast object; a throwing tap never breaks the run.
+const taps = new Set<(obj: any) => void>();
+export const tap = (fn: (obj: any) => void): void => { taps.add(fn); };
+const broadcast = (obj: any) => {
+  sse.broadcast(obj);
+  for (const t of taps) { try { t(obj); } catch (_) {} }
+};
 
 let matrixRunning = false;
 let matrixCancelled = false;
@@ -72,8 +70,8 @@ function pushEntryLog(entry: MatrixEntry, line: string): void {
   }
 }
 
-async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt: string; matrixId: string; fixed: Fixed }): Promise<void> {
-  broadcast({ type: 'matrix-start', matrixId, total: combos.length, entries: matrixState.entries });
+async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { prompt: string; matrixId: string; fixed: Fixed; name: string | null }): Promise<void> {
+  broadcast({ type: 'matrix-start', matrixId, name, total: combos.length, entries: matrixState.entries });
   for (let i = 0; i < combos.length; i++) {
     const c = combos[i];
     const entry = matrixState.entries[i];
@@ -186,32 +184,47 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed }: { prompt:
   killWatcher('app'); killWatcher('opencode');
   matrixState.running = false;
   matrixRunning = false;
-  broadcast({ type: 'matrix-done', matrixId, total: combos.length, cancelled: matrixCancelled });
+  // Assemble the post-run artifacts (report.html + summary.json) from the entries'
+  // (now settled) history records. Best-effort: a report failure must never turn a
+  // finished matrix into an error.
+  let report: string | null = null;
+  let summary: string | null = null;
+  try {
+    writeMatrixReport(matrixId, matrixState.entries, {
+      prompt, model: fixed.model, cancelled: matrixCancelled, name,
+    });
+    report = `/history/reports/${matrixId}/report.html`;
+    summary = `/history/reports/${matrixId}/summary.json`;
+  } catch (e: any) {
+    broadcast({ type: 'log', msg: `report generation failed: ${e.message}` });
+  }
+  broadcast({ type: 'matrix-done', matrixId, total: combos.length, cancelled: matrixCancelled, report, summary });
 }
 
 // Set up state for a (validated, already-capped) set of combos and kick off the run
-// in the background. Returns { matrixId, total }; the caller responds immediately and
-// the client follows progress via the matrix SSE stream.
-export function begin(combos: Combo[], { prompt, fixed }: { prompt: string; fixed: Fixed }): { matrixId: string; total: number } {
+// in the background. Returns { matrixId, total, completion }; the caller responds
+// immediately and the client follows progress via the matrix SSE stream. `completion`
+// settles when the whole matrix finishes (never rejects — errors are broadcast).
+export function begin(combos: Combo[], { prompt, fixed, name = null }: { prompt: string; fixed: Fixed; name?: string | null }): { matrixId: string; total: number; completion: Promise<void> } {
   const matrixId = newMatrixId();
   matrixRunning = true;
   matrixCancelled = false;
   cancelledEntries.clear();
   matrixState = {
-    running: true, matrixId, total: combos.length, done: 0,
+    running: true, matrixId, name, total: combos.length, done: 0,
     // Create every entry's history record up-front (status 'pending') so the whole
     // matrix shows in History the moment it's submitted, not one row at a time.
     entries: combos.map((c, i) => ({
       index: i, platform: c.platform, variantLabel: c.variantLabel,
       mcps: c.variant.mcps, skills: c.variant.skills, localSkills: c.variant.localSkills, status: 'pending',
-      runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, status: 'pending' }),
+      runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, matrixName: name, status: 'pending' }),
     })),
   };
-  runMatrix(combos, { prompt, matrixId, fixed }).catch((e: any) => {
+  const completion = runMatrix(combos, { prompt, matrixId, fixed, name }).catch((e: any) => {
     matrixRunning = false; matrixState.running = false;
     broadcast({ type: 'error', msg: e.message });
   });
-  return { matrixId, total: combos.length };
+  return { matrixId, total: combos.length, completion };
 }
 
 // Abort the in-progress matrix: kill whatever the current entry is running (whole

@@ -3,7 +3,7 @@
 // their top-level listener registrations.
 import { $ } from './util.ts';
 import { checkActiveSession, applyExternalProviders } from './wizard.ts';
-import { updateMxCount, ensureMatrixStream, checkMatrixLock, applyExternalProvidersMatrix } from './matrix.ts';
+import { updateMxCount, ensureMatrixStream, checkMatrixLock, applyExternalProvidersMatrix, applyServerMatrixConfig } from './matrix.ts';
 import { loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
 import { initConfigView, renderProviderList } from './config-view.ts';
 import { refreshProviders, onProvidersChange } from './providers.ts';
@@ -46,4 +46,5 @@ window.addEventListener('load', async () => {
 
   checkActiveSession();
   checkMatrixLock();
+  applyServerMatrixConfig();
 });

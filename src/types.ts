@@ -183,6 +183,7 @@ export interface HistoryRecord {
   mode: 'interactive' | 'matrix';
   prompt: string | null;
   matrixId: string | null;
+  matrixName?: string | null; // user-set label from the matrix request / config file
   config: StoredConfig;
   stages: { completed: string[]; timings: Record<string, number> };
   stats: Stats | null;
@@ -195,6 +196,18 @@ export interface Variant {
   mcps: string[];
   skills: boolean;
   localSkills: boolean;
+}
+
+// The per-matrix constant config applied to every entry (the axes are the combos;
+// everything else — model, key, custom MCP, test selection — is fixed across them).
+export interface MatrixFixed {
+  projectType?: string;
+  theme?: string;
+  model: string;
+  apiKey?: string;
+  customBaseUrl?: string;
+  customMcp?: string;
+  selectedTests?: string[];
 }
 
 export interface Combo {
@@ -219,6 +232,7 @@ export interface MatrixEntry {
 export interface MatrixState {
   running: boolean;
   matrixId: string | null;
+  name?: string | null;
   total: number;
   done: number;
   entries: MatrixEntry[];

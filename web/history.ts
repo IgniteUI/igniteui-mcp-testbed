@@ -7,6 +7,7 @@ interface HistoryGridRow {
   whenTs: number;
   whenDisplay: string;
   matrixId: string;
+  matrixName: string;
   framework: string;
   model: string;
   skills: string;
@@ -142,6 +143,7 @@ function rowVals(r: any): HistoryGridRow {
     whenTs: Date.parse(r.startedAt) || 0,
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
+    matrixName: r.matrixName || '',
     framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
@@ -245,7 +247,7 @@ function bindGridTemplates() {
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
-          ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixId}</dd>` : html``}
+          ${r.matrixId ? html`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : html``}
         </dl></div>
         <div><h4>Stages</h4><dl>
           <dt>Completed</dt><dd>${completed}</dd>
@@ -322,7 +324,7 @@ function bindGridTemplates() {
     const tag = matrixTagInfo(row.matrixId);
     if (!tag) return html`<span class="mxtag muted">—</span>`;
     return html`
-      <span class="mxtag" style="color:${tag.color}" title="${row.matrixId} — click to filter"
+      <span class="mxtag" style="color:${tag.color}" title="${row.matrixName ? `${row.matrixName} — ` : ''}${row.matrixId} — click to filter"
         @click=${(ev: Event) => {
           ev.stopPropagation();
           matrixFilter = matrixFilter === row.matrixId ? null : row.matrixId;

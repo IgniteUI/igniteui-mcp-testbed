@@ -1,42 +1,57 @@
 'use strict';
 
 import type { Express } from 'express';
-import { getFramework } from '../provider-registry.ts';
-import { MATRIX_MAX_ENTRIES } from '../config.ts';
 import * as matrix from '../matrix/matrix.ts';
-import { parseVariants, variantLabel } from '../matrix/variants.ts';
-import type { Combo } from '../types.ts';
+import { normalizeMatrixRequest } from '../matrix/request.ts';
+import { getLoadedMatrixConfig } from '../matrix/matrix-config.ts';
 
 export default function registerMatrixRoutes(app: Express): void {
   // Kick off a matrix: body = { prompt, platforms[], variants[], model, apiKey, ... }.
   // Axes are platforms × variants (each variant = a set of MCPs + skills on/off); the
-  // model + API key are one fixed config applied to every entry.
+  // model + API key are one fixed config applied to every entry. Platform ids may be
+  // built-in frameworks or any registered provider pack's framework ids —
+  // normalizeMatrixRequest validates them provider-aware via getFramework().
   app.post('/api/matrix', (req, res) => {
     if (matrix.isRunning()) return res.status(409).json({ ok: false, error: 'a matrix run is already in progress' });
-    const body = req.body || {};
-    const platforms: string[] = (body.platforms || []).filter((p: string) => getFramework(p));
-    const variants = parseVariants(body.variants);
-    const model = String(body.model || '').trim();
-    const prompt = String(body.prompt || '').trim();
-    if (!platforms.length || !variants.length) {
-      return res.status(400).json({ ok: false, error: 'select at least one platform and one variant' });
+    const body = { ...(req.body || {}) };
+    // A server-side config file (MATRIX_CONFIG) can carry the API key and base URL so
+    // the browser never has to hold them: an empty key field falls back to the config's
+    // (a user-typed key always wins), and customBaseUrl — which the matrix form has no
+    // field for — comes along the same way.
+    const loaded = getLoadedMatrixConfig();
+    if (loaded) {
+      if (!body.apiKey && loaded.req.fixed.apiKey) body.apiKey = loaded.req.fixed.apiKey;
+      if (body.customBaseUrl === undefined && loaded.req.fixed.customBaseUrl) body.customBaseUrl = loaded.req.fixed.customBaseUrl;
     }
-    if (!model) return res.status(400).json({ ok: false, error: 'a model is required for matrix runs' });
-    if (!prompt) return res.status(400).json({ ok: false, error: 'a prompt is required for matrix runs' });
+    const r = normalizeMatrixRequest(body);
+    if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+    const { matrixId, total } = matrix.begin(r.req.combos, { prompt: r.req.prompt, fixed: r.req.fixed, name: r.req.name });
+    res.json({ ok: true, matrixId, total, dropped: r.req.dropped });
+  });
 
-    let combos: Combo[] = [];
-    for (const platform of platforms) for (const variant of variants) {
-      combos.push({ platform, variant, variantLabel: variantLabel(variant) });
-    }
-    let dropped = 0;
-    if (combos.length > MATRIX_MAX_ENTRIES) {
-      dropped = combos.length - MATRIX_MAX_ENTRIES;
-      combos = combos.slice(0, MATRIX_MAX_ENTRIES);
-    }
-
-    const selectedTests = Array.isArray(body.selectedTests) ? body.selectedTests.filter((t: unknown) => typeof t === 'string') : undefined;
-    const { matrixId, total } = matrix.begin(combos, { prompt, fixed: { model, apiKey: body.apiKey, customBaseUrl: body.customBaseUrl, customMcp: body.customMcp, selectedTests } });
-    res.json({ ok: true, matrixId, total, dropped });
+  // The server-side matrix config (MATRIX_CONFIG file), if any — for UI prefill.
+  // The API key itself is never echoed; hasApiKey lets the UI show one is on file.
+  app.get('/api/matrix/config', (_req, res) => {
+    const c = getLoadedMatrixConfig();
+    if (!c) return res.json({ ok: true, config: null });
+    const { fixed } = c.req;
+    res.json({
+      ok: true,
+      config: {
+        platforms: c.req.platforms,
+        variants: c.req.variants,
+        model: fixed.model,
+        prompt: c.req.prompt,
+        name: c.req.name,
+        customMcp: fixed.customMcp || '',
+        customBaseUrl: fixed.customBaseUrl || null,
+        selectedTests: fixed.selectedTests ?? null, // null = field omitted = "all"
+        hasApiKey: !!fixed.apiKey,
+        autoRun: c.autoRun,
+        dropped: c.req.dropped,
+        warnings: c.warnings,
+      },
+    });
   });
 
   app.get('/api/matrix/status', (_req, res) => {

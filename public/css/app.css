@@ -359,8 +359,8 @@ igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carous
 .matrix-view[hidden] { display:none; }
 @media (max-width:980px){ .matrix-view { grid-template-columns:1fr; } }
 .matrix-view > .panel { min-width:0; overflow:hidden; }
-#mxPlatforms { display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; }
-#mxPlatforms igc-checkbox { margin:0; }
+#mxPlatformsIg { display:flex; flex-wrap:wrap; justify-content: space-between; }
+#mxPlatformsIg igc-checkbox { margin:0; }
 .ta { width:100%; background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem;
       border:1px solid #0f3b37; border-radius:8px; padding:.6rem .7rem; margin-top:.5rem; resize:vertical; }
 #mxGo { display:block; width:100%; margin-top:.6rem; }

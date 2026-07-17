@@ -49,6 +49,71 @@ function assertSafeId(value: string, label: string): void {
   }
 }
 
+/** Structural validation of an untrusted pack body — throws an Error naming the
+ * first problem. Identifiers (pack name, framework ids, MCP server names/classes)
+ * go through assertSafeId, so both the SAFE_ID format and the FORBIDDEN_KEYS
+ * reserved names are enforced. Shared by the POST /api/providers route, disk
+ * loads (loadAll), and the matrix config-file loader (`providers` field) so all
+ * entry points validate identically. Returns the body typed as a ProviderPack. */
+export function validatePack(body: any): ProviderPack {
+  if (!body || typeof body.name !== 'string' || !body.name.trim()) {
+    throw new Error('name is required and must be a non-empty string');
+  }
+  assertSafeId(body.name.trim(), 'pack name');
+  if (!body.displayName || typeof body.displayName !== 'string') {
+    throw new Error('displayName is required and must be a non-empty string');
+  }
+  if (!Array.isArray(body.frameworks) || body.frameworks.length === 0) {
+    throw new Error('frameworks must be a non-empty array');
+  }
+  for (let i = 0; i < body.frameworks.length; i++) {
+    const fw = body.frameworks[i];
+    if (!fw || typeof fw.id !== 'string') {
+      throw new Error(`frameworks[${i}].id is required and must be a string`);
+    }
+    assertSafeId(fw.id, `frameworks[${i}].id`);
+    if (typeof fw.label !== 'string' || !fw.label.trim()) {
+      throw new Error(`frameworks[${i}].label is required`);
+    }
+    if (!fw.scaffold || typeof fw.scaffold.cmd !== 'string') {
+      throw new Error(`frameworks[${i}].scaffold.cmd is required`);
+    }
+    if (!Array.isArray(fw.scaffold.argv) || !fw.scaffold.argv.every((a: any) => typeof a === 'string')) {
+      throw new Error(`frameworks[${i}].scaffold.argv must be an array of strings`);
+    }
+    if (!fw.dev || typeof fw.dev.cmd !== 'string') {
+      throw new Error(`frameworks[${i}].dev.cmd is required`);
+    }
+    if (!Array.isArray(fw.dev.argv) || !fw.dev.argv.every((a: any) => typeof a === 'string')) {
+      throw new Error(`frameworks[${i}].dev.argv must be an array of strings`);
+    }
+  }
+  if (!body.configure || !Array.isArray(body.configure.mcpServers)) {
+    throw new Error('configure.mcpServers must be an array');
+  }
+  for (let i = 0; i < body.configure.mcpServers.length; i++) {
+    const s = body.configure.mcpServers[i];
+    if (!s || typeof s.name !== 'string') {
+      throw new Error(`configure.mcpServers[${i}].name is required and must be a string`);
+    }
+    assertSafeId(s.name, `configure.mcpServers[${i}].name`);
+    if (typeof s.command !== 'string' || !s.command.trim()) {
+      throw new Error(`configure.mcpServers[${i}].command is required`);
+    }
+    if (typeof s.class !== 'string') {
+      throw new Error(`configure.mcpServers[${i}].class is required and must be a string`);
+    }
+    assertSafeId(s.class, `configure.mcpServers[${i}].class`);
+    if (typeof s.label !== 'string' || !s.label.trim()) {
+      throw new Error(`configure.mcpServers[${i}].label is required`);
+    }
+    if (s.args !== undefined && (!Array.isArray(s.args) || !s.args.every((a: any) => typeof a === 'string'))) {
+      throw new Error(`configure.mcpServers[${i}].args must be an array of strings when provided`);
+    }
+  }
+  return body as ProviderPack;
+}
+
 // Convert a ProviderPackFramework into the FrameworkDef that the pipeline expects.
 function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
   return {
@@ -123,8 +188,7 @@ export function loadAll(): void {
     if (!f.endsWith('.json')) continue;
     try {
       const raw = fs.readFileSync(path.join(PROVIDERS_DIR, f), 'utf8');
-      const pack = JSON.parse(raw) as ProviderPack;
-      if (!pack.name || !pack.frameworks?.length) throw new Error('missing required fields');
+      const pack = validatePack(JSON.parse(raw));
       registerPack(pack);
       loaded++;
     } catch (e: any) {
