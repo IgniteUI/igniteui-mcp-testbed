@@ -454,10 +454,10 @@ function tpl() {
       <fieldset>
         <legend>Framework</legend>
         <igc-button-group id="fw" selection="single-required" ?hidden=${!ig} .disabled=${launchDisabled()} @igcSelect=${onFrameworkSelect}>
-          <igc-toggle-button value="angular" selected>Angular</igc-toggle-button>
-          <igc-toggle-button value="blazor">Blazor</igc-toggle-button>
-          <igc-toggle-button value="react">React</igc-toggle-button>
-          <igc-toggle-button value="webcomponents">Web Comps</igc-toggle-button>
+          <igc-toggle-button value="angular" .selected=${st.framework === 'angular'}>Angular</igc-toggle-button>
+          <igc-toggle-button value="blazor" .selected=${st.framework === 'blazor'}>Blazor</igc-toggle-button>
+          <igc-toggle-button value="react" .selected=${st.framework === 'react'}>React</igc-toggle-button>
+          <igc-toggle-button value="webcomponents" .selected=${st.framework === 'webcomponents'}>Web Comps</igc-toggle-button>
         </igc-button-group>
         ${repeat(getPacks(), (p) => p.name, (pack) => html`
           <igc-button-group id="fw-${pack.name}" selection="single-required" ?hidden=${st.provider !== pack.name}

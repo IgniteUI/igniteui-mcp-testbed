@@ -6,7 +6,7 @@
   "frameworks": [
     {
       "id": "angular-material",
-      "label": "Angular Material",
+      "label": "Angular",
       "scaffold": {
         "cmd": "npx",
         "argv": ["-y", "@angular/cli", "new", "{{name}}", "--defaults", "--style", "scss", "--skip-git"],
