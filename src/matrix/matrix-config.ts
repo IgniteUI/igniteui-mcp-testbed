@@ -65,18 +65,17 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
       throw new Error(`matrix config ${filePath}: providers must be an array of provider pack objects`);
     }
     for (let i = 0; i < raw.providers.length; i++) {
-      const v = validatePack(raw.providers[i]);
-      if ('error' in v) throw new Error(`matrix config ${filePath}: providers[${i}]: ${v.error}`);
       try {
-        registerPack(v.pack); // in-memory only; rejects 'igniteui' + framework-id collisions
+        const pack = validatePack(raw.providers[i]);
+        registerPack(pack); // in-memory only; rejects 'igniteui' + framework-id collisions
+        if (pack.containerDeps?.npmGlobal?.length) {
+          warnings.push(
+            `provider '${pack.name}' needs global npm package(s) ${pack.containerDeps.npmGlobal.join(', ')} ` +
+            'baked into the image (see the Containerfile "3rd-party provider dependencies" section) — ' +
+            'scaffold/dev commands may fail without a rebuild');
+        }
       } catch (e: any) {
-        throw new Error(`matrix config ${filePath}: providers[${i}] ('${v.pack.name}'): ${e.message}`);
-      }
-      if (v.pack.containerDeps?.npmGlobal?.length) {
-        warnings.push(
-          `provider '${v.pack.name}' needs global npm package(s) ${v.pack.containerDeps.npmGlobal.join(', ')} ` +
-          'baked into the image (see the Containerfile "3rd-party provider dependencies" section) — ' +
-          'scaffold/dev commands may fail without a rebuild');
+        throw new Error(`matrix config ${filePath}: providers[${i}]: ${e.message}`);
       }
     }
   }
