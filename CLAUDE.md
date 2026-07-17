@@ -28,7 +28,7 @@ npm run dev:web          # build:web in --watch mode
 
 On Windows, `run.ps1` / `stop.ps1` are PowerShell ports of `run.sh` / `stop.sh` with the
 same arguments (`.\run.ps1 build`, `.\run.ps1 build -Prune`, `.\run.ps1`,
-`.\run.ps1 -MatrixConfig <file>`, `.\stop.ps1 [<sess>]`). The prune step (`--prune` /
+`.\run.ps1 -MatrixConfig <file> [-Validate]`, `.\stop.ps1 [<sess>]`). The prune step (`--prune` /
 `-Prune`) only runs after a successful build and removes only untagged images. Keep the
 two implementations in sync — a change to one platform's run/stop logic should be
 mirrored in the other.
