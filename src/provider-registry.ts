@@ -52,9 +52,9 @@ function assertSafeId(value: string, label: string): void {
 /** Structural validation of an untrusted pack body — throws an Error naming the
  * first problem. Identifiers (pack name, framework ids, MCP server names/classes)
  * go through assertSafeId, so both the SAFE_ID format and the FORBIDDEN_KEYS
- * reserved names are enforced. Shared by the POST /api/providers route and the
- * matrix config-file loader (`providers` field) so both entry points validate
- * identically. Returns the body typed as a ProviderPack. */
+ * reserved names are enforced. Shared by the POST /api/providers route, disk
+ * loads (loadAll), and the matrix config-file loader (`providers` field) so all
+ * entry points validate identically. Returns the body typed as a ProviderPack. */
 export function validatePack(body: any): ProviderPack {
   if (!body || typeof body.name !== 'string' || !body.name.trim()) {
     throw new Error('name is required and must be a non-empty string');
@@ -188,8 +188,7 @@ export function loadAll(): void {
     if (!f.endsWith('.json')) continue;
     try {
       const raw = fs.readFileSync(path.join(PROVIDERS_DIR, f), 'utf8');
-      const pack = JSON.parse(raw) as ProviderPack;
-      if (!pack.name || !pack.frameworks?.length) throw new Error('missing required fields');
+      const pack = validatePack(JSON.parse(raw));
       registerPack(pack);
       loaded++;
     } catch (e: any) {
