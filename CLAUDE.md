@@ -18,6 +18,8 @@ This repo's logic (the MCP translation and server classification) is unit-/synta
                          # /matrix-config.json, sets MATRIX_CONFIG, and (by default)
                          # auto-runs the matrix headlessly; the UI prefills from it
 ./stop.sh [<sess>]       # stop running testbed container(s) (all, or one by session id)
+# all four scripts take -h/--help/help (PowerShell: -Help, `help`, -? or Get-Help) and print usage
+
 npm start                # run the wizard backend directly (node src/server.ts), for host-side dev
 npm run typecheck        # tsc --noEmit gate over backend (tsconfig.json) + frontend (web/tsconfig.json)
 npm run build:web        # esbuild web/main.ts -> public/vendor/app.js (run alongside `npm start` for host dev)

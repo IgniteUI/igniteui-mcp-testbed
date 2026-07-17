@@ -2,6 +2,7 @@
 
 import type { Express } from 'express';
 import { listPacks, getPack, savePack, deletePack, validatePack } from '../provider-registry.ts';
+import type { ProviderPack } from '../types.ts';
 
 export default function registerProviderRoutes(app: Express): void {
   /** List all currently loaded external provider packs. */
@@ -11,12 +12,13 @@ export default function registerProviderRoutes(app: Express): void {
 
   /** Upload (load) a new provider pack from a JSON body. */
   app.post('/api/providers', (req, res) => {
-    const result = validatePack(req.body);
-    if ('error' in result) {
-      res.status(400).json({ ok: false, error: result.error });
+    let pack: ProviderPack;
+    try {
+      pack = validatePack(req.body);
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e.message });
       return;
     }
-    const pack = result.pack;
     if (pack.name === 'igniteui') {
       res.status(400).json({ ok: false, error: '"igniteui" is reserved for the built-in provider' });
       return;

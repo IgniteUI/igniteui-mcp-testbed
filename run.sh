@@ -14,6 +14,64 @@
 #                                       no ports published); exit 0 = valid, 1 = invalid
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Ignite UI MCP Testbed — build and run the containerized testbed.
+
+Usage:
+  ./run.sh build [--prune]         build the image
+                                   (--prune: then remove dangling <none> images)
+  ./run.sh                         run a fresh ephemeral session container
+  ./run.sh --matrix-config <file>  run + execute a matrix from a JSON config
+                                   (auto-runs headlessly unless the file sets
+                                   "autoRun": false; the UI prefills from it)
+  ./run.sh --matrix-config <file> --validate
+                                   validate the config and exit — no matrix run,
+                                   no ports published (exit 0 = valid, 1 = invalid)
+  ./run.sh -h | --help | help      show this help
+
+Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app dev server
+
+.env (gitignored) is read for:
+  - provider API keys forwarded into the container: ANTHROPIC_API_KEY,
+    OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, CUSTOM_API_KEY
+  - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
+
+Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
+screenshots persist in ./sessions/history/ across containers.
+
+Examples:
+  ./run.sh build --prune
+  ./run.sh
+  ./run.sh --matrix-config ./matrix.example.json
+  ./run.sh --matrix-config ./matrix.json --validate
+EOF
+}
+
+case "${1:-}" in -h|--help|help) usage; exit 0 ;; esac
+
+# Targeted .env parse shared by build and run modes (matching run.ps1): pull only the
+# named vars (an `A|B|C` pattern) rather than sourcing the file — tolerates
+# `KEY = value` spacing, strips surrounding quotes and inline comments, and never
+# executes arbitrary shell from .env.
+read_env_keys() {
+  local re="^[[:space:]]*($1)[[:space:]]*=[[:space:]]*(.+)$" line name val
+  [[ -f "$PWD/.env" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ $re ]] || continue
+    name="${BASH_REMATCH[1]}"
+    val="${BASH_REMATCH[2]}"
+    val="${val%"${val##*[![:space:]]}"}"
+    if [[ "$val" =~ ^\"(.*)\"$ ]] || [[ "$val" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    else
+      val="${val%%[[:space:]]#*}"
+      val="${val%"${val##*[![:space:]]}"}"
+    fi
+    [[ -n "$val" ]] && export "$name=$val"
+  done < "$PWD/.env"
+}
+
 IMAGE=localhost/igniteui-testbed:latest
 SESSION="$(date +%Y%m%dT%H%M%S)"
 OUT="$PWD/sessions/$SESSION"
@@ -25,17 +83,7 @@ if [[ "${1:-}" == "build" ]]; then
   # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
-  # Pull only the licensed-feed creds from .env (matching run.ps1) rather than sourcing
-  # the whole file: a targeted parse tolerates `KEY = value` spacing and never executes
-  # arbitrary shell from .env.
-  if [[ -f "$PWD/.env" ]]; then
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      [[ "$line" =~ ^[[:space:]]*(IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL)[[:space:]]*=[[:space:]]*(.+)$ ]] || continue
-      val="${BASH_REMATCH[2]}"
-      val="${val%"${val##*[![:space:]]}"}"   # trim trailing whitespace
-      export "${BASH_REMATCH[1]}=$val"
-    done < "$PWD/.env"
-  fi
+  read_env_keys 'IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL'
   NPMRC="$PWD/.npmrc"
   : > "$NPMRC"                       # always present (empty = trial) so the bind mount resolves
   trap 'rm -f "$NPMRC"' EXIT
@@ -69,8 +117,12 @@ while [[ $# -gt 0 ]]; do
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
     --validate)
       VALIDATE=1; shift ;;
+    -h|--help|help)
+      usage; exit 0 ;;
     *)
-      echo "unknown argument: $1 (usage: ./run.sh [build [--prune]] [--matrix-config <file> [--validate]])" >&2
+      echo "unknown argument: $1" >&2
+      echo >&2
+      usage >&2
       exit 2 ;;
   esac
 done
@@ -83,11 +135,11 @@ if [[ "$VALIDATE" == 1 && -z "$MATRIX_CONFIG_FILE" ]]; then
   exit 2
 fi
 
-# Provider API keys: source .env (the same file the build reads) and forward any set
-# key vars into the container so a matrix config's apiKeyEnv — or the provider default
-# for its model — resolves. `-e VAR` passes the value through without echoing it into
-# the process listing.
-[[ -f "$PWD/.env" ]] && { set -a; . "$PWD/.env"; set +a; }
+# Provider API keys: read them from .env (the same file the build reads) and forward
+# any set key vars into the container so a matrix config's apiKeyEnv — or the provider
+# default for its model — resolves. `-e VAR` passes the value through without echoing
+# it into the process listing.
+read_env_keys 'ANTHROPIC_API_KEY|OPENAI_API_KEY|OPENROUTER_API_KEY|GOOGLE_GENERATIVE_AI_API_KEY|CUSTOM_API_KEY'
 ENVFLAGS=()
 for v in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_AI_API_KEY CUSTOM_API_KEY; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")

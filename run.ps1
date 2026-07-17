@@ -12,11 +12,83 @@
 #   .\run.ps1 -MatrixConfig <file> -Validate
 #                                        validate the config and exit (no matrix run,
 #                                        no ports published); exit 0 = valid, 1 = invalid
+
+<#
+.SYNOPSIS
+Build and run the Ignite UI MCP Testbed container (PowerShell port of run.sh).
+
+.DESCRIPTION
+Builds the testbed image, or launches a fresh ephemeral session container publishing
+127.0.0.1 ports 8080 (wizard UI), 4096 (opencode web), and 5000 (app dev server).
+
+Reads the gitignored .env for provider API keys forwarded into the container
+(ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
+CUSTOM_API_KEY) and, at build time only, IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL
+for the licensed History grid.
+
+Session artifacts land in .\sessions\<timestamp>\; run history, matrix reports, and
+screenshots persist in .\sessions\history\ across containers.
+
+.PARAMETER Command
+'build' to build the image; 'help' to show this help; omit to run a session container.
+
+.PARAMETER Prune
+With build: remove dangling <none> images after a successful build.
+
+.PARAMETER MatrixConfig
+Path to a matrix JSON config. Bind-mounted into the container; the matrix auto-runs
+headlessly unless the file sets "autoRun": false (the UI prefills from it either way).
+
+.PARAMETER Validate
+With -MatrixConfig: validate the config and exit — no matrix run, no ports published.
+Exit code 0 = valid, 1 = invalid.
+
+.PARAMETER Help
+Show this help and exit.
+
+.EXAMPLE
+.\run.ps1 build -Prune
+
+.EXAMPLE
+.\run.ps1
+
+.EXAMPLE
+.\run.ps1 -MatrixConfig .\matrix.example.json
+
+.EXAMPLE
+.\run.ps1 -MatrixConfig .\matrix.json -Validate
+#>
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate)
+param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate, [switch]$Help)
 
 $ErrorActionPreference = 'Stop'
+
+if ($Help -or $Command -eq 'help') {
+  Get-Help $PSCommandPath -Detailed
+  exit 0
+}
 $Image = 'localhost/igniteui-testbed:latest'
+
+# Targeted .env parse shared by build and run modes (matching run.sh read_env_keys):
+# pulls only the named vars — tolerates `KEY = value` spacing, strips surrounding
+# quotes and inline comments, and never executes .env content.
+function Read-EnvKeys([string[]]$Names) {
+  $envFile = Join-Path $PSScriptRoot '.env'
+  if (-not (Test-Path $envFile)) { return }
+  $namePattern = $Names -join '|'
+  Get-Content $envFile | ForEach-Object {
+    if ($_ -match "^\s*($namePattern)\s*=\s*(.+)$") {
+      $name = $Matches[1]
+      $val = $Matches[2].Trim()
+      if ($val -match '^"(.*)"$' -or $val -match "^'(.*)'$") {
+        $val = $Matches[1]
+      } else {
+        $val = ($val -replace '\s#.*$', '').Trim()
+      }
+      if ($val) { Set-Item -Path "env:$name" -Value $val }
+    }
+  }
+}
 
 if ($Command -eq 'build') {
   # Optional licensed Ignite UI build: write a .npmrc into the build context from the
@@ -25,13 +97,7 @@ if ($Command -eq 'build') {
   # layer) and we delete it right after the build. We use a bind-mounted .npmrc rather
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
-  if (Test-Path "$PSScriptRoot/.env") {
-    Get-Content "$PSScriptRoot/.env" | ForEach-Object {
-      if ($_ -match '^\s*(IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL)\s*=\s*(.+)$') {
-        Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim()
-      }
-    }
-  }
+  Read-EnvKeys IG_NPM_TOKEN, IG_NPM_USERNAME, IG_NPM_EMAIL
   $lines = @()
   if ($env:IG_NPM_TOKEN) {
     $feed = '//packages.infragistics.com/npm/js-licensed/'
@@ -74,17 +140,11 @@ if ($Validate -and -not $mcAbs) {
   exit 2
 }
 
-# Provider API keys: source .env (the same file the build reads) and forward any set
-# key vars into the container so a matrix config's apiKeyEnv — or the provider default
-# for its model — resolves. `-e VAR` passes the value through without echoing it into
-# the process listing.
-if (Test-Path "$PSScriptRoot/.env") {
-  Get-Content "$PSScriptRoot/.env" | ForEach-Object {
-    if ($_ -match '^\s*(ANTHROPIC_API_KEY|OPENAI_API_KEY|OPENROUTER_API_KEY|GOOGLE_GENERATIVE_AI_API_KEY|CUSTOM_API_KEY)\s*=\s*(.+)$') {
-      Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim()
-    }
-  }
-}
+# Provider API keys: read them from .env (the same file the build reads) and forward
+# any set key vars into the container so a matrix config's apiKeyEnv — or the provider
+# default for its model — resolves. `-e VAR` passes the value through without echoing
+# it into the process listing.
+Read-EnvKeys ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, CUSTOM_API_KEY
 $envFlags = @()
 foreach ($v in 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'CUSTOM_API_KEY') {
   if (Test-Path "env:$v") { $envFlags += @('-e', $v) }
