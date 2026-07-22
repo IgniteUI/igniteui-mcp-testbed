@@ -84,12 +84,12 @@ export async function runPipeline(
 
   if (configureStrategy === 'igniteui') {
     // Existing IgniteUI flow: ig ai-config writes .vscode/mcp.json + .claude/skills/.
-    const agents = cfg.skills ? ['claude'] : ['none'];
+    const agents = cfg.skills ? ['generic'] : ['none'];
     await runStep('ig', [
       'ai-config',
       '--framework', fw.aiFramework,
       '--agents', ...agents,
-      '--assistants', 'vscode',
+      '--assistants', 'generic',
     ], appDir, emit);
 
   } else if (configureStrategy === 'external') {

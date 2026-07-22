@@ -579,7 +579,7 @@ function tpl() {
 
     <p class="eyebrow">Console</p>
     <div class="console" id="log" aria-live="polite">
-      ${st.logs.map((l) => html`<div class=${l.cls || nothing}>${l.msg}</div>`)}
+      ${st.logs.map((l) => html`<div class=${l.cls || ''}>${l.msg}</div>`)}
     </div>
 
     <div class="result ${classMap({ show: st.showResult })}" id="result">
