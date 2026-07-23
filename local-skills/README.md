@@ -3,10 +3,10 @@
 Drop your own Agent Skills here to override or supplement the ones the testbed generates
 with `ig ai-config`. This folder is bind-mounted into the container at `/local-skills`
 (read-only) by `run.sh` / `run.ps1`, and the pipeline's **overlay-skills** stage copies
-them into the generated project's `.claude/skills/`.
+them into the generated project's `.agents/skills/`.
 
 A "skill" is just a folder containing a `SKILL.md` (opencode auto-loads every folder under
-`.claude/skills/`). It can be **anything you want** — not only Ignite UI skills: a
+`.agents/skills/`). It can be **anything you want** — not only Ignite UI skills: a
 coding-style guide, a domain cheat-sheet, a "always write tests" rule, etc. Name a local
 folder the same as a generated skill to **override** it, or use a new name to **add** one.
 

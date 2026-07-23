@@ -210,7 +210,7 @@ wizard (:8080) — pick framework · MCPs · skills · model
    ▼
 1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .mcp.json → opencode.json ─▶ 4 prune skills
                     │
-                    └─ skills → .claude/skills/   (opencode loads these natively)
+                    └─ skills → .agents/skills/   (opencode loads these natively)
    │
    ▼
 5 start the app's dev server (watch, :5000)
@@ -236,8 +236,8 @@ is `--rm`.
   `type:"remote"`, `${env:VAR}` → `{env:VAR}`). Each discovered server is classified
   (theming / angular / igniteui / other) and enabled per your checkboxes; the console
   shows exactly what was turned on.
-- **Skills** — `--agents claude` writes them to `.claude/skills/`, which opencode
-  auto-discovers. The master checkbox switches `--agents claude` vs `--agents none`; the
+- **Skills** — `--agents generic` writes them to `.agents/skills/`, which opencode
+  auto-discovers. The master checkbox switches `--agents generic` vs `--agents none`; the
   "Exclude skills" field deletes individual skill folders after generation (granular
   on/off).
 - **Model** — written to `opencode.json`; the API key is passed to opencode as an env

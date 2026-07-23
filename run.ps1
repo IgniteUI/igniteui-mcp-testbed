@@ -171,7 +171,7 @@ $Out  = Join-Path $PSScriptRoot "sessions/$Session"
 # Run history persists across containers, so it lives in a stable shared dir
 # (not the per-session $Out). Mounted at /history inside the container.
 $Hist = Join-Path $PSScriptRoot 'sessions/history'
-# Host-supplied skills overlaid onto the generated .claude/skills/ (see the wizard's
+# Host-supplied skills overlaid onto the generated .agents/skills/ (see the wizard's
 # "use local skills" toggle / matrix variants). Created empty so the bind mount always
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 $Skills = Join-Path $PSScriptRoot 'local-skills'

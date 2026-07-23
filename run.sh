@@ -167,7 +167,7 @@ mkdir -p "$OUT"
 # (not the per-session $OUT). Mounted at /history inside the container.
 HIST="$PWD/sessions/history"
 mkdir -p "$HIST"
-# Host-supplied skills overlaid onto the generated .claude/skills/ (see the wizard's
+# Host-supplied skills overlaid onto the generated .agents/skills/ (see the wizard's
 # "use local skills" toggle / matrix variants). Created empty so the bind mount always
 # resolves; drop skill folders (each a SKILL.md + resources) here to override.
 SKILLS="$PWD/local-skills"

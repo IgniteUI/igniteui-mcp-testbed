@@ -494,10 +494,10 @@ function tpl() {
 
       <fieldset>
         <legend>Agent skills</legend>
-        <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.agents/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
         <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
         <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
-        <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
+        <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.agents/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>
         <details class="help">
@@ -505,7 +505,7 @@ function tpl() {
           <div class="help-body">
             <p>A “skill” is just a folder with a <code>SKILL.md</code> inside (plus any
             files it references). opencode auto-loads every folder under the project’s
-            <code>.claude/skills/</code>. <strong>You can drop in <em>any</em> skill you
+            <code>.agents/skills/</code>. <strong>You can drop in <em>any</em> skill you
             want</strong> — not only Ignite UI ones: a coding-style guide, a domain
             cheat-sheet, a “always write tests” rule, anything. The agent picks them up
             automatically.</p>
