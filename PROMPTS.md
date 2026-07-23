@@ -71,7 +71,7 @@ an Ignite UI component is available.
 > **Focus:** Complex data management, hierarchical org chart, multi-source reporting
 
 ```
-I'm Sauron, the Dark Lord, and I want to create an application to manage Mordor, and the puppet states I control, like Isengard. Even though I have no intention of invading the Middle Earth, I want to be able to get quick reports from my generals, to have an overview of the battalions they control, their numbers, morale, health and what is the primary race of solders they consist of. I want to have an org chart of my generals and lieutenants. I also want to keep track of my food suppliers availability and food production, my armory suppliers and smithing production by location. Also I want quick access to my spy network reports with highlights of items regarding the One Ring.
+I'm Sauron, the Dark Lord, and I want to create an application to manage Mordor, and the puppet states I control, like Isengard. Even though I have no intention of invading the Middle Earth, I want to be able to get quick reports from my generals, to have an overview of the battalions they control, their numbers, morale, health and what is the primary race of soldiers they consist of. I want to have an org chart of my generals and lieutenants. I also want to keep track of my food suppliers availability and food production, my armory suppliers and smithing production by location. Also I want quick access to my spy network reports with highlights of items regarding the One Ring.
 ```
 
 **Expected coverage:**
