@@ -13,7 +13,7 @@ RUN apt-get update \
 # `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
 ARG IGNITEUI_CLI_VERSION=latest
 ARG IGNITEUI_THEMING_VERSION=latest
-RUN npm install -g opencode-ai "igniteui-cli@${IGNITEUI_CLI_VERSION}" "igniteui-theming@${IGNITEUI_THEMING_VERSION}"
+RUN npm install -g opencode-ai igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
 
 # Print the versions of the globally installed igniteui-cli for debugging.
 RUN ig --version
