@@ -83,7 +83,7 @@ export async function runPipeline(
   const configureStrategy = fw.configure ?? 'igniteui';
 
   if (configureStrategy === 'igniteui') {
-    // Existing IgniteUI flow: ig ai-config writes .mcp.json + .agent/skills/.
+    // Existing IgniteUI flow: ig ai-config writes .mcp.json + .agents/skills/.
     const agents = cfg.skills ? ['generic'] : ['none'];
     await runStep('ig', [
       'ai-config',
