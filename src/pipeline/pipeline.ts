@@ -117,7 +117,7 @@ export async function runPipeline(
 
     // Optionally install skills.
     if (cfg.skills) {
-      const skillsDir = path.join(appDir, '.claude', 'skills');
+      const skillsDir = path.join(appDir, '.agents', 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
       const skillsConf = pack.configure.skills;
       if (skillsConf?.github) {
