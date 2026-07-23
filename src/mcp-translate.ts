@@ -1,17 +1,19 @@
 'use strict';
 
 /**
- * Convert a VS Code `.vscode/mcp.json` document into opencode's `mcp` block.
+ * Convert an `.mcp.json` document (the standard project-root file `ig ai-config`
+ * now writes) into opencode's `mcp` block. The legacy VS Code `.vscode/mcp.json`
+ * shape is accepted too — the two differ only in the wrapper key.
  *
- * VS Code schema:   { "servers": { "<name>": { command, args, env } | { url, headers } },
- *                     "inputs": [...] }
- * opencode schema:  { "<name>": { type:"local", command:[...], environment:{} }
- *                                | { type:"remote", url, headers }, enabled:bool }
+ * .mcp.json schema:  { "mcpServers": { "<name>": { command, args, env } | { url, headers } } }
+ * VS Code schema:    { "servers": { ...same entries... }, "inputs": [...] }
+ * opencode schema:   { "<name>": { type:"local", command:[...], environment:{} }
+ *                                 | { type:"remote", url, headers }, enabled:bool }
  *
  * Differences handled:
- *   - VS Code keeps `command` (string) + `args` (array) separate;
+ *   - the source keeps `command` (string) + `args` (array) separate;
  *     opencode wants a single `command` array.
- *   - VS Code uses `env`; opencode uses `environment`.
+ *   - the source uses `env`; opencode uses `environment`.
  *   - `${workspaceFolder}` -> the real project dir.
  *   - `${env:VAR}` -> opencode's `{env:VAR}` substitution syntax.
  *   - `enabled` is set per the user's MCP toggles (the set of names to enable).
@@ -48,10 +50,10 @@ function resolveDeep(obj: any, workspaceFolder: string): any {
   return resolvePlaceholders(obj, workspaceFolder);
 }
 
-export function translate(vscodeMcp: any, { enabled, workspaceFolder }: TranslateOpts): TranslateResult {
+export function translate(mcpDoc: any, { enabled, workspaceFolder }: TranslateOpts): TranslateResult {
   const mcp: Record<string, any> = {};
   const warnings: string[] = [];
-  const servers = (vscodeMcp && vscodeMcp.servers) || {};
+  const servers = (mcpDoc && (mcpDoc.servers || mcpDoc.mcpServers)) || {};
 
   for (const [name, raw] of Object.entries(servers)) {
     const s = resolveDeep(raw, workspaceFolder);

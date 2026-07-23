@@ -208,7 +208,7 @@ The interactive pipeline runs six stages, streaming progress to the wizard:
 wizard (:8080) — pick framework · MCPs · skills · model
    │
    ▼
-1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .vscode/mcp.json → opencode.json ─▶ 4 prune skills
+1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .mcp.json → opencode.json ─▶ 4 prune skills
                     │
                     └─ skills → .claude/skills/   (opencode loads these natively)
    │
@@ -229,8 +229,9 @@ is `--rm`.
 
 ## Configuring a run (the toggles)
 
-- **MCP servers** — `ig ai-config --assistants vscode` writes the server definitions to
-  `.vscode/mcp.json`. The wizard translates that into opencode's `mcp` block in
+- **MCP servers** — `ig ai-config --assistants generic` writes the server definitions to
+  the standard `.mcp.json` at the project root (older CLI versions wrote
+  `.vscode/mcp.json`; the wizard still falls back to it). The wizard translates that into opencode's `mcp` block in
   `opencode.json` (command+args → single array, `env` → `environment`, `url` →
   `type:"remote"`, `${env:VAR}` → `{env:VAR}`). Each discovered server is classified
   (theming / angular / igniteui / other) and enabled per your checkboxes; the console

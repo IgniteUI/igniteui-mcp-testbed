@@ -488,8 +488,8 @@ function tpl() {
           placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
         <p class="note err" id="customMcpErr" ?hidden=${!st.customMcpErr}>${st.customMcpErr || ''}</p>
         <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
-        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.vscode/mcp.json</code> or
-        <code>.mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
+        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.mcp.json</code> or a
+        VS Code <code>.vscode/mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
       </fieldset>
 
       <fieldset>
