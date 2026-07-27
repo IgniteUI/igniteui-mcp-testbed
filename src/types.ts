@@ -34,7 +34,7 @@ export interface DevDef {
   env?: Record<string, string>;
 }
 
-// 'igniteui'  (default) — runs `ig ai-config`, writes .vscode/mcp.json + .claude/skills/.
+// 'igniteui'  (default) — runs `ig ai-config`, writes .mcp.json + .agents/skills/.
 // 'external'            — drives config from a ProviderPack (MCP servers + skills via
 //                         git clone); opencode.json is written directly, no translate step.
 // 'none'                — skips configure entirely, writes bare opencode.json.

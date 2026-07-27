@@ -16,7 +16,7 @@ export const ARTIFACT_DIR = path.join(HISTORY_DIR, 'artifacts');
 export const REPORTS_DIR = path.join(HISTORY_DIR, 'reports');
 
 // Host-supplied skills, bind-mounted in (see run.sh/run.ps1). Each subfolder is one
-// skill (a SKILL.md + resources) overlaid onto the generated .claude/skills/.
+// skill (a SKILL.md + resources) overlaid onto the generated .agents/skills/.
 export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 
 // Provider packs loaded at runtime — persists across container restarts via the

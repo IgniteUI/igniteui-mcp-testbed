@@ -6,7 +6,7 @@ import type { Emit } from '../types.ts';
 
 // Remove deselected skill folders (granular skills on/off).
 export function pruneSkills(excluded: string[], emit: Emit, appDir: string): void {
-  const base = path.join(appDir, '.claude', 'skills');
+  const base = path.join(appDir, '.agents', 'skills');
   if (!fs.existsSync(base)) return;
   for (const name of excluded) {
     const dir = path.join(base, name);
@@ -17,14 +17,14 @@ export function pruneSkills(excluded: string[], emit: Emit, appDir: string): voi
   }
 }
 
-// Overlay host-supplied skills (bind-mounted at srcDir) onto .claude/skills/. Each
+// Overlay host-supplied skills (bind-mounted at srcDir) onto .agents/skills/. Each
 // subfolder of srcDir is one skill and must contain a SKILL.md; a same-named generated
 // skill is replaced. With replaceAll the generated set is wiped first (local-only);
 // otherwise local folders merge on top, winning per-name. No-op if srcDir is absent/empty.
 export function overlaySkills(
   srcDir: string, appDir: string, emit: Emit, { replaceAll = false }: { replaceAll?: boolean } = {},
 ): void {
-  const base = path.join(appDir, '.claude', 'skills');
+  const base = path.join(appDir, '.agents', 'skills');
   if (replaceAll) {
     fs.rmSync(base, { recursive: true, force: true });
     emit('log', 'cleared generated skills (local-only)');

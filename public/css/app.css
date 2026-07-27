@@ -328,12 +328,14 @@ button.shot:hover { border-color:var(--teal); }
 .shot img { display:block; width:150px; height:100px; object-fit:cover; object-position:top; background:#0c1a18; contain:paint; }
 .shot .cap { display:block; font-size:.66rem; color:var(--steel); padding:.2rem .35rem; text-align:left; max-width:150px; }
 .shot.fail { padding:.4rem .5rem; font-size:.7rem; color:#ff9c8a; max-width:150px; }
-/* Screenshot carousel overlay */
-#shotLightbox { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
-#shotLightbox[hidden] { display:none; }
-#shotLightboxBackdrop { position:absolute; inset:0; background:rgba(0,0,0,.90); cursor:pointer; }
-#shotLightboxContent { position:relative; z-index:1; width:min(96vw,1280px); display:flex; flex-direction:column; align-items:stretch; }
-#shotLightboxClose { position:fixed; top:1rem; right:1.2rem; z-index:10000; background:rgba(7,33,31,.9); border:1px solid var(--line); color:var(--steel); font-size:1.2rem; line-height:1; border-radius:50%; width:2rem; height:2rem; cursor:pointer; display:grid; place-items:center; }
+/* Screenshot carousel lightbox — an igc-dialog stripped of its chrome so it reads as a
+   fullscreen dark overlay. Header/footer hide themselves (no title, hide-default-action). */
+#shotLightbox::part(base) { width:min(96vw,1280px); max-width:none; max-height:none; background:transparent; border:0; box-shadow:none; }
+#shotLightbox::part(content) { padding:0; }
+#shotLightbox::part(backdrop) { background:rgba(0,0,0,.90); }
+/* Slotted into the top-layer <dialog>, so it paints above the backdrop without a z-index;
+   the dialog's open/close animation is opacity-only, so fixed stays viewport-relative. */
+#shotLightboxClose { position:fixed; top:1rem; right:1.2rem; background:rgba(7,33,31,.9); border:1px solid var(--line); color:var(--steel); font-size:1.2rem; line-height:1; border-radius:50%; width:2rem; height:2rem; cursor:pointer; display:grid; place-items:center; }
 #shotLightboxClose:hover { color:var(--ink); background:rgba(32,52,47,.95); border-color:var(--steel); }
 /* igc-carousel inside the overlay: let slides define height, make nav arrows visible over dark bg */
 igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carousel-button-background:rgba(7,33,31,.8); --ig-carousel-button-hover-background:rgba(26,169,158,.2); --ig-carousel-button-border-color:var(--line); --ig-carousel-button-color:var(--steel); --ig-carousel-button-hover-color:var(--ink); }

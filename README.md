@@ -208,9 +208,9 @@ The interactive pipeline runs six stages, streaming progress to the wizard:
 wizard (:8080) — pick framework · MCPs · skills · model
    │
    ▼
-1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .vscode/mcp.json → opencode.json ─▶ 4 prune skills
+1 scaffold ─▶ 2 ig ai-config ─▶ 3 translate .mcp.json → opencode.json ─▶ 4 prune skills
                     │
-                    └─ skills → .claude/skills/   (opencode loads these natively)
+                    └─ skills → .agents/skills/   (opencode loads these natively)
    │
    ▼
 5 start the app's dev server (watch, :5000)
@@ -229,14 +229,15 @@ is `--rm`.
 
 ## Configuring a run (the toggles)
 
-- **MCP servers** — `ig ai-config --assistants vscode` writes the server definitions to
-  `.vscode/mcp.json`. The wizard translates that into opencode's `mcp` block in
+- **MCP servers** — `ig ai-config --assistants generic` writes the server definitions to
+  the standard `.mcp.json` at the project root (older CLI versions wrote
+  `.vscode/mcp.json`; the wizard still falls back to it). The wizard translates that into opencode's `mcp` block in
   `opencode.json` (command+args → single array, `env` → `environment`, `url` →
   `type:"remote"`, `${env:VAR}` → `{env:VAR}`). Each discovered server is classified
   (theming / angular / igniteui / other) and enabled per your checkboxes; the console
   shows exactly what was turned on.
-- **Skills** — `--agents claude` writes them to `.claude/skills/`, which opencode
-  auto-discovers. The master checkbox switches `--agents claude` vs `--agents none`; the
+- **Skills** — `--agents generic` writes them to `.agents/skills/`, which opencode
+  auto-discovers. The master checkbox switches `--agents generic` vs `--agents none`; the
   "Exclude skills" field deletes individual skill folders after generation (granular
   on/off).
 - **Model** — written to `opencode.json`; the API key is passed to opencode as an env

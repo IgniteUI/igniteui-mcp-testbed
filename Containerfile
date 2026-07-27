@@ -11,7 +11,12 @@ RUN apt-get update \
 # --- Agent + Ignite UI CLI + Theming MCP (adjust versions/names to your packages) ---
 # These are installed globally so the MCP servers launch from local bins (`ig mcp`,
 # `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
-RUN npm install -g opencode-ai igniteui-cli igniteui-theming
+ARG IGNITEUI_CLI_VERSION=latest
+ARG IGNITEUI_THEMING_VERSION=latest
+RUN npm install -g opencode-ai igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
+
+# Print the versions of the globally installed igniteui-cli for debugging.
+RUN ig --version
 
 # --- 3rd-party provider dependencies ---
 # If a provider pack (loaded via the Configuration tab) lists containerDeps.npmGlobal

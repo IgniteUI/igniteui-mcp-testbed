@@ -5,6 +5,7 @@
 import { html, render, keyed } from './lit.ts';
 import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
+import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
 
 interface HistoryGridRow {
   id: string;
@@ -46,7 +47,6 @@ const st = {
   shownCount: 0,
   rerunSummary: '',
   lb: {
-    open: false,
     gen: 0, // bumped per open — keyed() then builds a FRESH carousel (see openLightbox)
     shots: [] as Array<{ file: string; route: string }>,
     art: ((f: string) => '') as (f: string) => string,
@@ -62,25 +62,29 @@ function openLightbox(okShots: Array<{ file: string; route: string }>, idx: numb
   // which breaks prev/next navigation. Bumping the keyed() generation makes lit build
   // a fresh element each open, which always starts with clean state.
   st.lb.gen++;
-  st.lb.open = true;
+  // The native <dialog> traps focus and restores it on close, but does not lock
+  // background scroll — keep that one piece ourselves.
   document.body.style.overflow = 'hidden';
   update();
+  ($('#shotLightbox') as IgcDialogComponent).show();
   // Navigate to the correct starting slide after the component has connected
   // to the DOM and processed its slotchange microtasks.
   Promise.resolve().then(() => {
-    const carousel = document.getElementById('shotCarousel') as any;
+    const carousel = document.getElementById('shotCarousel') as IgcCarouselComponent | null;
     if (!carousel) return;
     const slides = Array.from(carousel.querySelectorAll('igc-carousel-slide'));
-    if (typeof carousel.select === 'function' && slides[st.lb.idx]) {
-      carousel.select(slides[st.lb.idx] as Element);
+    if (slides[st.lb.idx]) {
+      carousel.select(slides[st.lb.idx]);
     }
   });
 }
 
+// Single close/cleanup path. Wired to both the × button and igcClosed because
+// dialog.hide() (the button path) does NOT emit igcClosed — only user-initiated
+// closes (Esc, outside click) do; on that path hide() is already a no-op.
 function closeLightbox() {
-  st.lb.open = false;
   document.body.style.overflow = '';
-  update();
+  ($('#shotLightbox') as IgcDialogComponent | null)?.hide();
 }
 
 const grid = () => $('#runsGrid') as any;
@@ -602,25 +606,24 @@ function metaTpl() {
 }
 
 function lightboxTpl() {
-  const { shots, art, idx, gen, open } = st.lb;
+  const { shots, art, idx, gen } = st.lb;
   return html`
-  <div id="shotLightbox" ?hidden=${!open} role="dialog" aria-modal="true" aria-label="Screenshot viewer">
-    <div id="shotLightboxBackdrop" @click=${closeLightbox}></div>
-    <div id="shotLightboxContent">
-      <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)" @click=${closeLightbox}>&times;</button>
-      ${keyed(gen, html`
-        <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"
-          @igcSlideChanged=${(ev: any) => { if (typeof ev.target.current === 'number') st.lb.idx = ev.target.current; }}>
-          ${shots.map((s, i) => html`
-            <igc-carousel-slide .active=${i === idx}>
-              <div class="shot-slide">
-                <img src=${art(s.file)} alt=${s.route}>
-                <div class="shot-slide-cap">${s.route}  ·  ${i + 1} / ${shots.length}</div>
-              </div>
-            </igc-carousel-slide>`)}
-        </igc-carousel>`)}
-    </div>
-  </div>`;
+  <igc-dialog id="shotLightbox" aria-label="Screenshot viewer"
+    close-on-outside-click hide-default-action
+    @igcClosed=${closeLightbox}>
+    <button id="shotLightboxClose" aria-label="Close (Esc)" title="Close (Esc)" @click=${closeLightbox}>&times;</button>
+    ${keyed(gen, html`
+      <igc-carousel id="shotCarousel" class="shot-carousel" loop="false"
+        @igcSlideChanged=${(ev: any) => { if (typeof ev.target.current === 'number') st.lb.idx = ev.target.current; }}>
+        ${shots.map((s, i) => html`
+          <igc-carousel-slide .active=${i === idx}>
+            <div class="shot-slide">
+              <img src=${art(s.file)} alt=${s.route}>
+              <div class="shot-slide-cap">${s.route}  ·  ${i + 1} / ${shots.length}</div>
+            </div>
+          </igc-carousel-slide>`)}
+      </igc-carousel>`)}
+  </igc-dialog>`;
 }
 
 function tpl() {
@@ -664,7 +667,8 @@ function tpl() {
     <igc-button slot="footer" id="rerunConfirm" variant="contained" @click=${confirmRerun}>Re-run</igc-button>
   </igc-dialog>
 
-  <!-- Screenshot viewer — igc-carousel inside a fullscreen overlay. -->
+  <!-- Screenshot viewer — igc-carousel inside a fullscreen igc-dialog (native
+       <dialog>: modal focus trap, Esc close, focus restore on close). -->
   ${lightboxTpl()}`;
 }
 
@@ -678,10 +682,4 @@ function update() {
 export function mountHistory(el: HTMLElement) {
   mountEl = el;
   update();
-  document.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (!st.lb.open) return;
-    if (e.key === 'Escape') { closeLightbox(); }
-    else if (e.key === 'ArrowLeft') { (document.getElementById('shotCarousel') as any)?.prev?.(); }
-    else if (e.key === 'ArrowRight') { (document.getElementById('shotCarousel') as any)?.next?.(); }
-  });
 }

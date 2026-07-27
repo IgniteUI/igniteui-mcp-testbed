@@ -488,16 +488,16 @@ function tpl() {
           placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
         <p class="note err" id="customMcpErr" ?hidden=${!st.customMcpErr}>${st.customMcpErr || ''}</p>
         <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
-        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.vscode/mcp.json</code> or
-        <code>.mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
+        named map (<code>{"my-server": {...}}</code>), or the whole contents of <code>.mcp.json</code> or a
+        VS Code <code>.vscode/mcp.json</code> — pasted as-is, wrapper keys included. Only applied when checked above.</p>
       </fieldset>
 
       <fieldset>
         <legend>Agent skills</legend>
-        <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.claude/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
+        <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.agents/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
         <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
         <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
-        <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.claude/skills/</code></small></igc-checkbox>
+        <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.agents/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>
         <details class="help">
@@ -505,7 +505,7 @@ function tpl() {
           <div class="help-body">
             <p>A “skill” is just a folder with a <code>SKILL.md</code> inside (plus any
             files it references). opencode auto-loads every folder under the project’s
-            <code>.claude/skills/</code>. <strong>You can drop in <em>any</em> skill you
+            <code>.agents/skills/</code>. <strong>You can drop in <em>any</em> skill you
             want</strong> — not only Ignite UI ones: a coding-style guide, a domain
             cheat-sheet, a “always write tests” rule, anything. The agent picks them up
             automatically.</p>
@@ -579,7 +579,7 @@ function tpl() {
 
     <p class="eyebrow">Console</p>
     <div class="console" id="log" aria-live="polite">
-      ${st.logs.map((l) => html`<div class=${l.cls || nothing}>${l.msg}</div>`)}
+      ${st.logs.map((l) => html`<div class=${l.cls || ''}>${l.msg}</div>`)}
     </div>
 
     <div class="result ${classMap({ show: st.showResult })}" id="result">
