@@ -18,7 +18,7 @@ import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts'
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
-import { pruneSkills, overlaySkills } from './skills.ts';
+import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
