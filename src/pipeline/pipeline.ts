@@ -63,7 +63,12 @@ export async function runPipeline(
   // 1. Scaffold
   emit('step', { step: 'scaffold' });
   fs.mkdirSync(path.dirname(appDir), { recursive: true });
-  const vars = { name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '', port: APP_PORT };
+  // `agents` feeds `ig new --agents=` so the scaffold's built-in ai-config pass honours
+  // the skills toggle instead of falling back to the CLI's checkbox defaults.
+  const vars = {
+    name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '',
+    port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
+  };
   await runStep(fw.scaffold.cmd, subst(fw.scaffold.argv, vars), path.dirname(appDir), emit);
 
   // Drop any framework-specific files into the fresh project (e.g. Blazor's
@@ -280,8 +285,12 @@ export async function runPipeline(
     emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
   } // end if (configureStrategy !== 'none')
 
-  // 4. Prune deselected skills (IgniteUI only).
-  if (configureStrategy === 'igniteui' && cfg.skills && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
+  // 4. Prune skills. With the toggle off, sweep away anything the scaffold or ai-config
+  // wrote anyway (the flags above should have prevented it — this is the guarantee, not
+  // the mechanism). With it on, drop just the folders the caller deselected.
+  if (!cfg.skills) {
+    stripGeneratedAgentConfig(appDir, emit);
+  } else if (configureStrategy === 'igniteui' && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
   }
