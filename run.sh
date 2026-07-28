@@ -40,6 +40,10 @@ Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app 
 Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
 screenshots persist in ./sessions/history/ across containers.
 
+Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./providers-data ·
+./prompt-images (read-write — reference images attached to the agent's prompt; the UI's
+image uploads land here).
+
 Examples:
   ./run.sh build --prune
   ./run.sh
@@ -182,6 +186,12 @@ mkdir -p "$PROVIDERS"
 # in the post-generation verify stage. Created so the mount always resolves.
 TESTS="$PWD/tests"
 mkdir -p "$TESTS"
+# Reference images attached to the agent's prompt (design mockups, sketches, screenshots).
+# Mounted read-WRITE at /prompt-images — unlike the skills/tests mounts — because the
+# wizard's "Prompt images" picker uploads into this same folder, so browser-attached
+# images persist on the host and can be reused by a terminal-driven matrix config.
+IMAGES="$PWD/prompt-images"
+mkdir -p "$IMAGES"
 if [[ "$VALIDATE" == 1 ]]; then
   echo "Validating matrix config: $MATRIX_CONFIG_FILE"
 else
@@ -207,7 +217,8 @@ case "$(uname -s)" in
     SKILLS_HOST="$(cygpath -m "$SKILLS")"
     PROV_HOST="$(cygpath -m "$PROVIDERS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro")
+    IMAGES_HOST="$(cygpath -m "$IMAGES")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro" "-v" "${IMAGES_HOST}:/prompt-images")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
       VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
@@ -216,7 +227,7 @@ case "$(uname -s)" in
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
     fi

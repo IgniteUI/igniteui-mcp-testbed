@@ -178,6 +178,7 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `customMcp` | no | Custom MCP server def(s) — a JSON object (single def, named map, or full `mcp.json` shape) or a JSON string. Only used by variants that include `"custom"` in `mcps`. |
 | `customBaseUrl` | no | Custom OpenAI-compatible base URL (pairs with `CUSTOM_API_KEY`). |
 | `selectedTests` | no | Verification specs to run, as `<platform>::<category>/<file>` keys (e.g. `angular::shared/smoke.spec.ts`). Omitted = run all discovered; `[]` = run none. Unknown keys warn. |
+| `images` | no | Reference images attached to the prompt (see "Prompt images"), as paths relative to `./prompt-images/`. An entry may be a file (`"dashboard/overview.png"`) or a whole folder (`"dashboard"` → every image inside). Applied to **every** entry. Entries matching no image warn. Alias: `promptImages`. |
 | `autoRun` | no | Default `true`. Set `false` to only prefill the UI (the file becomes a saved preset). |
 | `exitOnDone` | no | Default `false` (container keeps serving the UI so results stay browsable). `true` = exit when the matrix finishes, for CI — exit code **0** = every entry succeeded, **2** = every entry built but some verification tests failed, **1** = anything worse (build-error / error / cancelled). |
 
@@ -213,15 +214,19 @@ wizard (:8080) — pick framework · MCPs · skills · model
                     └─ skills → .agents/skills/   (opencode loads these natively)
    │
    ▼
+4b overlay local skills · attach prompt images → prompt-images/   (both optional)
+   │
+   ▼
 5 start the app's dev server (watch, :5000)
    │
    ▼
 6 start opencode web (:4096) ─▶ opens in a new tab; the wizard stays open for live stats
 ```
 
-Matrix mode shares stages 1–4, then differs: instead of launching opencode web it runs
-the agent **headless** once, builds the app, screenshots the routes, and runs the injected
-verification tests (stage 5 runs *after* the agent there, not before).
+Matrix mode shares stages 1–4b, then differs: instead of launching opencode web it runs
+the agent **headless** once (with any attached prompt images passed as `--file`
+attachments), builds the app, screenshots the routes, and runs the injected verification
+tests (stage 5 runs *after* the agent there, not before).
 
 The generated project and logs live in `./sessions/<timestamp>/` on the host
 (bind-mounted to `/work`), so they survive container teardown even though the container
@@ -245,6 +250,38 @@ is `--rm`.
   OpenAI-compatible base URL declares a provider instead. You can switch model
   mid-session from the "Switch model" panel (it rewrites the config and restarts
   opencode).
+- **Prompt images** — reference mockups attached to the prompt; see below.
+
+## Prompt images
+
+You can test generating an app **from a picture** — a design mockup, a hand sketch, a
+Figma export, a screenshot of an app to reproduce — instead of from prose alone.
+
+Images live in `./prompt-images/` on the host (bind-mounted at `/prompt-images`,
+subfolders allowed). Both the Interactive and Matrix setup forms have a **Prompt images**
+picker that lists what's in that folder, lets you click images to attach them, and can
+**upload** new ones straight from the browser — uploads are written into the same host
+folder, so an image attached from the UI persists and can be referenced by name from a
+matrix config later. (`✕ delete files` removes the selected files from that folder, and
+`↻ rescan` picks up files you dropped in outside the UI.)
+
+The pipeline's **attach-images** stage copies the attached images into the generated
+project's `prompt-images/` folder, then:
+
+- **Matrix / headless runs** hand them to the agent as real prompt attachments —
+  `opencode run "<prompt>" --file <img> …` — for every entry, so one mockup can be compared
+  across platforms, MCP sets, and skill modes. A good prompt for this names the image:
+  *"Build the dashboard shown in the attached mockup."*
+- **Interactive sessions** stage the copies for you to reference inside opencode, since
+  the prompting happens there: mention them as `@prompt-images/<file>` (the run log prints
+  the exact mentions) or drag the files into the opencode composer.
+
+Accepted: `.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`, `.bmp`, `.avif`. Tunables:
+`PROMPT_IMAGE_MAX_BYTES` (per-file upload cap, default 10 MB) and
+`PROMPT_IMAGE_MAX_COUNT` (images per run, default 8 — every image costs tokens). The
+attached set is recorded per run in History (with thumbnails in the detail panel) and in a
+matrix's `report.html` / `summary.json`. See
+[`prompt-images/README.md`](prompt-images/README.md) for the full reference.
 
 ## Verification tests
 

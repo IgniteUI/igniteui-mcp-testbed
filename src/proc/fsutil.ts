@@ -1,10 +1,14 @@
 'use strict';
 
 import * as fs from 'fs';
-import { LOG_DIR } from '../config.ts';
+import { LOG_DIR, PROMPT_IMAGES_DIR } from '../config.ts';
 
 export function ensureDirs(): void {
   fs.mkdirSync(LOG_DIR, { recursive: true });
+  // The prompt-images mount is read-write (browser uploads land there). Tolerate its
+  // absence: host-side dev runs without the bind mount, and the picker then just
+  // reports an empty folder rather than failing the whole boot.
+  try { fs.mkdirSync(PROMPT_IMAGES_DIR, { recursive: true }); } catch (_) {}
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

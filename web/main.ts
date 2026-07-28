@@ -7,6 +7,7 @@ import { mountMatrix, updateMxCount, ensureMatrixStream, checkMatrixLock, applyE
 import { mountHistory, loadHistory, startHistoryPolling, stopHistoryPolling } from './history.ts';
 import { mountConfigView, renderProviderList } from './config-view.ts';
 import { refreshProviders, onProvidersChange } from './providers.ts';
+import { refreshPromptImages } from './prompt-images.ts';
 
 mountConfigView($('#configView'));
 mountWizard($('#wizardMain'));
@@ -45,6 +46,8 @@ window.addEventListener('load', async () => {
   // Fetch packs once before the session/prefill checks — the matrix prefill may
   // reference an external provider's platforms.
   await refreshProviders();
+  // One shared prompt-image listing feeds both setup forms' pickers.
+  refreshPromptImages();
 
   checkActiveSession();
   checkMatrixLock();

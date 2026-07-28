@@ -6,7 +6,7 @@
 // Registers every component up front to keep the UI migration friction-free; if
 // bundle size ever matters, swap to `defineComponents(IgcInputComponent, ...)`
 // with just the components actually used.
-import { defineAllComponents, configureTheme } from 'igniteui-webcomponents';
+import { defineAllComponents, defineComponents, IgcFileInputComponent, configureTheme } from 'igniteui-webcomponents';
 import 'igniteui-webcomponents-grids/grids/combined.js';
 import { html } from 'lit';
 
@@ -17,6 +17,13 @@ import { html } from 'lit';
 // components render unstyled (no borders/box).
 configureTheme('material', 'dark');
 defineAllComponents();
+// `defineAllComponents()` does NOT cover igc-file-input (verified against
+// igniteui-webcomponents 7.2.4: it is exported from the package index but missing from
+// the defineAllComponents registration list). Without this explicit registration the
+// element never upgrades and the prompt-image upload control is inert — so register it
+// by hand. Re-check when bumping the package: once it joins defineAllComponents this
+// line becomes a harmless no-op.
+defineComponents(IgcFileInputComponent);
 
 // Grid cell and master-detail templates are assigned from web/history.ts. Expose
 // Lit's template tag from this already-loaded vendor bundle so the app bundle

@@ -19,6 +19,16 @@ export const REPORTS_DIR = path.join(HISTORY_DIR, 'reports');
 // skill (a SKILL.md + resources) overlaid onto the generated .agents/skills/.
 export const LOCAL_SKILLS_DIR = process.env.LOCAL_SKILLS_DIR || '/local-skills';
 
+// Host-supplied reference images attached to the agent's prompt (design mockups,
+// sketches, screenshots), bind-mounted read-WRITE at /prompt-images so browser uploads
+// land in the same host folder a terminal-driven config reads from. Subfolders are
+// allowed (a selection entry may name a file or a whole folder).
+export const PROMPT_IMAGES_DIR = process.env.PROMPT_IMAGES_DIR || '/prompt-images';
+// Per-file upload cap and how many images one run may attach (models reject huge
+// image payloads and each image costs tokens, so both are bounded).
+export const PROMPT_IMAGE_MAX_BYTES = Number(process.env.PROMPT_IMAGE_MAX_BYTES || 10 * 1024 * 1024);
+export const PROMPT_IMAGE_MAX_COUNT = Number(process.env.PROMPT_IMAGE_MAX_COUNT || 8);
+
 // Provider packs loaded at runtime — persists across container restarts via the
 // /providers bind mount (see run.sh / run.ps1).  Each .json file in this dir is
 // one ProviderPack describing how to scaffold and configure a 3rd-party library.

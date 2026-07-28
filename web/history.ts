@@ -98,6 +98,11 @@ const gridHtml = (...args: any[]) => {
 // Format a framework id for display in the History grid. Only the four known
 // IgniteUI-native ids get the " - Ignite UI" suffix so external 3rd-party UI
 // frameworks are shown as-is.
+// A run's attached reference images are served live from the host's ./prompt-images/
+// folder (they are inputs, not per-run artifacts, so they aren't copied into the
+// artifact store) — a thumbnail simply breaks if the file was later removed there.
+const promptImageUrl = (name: string) => `/api/prompt-images/file?name=${encodeURIComponent(name)}`;
+
 const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
 function fmtFramework(fw: string | undefined): string {
   if (!fw) return '—';
@@ -212,6 +217,7 @@ function bindGridTemplates() {
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
+          <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}
         </dl></div>
@@ -230,6 +236,17 @@ function bindGridTemplates() {
         ${r.prompt
           ? gridHtml`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
           : gridHtml``}
+        ${(c.promptImages || []).length ? gridHtml`
+          <div class="shots"><h4>Prompt images</h4>
+            <div class="shot-strip">${c.promptImages.map((name: string) => gridHtml`
+              <a class="shot" href="${promptImageUrl(name)}" target="_blank" rel="noopener" title="${name}">
+                <img loading="lazy" decoding="async" width="150" height="100" src="${promptImageUrl(name)}" alt="${name}">
+                <span class="cap">${name}</span>
+              </a>`)}
+            </div>
+            <p class="note detail-note">Attached from ./prompt-images/ on the host — a thumbnail is blank if the file
+            has since been deleted or renamed there.</p>
+          </div>` : gridHtml``}
         ${shots.length ? gridHtml`
           <div class="shots">
             <details class="shot-details">
@@ -534,6 +551,9 @@ async function confirmRerun() {
     apiKey,
     customBaseUrl: c.customBaseUrl || undefined,
     selectedTests: Array.isArray(c.selectedTests) ? c.selectedTests : undefined,
+    // Always explicit (even when empty) so a re-run reproduces the original attachment
+    // set rather than inheriting a server-side config's images.
+    promptImages: Array.isArray(c.promptImages) ? c.promptImages : [],
   };
   try {
     const j = await postJSON('/api/matrix', body);

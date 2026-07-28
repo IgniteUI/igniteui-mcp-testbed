@@ -29,6 +29,10 @@ for the licensed History grid.
 Session artifacts land in .\sessions\<timestamp>\; run history, matrix reports, and
 screenshots persist in .\sessions\history\ across containers.
 
+Host folders bind-mounted in: .\local-skills (ro), .\tests (ro), .\providers-data, and
+.\prompt-images (read-write — reference images attached to the agent's prompt; the UI's
+image uploads land here).
+
 .PARAMETER Command
 'build' to build the image; 'help' to show this help; omit to run a session container.
 
@@ -183,7 +187,12 @@ $Providers = Join-Path $PSScriptRoot 'providers-data'
 # collects tests/shared + tests/<framework> and runs them against the freshly-built app
 # in the post-generation verify stage. Created so the mount always resolves.
 $Tests = Join-Path $PSScriptRoot 'tests'
-New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests | Out-Null
+# Reference images attached to the agent's prompt (design mockups, sketches, screenshots).
+# Mounted read-WRITE at /prompt-images — unlike the skills/tests mounts — because the
+# wizard's "Prompt images" picker uploads into this same folder, so browser-attached
+# images persist on the host and can be reused by a terminal-driven matrix config.
+$Images = Join-Path $PSScriptRoot 'prompt-images'
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests, $Images | Out-Null
 
 if ($Validate) {
   Write-Host "Validating matrix config: $mcAbs"
@@ -202,7 +211,7 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z", '-v', "${Images}:/prompt-images:Z")
   if ($mcAbs) { $vol += @('-v', "${mcAbs}:/matrix-config.json:ro,Z") }
   $userns = @('--userns=keep-id')
 }
@@ -213,7 +222,8 @@ else {
   $skillsHost    = $Skills    -replace '\\', '/'
   $providersHost = $Providers -replace '\\', '/'
   $testsHost     = $Tests     -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro")
+  $imagesHost    = $Images    -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro", '-v', "${imagesHost}:/prompt-images")
   if ($mcAbs) {
     $mcHost = $mcAbs -replace '\\', '/'
     $vol += @('-v', "${mcHost}:/matrix-config.json:ro")

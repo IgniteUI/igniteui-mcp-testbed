@@ -360,6 +360,27 @@ igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carous
 .icon-btn:hover { color:var(--red); background:rgba(224,106,85,.12); }
 .note.warn { color:var(--amber); }
 
+/* prompt-image picker (shared by the interactive + matrix setup forms) */
+.img-picker { margin-top:.5rem; }
+.img-strip { display:flex; flex-wrap:wrap; gap:.45rem; }
+.img-strip[hidden] { display:none; }
+.img-item { position:relative; display:block; padding:0; background:none; font:inherit; cursor:pointer;
+            border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+.img-item:hover { border-color:var(--teal); }
+.img-item.on { border-color:var(--teal); box-shadow:inset 0 0 0 1px var(--teal); }
+.img-item img { display:block; width:96px; height:64px; object-fit:cover; object-position:top; background:var(--circle); }
+.img-item .cap { display:block; max-width:96px; padding:.15rem .3rem; text-align:left; font-family:var(--mono);
+                 font-size:.62rem; color:var(--steel); overflow-wrap:anywhere; }
+.img-item.on .cap { color:var(--ink); }
+.img-item .tick { position:absolute; top:.1rem; right:.25rem; font-size:.72rem; color:var(--teal); }
+.img-actions { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-top:.55rem; }
+/* igc-file-input is an input group (full-width by default) — keep it proportionate to
+   the small text buttons beside it and shrink the chosen-file text to mono. */
+.img-actions .img-file { flex:1 1 15rem; min-width:12rem; }
+.img-actions .img-file::part(file-names) { font-family:var(--mono); font-size:.7rem; }
+.img-actions .icon-btn { margin-left:0; font-size:.72rem; }
+.img-actions [hidden] { display:none; }
+
 /* matrix view */
 .matrix-view { display:grid; grid-template-columns: minmax(340px,480px) minmax(0,1fr); gap:1px; background:var(--line);
                width:100%; max-width:100vw; min-height:calc(100vh - 60px); overflow:hidden; }

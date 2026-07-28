@@ -19,6 +19,7 @@ import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
 import { pruneSkills, overlaySkills } from './skills.ts';
+import { stageImages } from '../prompt-images.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
@@ -294,6 +295,20 @@ export async function runPipeline(
     overlaySkills(path.join(LOCAL_SKILLS_DIR, cfg.framework), appDir, emit, { replaceAll: !!cfg.localSkillsOnly });
   }
 
+  // 4c. Attach prompt images: stage the selected host-supplied reference images into
+  // the project. Headless runs hand the staged copies to `opencode run --file` below;
+  // an interactive session gets them in `prompt-images/` to @-mention (or drag into)
+  // opencode web, since the wizard has no prompt box of its own.
+  let promptImageFiles: string[] = [];
+  if (cfg.promptImages && cfg.promptImages.length) {
+    emit('step', { step: 'attach-images' });
+    promptImageFiles = stageImages(cfg.promptImages, appDir, emit);
+    if (promptImageFiles.length && !headless) {
+      emit('log', `reference these in opencode as ${promptImageFiles
+        .map((f) => `@prompt-images/${path.basename(f)}`).join(' ')}`);
+    }
+  }
+
   // 5. Interactive only: launch the app dev server now (watch) and hand off the
   // live app. In headless/matrix mode we deliberately do NOT start the dev server
   // here — running it during the agent's edits triggers constant rebuilds across
@@ -325,10 +340,19 @@ export async function runPipeline(
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
   emit('log', `agent (one-shot): ${prompt}`);
+  if (promptImageFiles.length) {
+    emit('log', `with ${promptImageFiles.length} image attachment(s): ${promptImageFiles.map((f) => path.basename(f)).join(', ')}`);
+  }
   // stdin is /dev/null (see run()) so opencode can never block on an interactive
   // prompt (auth / confirmation); heartbeat shows liveness if it streams nothing.
   // Extra args (e.g. a non-interactive/log flag for your opencode version) via env.
-  const agentArgv = ['run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || ''];
+  // `--file` (opencode's prompt attachment flag) is a yargs *array* option, so it must
+  // come AFTER the positional message — placed before it, it would greedily swallow the
+  // prompt as another filename.
+  const agentArgv = [
+    'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
+    ...promptImageFiles.flatMap((f) => ['--file', f]),
+  ];
   await runStep('opencode', agentArgv, appDir, emit, {
     env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
   });
