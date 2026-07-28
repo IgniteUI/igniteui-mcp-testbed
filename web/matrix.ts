@@ -417,13 +417,13 @@ const variantRow = (row: VariantRow) => html`
     ${mcpDefsForProvider().map(([mcp, label]) => html`
       <igc-checkbox data-mcp=${mcp} .checked=${row.mcps.includes(mcp)}
         @igcChange=${(e: any) => toggleVariantMcp(row, mcp, !!e.target.checked)}>${label}</igc-checkbox>`)}
-    <select data-skills title="Skills" class="mx-skills" .value=${row.mode}
-      @change=${(e: any) => { row.mode = e.target.value; updateMxCount(); }}>
-      <option value="off">No skills</option>
-      <option value="default">Default skills</option>
-      <option value="local">Local skills</option>
-      <option value="merge">Default + local</option>
-    </select>
+    <igc-select outlined title="Skills" class="mx-skills" .value=${row.mode}
+      @igcChange=${(e: any) => { row.mode = e.detail.value; updateMxCount(); }}>
+      <igc-select-item value="off">No skills</igc-select-item>
+      <igc-select-item value="default">Default skills</igc-select-item>
+      <igc-select-item value="local">Local skills</igc-select-item>
+      <igc-select-item value="merge">Default + local</igc-select-item>
+    </igc-select>
     <button type="button" class="rm" title="Remove variant" @click=${() => removeVariant(row)}>✕</button>
   </div>`;
 
@@ -470,19 +470,19 @@ function tpl() {
 
       <fieldset>
         <legend>Model <small style="color:var(--steel);font-weight:400">(fixed · one for all)</small></legend>
-        <igc-input id="mxModel" label="Model id" placeholder="anthropic/claude-sonnet-4-5"></igc-input>
+        <igc-input outlined id="mxModel" label="Model id" placeholder="anthropic/claude-sonnet-4-5"></igc-input>
       </fieldset>
 
       <fieldset>
         <legend>Prompt <small style="color:var(--steel);font-weight:400">(one-shot, shared)</small></legend>
-        <textarea id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></textarea>
+        <igc-textarea outlined id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></igc-textarea>
       </fieldset>
 
       <fieldset>
         <legend>Variants <small style="color:var(--steel);font-weight:400">(axis · MCPs + skill mode per row)</small></legend>
         <div id="mxVariants">${repeat(st.variants, (v) => v.key, variantRow)}</div>
         <button type="button" class="viewbtn" id="mxAddVariant" style="margin-top:.5rem" @click=${() => addVariant()}>+ add variant</button>
-        <igc-textarea id="mxCustomMcp" class="mcp-ta" rows="3" ?hidden=${!anyCustomMcp()}
+        <igc-textarea outlined id="mxCustomMcp" class="mcp-ta" rows="3" ?hidden=${!anyCustomMcp()}
           @igcInput=${() => { refreshMxCustomMcpErr(); update(); }}
           placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
         <p class="note err" id="mxCustomMcpErr" ?hidden=${!st.customMcpErr}>${st.customMcpErr || ''}</p>
@@ -512,14 +512,14 @@ function tpl() {
 
       <fieldset>
         <legend>API key</legend>
-        <igc-input id="mxKey" label="API key" type="password" placeholder=${st.keyPlaceholder} autocomplete="off"></igc-input>
+        <igc-input outlined id="mxKey" label="API key" type="password" placeholder=${st.keyPlaceholder} autocomplete="off"></igc-input>
         <p class="note">One key applied to every entry. Mixing providers in one matrix needs them to share a key.
         Keyless models (e.g. <code>opencode/big-pickle</code>) need no key at all.</p>
       </fieldset>
 
       <fieldset>
         <legend>Verification tests</legend>
-        <igc-combo id="mxTestsCombo" label="Tests to run" placeholder="Select test files…"
+        <igc-combo outlined id="mxTestsCombo" label="Tests to run" placeholder="Select test files…"
           value-key="id" display-key="file" group-key="category" @igcChange=${onTestsComboChange}></igc-combo>
         <p class="note" id="mxTestsNote">${st.testsNote}</p>
       </fieldset>

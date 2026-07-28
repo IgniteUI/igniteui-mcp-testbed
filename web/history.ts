@@ -661,7 +661,7 @@ function tpl() {
   <!-- API-key prompt for re-running a matrix configuration from the History tab. -->
   <igc-dialog id="rerunDialog" title="Re-run configuration">
     <p class="note" id="rerunSummary">${st.rerunSummary}</p>
-    <igc-input id="rerunKey" label="API key" type="password" autocomplete="off"></igc-input>
+    <igc-input outlined id="rerunKey" label="API key" type="password" autocomplete="off"></igc-input>
     <igc-button slot="footer" id="rerunCancel" variant="flat"
       @click=${() => { pendingRerun = null; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
     <igc-button slot="footer" id="rerunConfirm" variant="contained" @click=${confirmRerun}>Re-run</igc-button>
