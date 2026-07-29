@@ -59,8 +59,8 @@ export default function registerPromptImageRoutes(app: Express): void {
     const name = typeof req.query.name === 'string' ? req.query.name : '';
     try {
       ensureImagesDir();
-      const stored = saveUpload(name, req.body as Buffer);
-      res.json({ ok: true, name: stored });
+      if (!Buffer.isBuffer(req.body)) throw new Error('expected raw image bytes');
+      const stored = saveUpload(name, req.body);
     } catch (e: any) {
       res.status(400).json({ ok: false, error: e.message });
     }
