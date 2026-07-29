@@ -239,7 +239,12 @@ is `--rm`.
 - **Skills** — `--agents generic` writes them to `.agents/skills/`, which opencode
   auto-discovers. The master checkbox switches `--agents generic` vs `--agents none`; the
   "Exclude skills" field deletes individual skill folders after generation (granular
-  on/off).
+  on/off). The flag is passed to **both** `ig new` and `ig ai-config`: `ig new` runs its
+  own `ai-config` pass and, without the flag, falls back to the CLI's interactive
+  defaults — so the scaffold would install the full skill set before the configure stage
+  could say no. With the toggle off, stage 4 also sweeps `.agents/skills/`, `AGENTS.md`
+  and `.claude/` if anything wrote them anyway, so a "no skills" run is a genuine clean
+  baseline.
 - **Model** — written to `opencode.json`; the API key is passed to opencode as an env
   var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) rather than written to disk. A custom
   OpenAI-compatible base URL declares a provider instead. You can switch model
@@ -327,8 +332,10 @@ setup, so they're the most likely to need tuning:
    `igniteui-theming`) and the Blazor template install line (`dotnet new install
    <YourTemplateId>`).
 3. **`ig ai-config` flags** — driven non-interactively via `--framework --agents
-   --assistants`. If your CLI version adds a `--skills` selector, prefer it over the
-   post-generation prune.
+   --assistants`. `ig new` takes `--agents` / `--assistants` too and *must* be given
+   them, since its built-in `ai-config` pass otherwise falls back to the interactive
+   checkbox defaults (`generic` + `claude`) rather than to nothing. If your CLI version
+   adds a `--skills` selector, prefer it over the post-generation prune.
 4. **Matrix mode's opencode parsing** — headless runs parse the human `opencode stats`
    report for tokens / cost (`src/capture/usage.ts`), discover routes
    (`src/capture/route-discovery.ts`), and screenshot them with Playwright / Chromium

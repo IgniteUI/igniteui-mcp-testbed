@@ -17,6 +17,32 @@ export function pruneSkills(excluded: string[], emit: Emit, appDir: string): voi
   }
 }
 
+// Everything `ig new` / `ig ai-config` can write for the "agents" side of the AI config:
+// the skill trees plus the instruction files. `--agents none` covers both (its CLI label
+// is literally "None (skip skills and instructions)"), so a skills-off run must be free
+// of all of them — AGENTS.md is Ignite UI guidance opencode loads unprompted, which would
+// contaminate the baseline just as much as a skill would. `.claude/` goes wholesale: in a
+// freshly scaffolded project it exists only because ai-config's `claude` agent put its
+// skills + CLAUDE.md there, so removing the children would just leave an empty husk.
+const GENERATED_AGENT_CONFIG = [
+  ['.agents', 'skills'],
+  ['AGENTS.md'],
+  ['.claude'],
+];
+
+// Belt-and-braces for a skills-off run. The scaffold argv passes --agents=none, but the
+// CLI owns that default and has changed it before (see the igNew comment in
+// src/frameworks.ts) — and a contaminated "no skills" baseline invalidates every matrix
+// comparison against it *silently*. So verify rather than trust, and say what was found.
+export function stripGeneratedAgentConfig(appDir: string, emit: Emit): void {
+  for (const rel of GENERATED_AGENT_CONFIG) {
+    const target = path.join(appDir, ...rel);
+    if (!fs.existsSync(target)) continue;
+    fs.rmSync(target, { recursive: true, force: true });
+    emit('log', `skills off: removed generated ${rel.join('/')}`);
+  }
+}
+
 // Overlay host-supplied skills (bind-mounted at srcDir) onto .agents/skills/. Each
 // subfolder of srcDir is one skill and must contain a SKILL.md; a same-named generated
 // skill is replaced. With replaceAll the generated set is wiped first (local-only);
