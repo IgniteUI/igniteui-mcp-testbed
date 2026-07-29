@@ -42,6 +42,19 @@ project's `prompt-images/` folder (a plain, non-hidden folder so opencode can br
   `@prompt-images/<file>` — the run log prints the exact mentions — or drag the files into
   the opencode composer.
 
+## Model requirement (read this first)
+
+Attaching an image only does something if the model can **see** — which in practice means a
+**paid** provider model with an API key (Claude, GPT, Gemini, …). opencode's free / keyless
+hosted models (e.g. `opencode/big-pickle`) are text-only: they ignore or reject the
+attachment, and the run degrades to a text-only prompt that *looks* like a normal success
+while the mockup was never actually read. So an image-driven comparison run needs a paid
+model, and a "the agent ignored my mockup" result on a free model says nothing about the
+toolchain being tested.
+
+The pipeline logs a warning when images are attached and no API key is configured, but it
+can't verify vision support — that is between you and the provider.
+
 ## Limits
 
 - `PROMPT_IMAGE_MAX_BYTES` — per-file upload cap (default 10 MB).

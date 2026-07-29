@@ -21,7 +21,8 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
   OpenAI-compatible endpoint (Ollama, LM Studio, …). You type this into the wizard;
   it is passed to opencode as an environment variable and **never written to disk**.
   Keyless providers (e.g. opencode's free hosted models like `opencode/big-pickle`)
-  need no key at all — just the model id.
+  need no key at all — just the model id, though they can't do vision, so the
+  "Prompt images" feature below needs a paid model.
 
 ## Quick start
 
@@ -178,7 +179,7 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `customMcp` | no | Custom MCP server def(s) — a JSON object (single def, named map, or full `mcp.json` shape) or a JSON string. Only used by variants that include `"custom"` in `mcps`. |
 | `customBaseUrl` | no | Custom OpenAI-compatible base URL (pairs with `CUSTOM_API_KEY`). |
 | `selectedTests` | no | Verification specs to run, as `<platform>::<category>/<file>` keys (e.g. `angular::shared/smoke.spec.ts`). Omitted = run all discovered; `[]` = run none. Unknown keys warn. |
-| `images` | no | Reference images attached to the prompt (see "Prompt images"), as paths relative to `./prompt-images/`. An entry may be a file (`"dashboard/overview.png"`) or a whole folder (`"dashboard"` → every image inside). Applied to **every** entry. Entries matching no image warn. Alias: `promptImages`. |
+| `images` | no | Reference images attached to the prompt (see "Prompt images"), as paths relative to `./prompt-images/`. An entry may be a file (`"dashboard/overview.png"`) or a whole folder (`"dashboard"` → every image inside). Applied to **every** entry. Entries matching no image warn. Requires a **paid, vision-capable** `model` — free/keyless models silently drop attachments. Alias: `promptImages`. |
 | `autoRun` | no | Default `true`. Set `false` to only prefill the UI (the file becomes a saved preset). |
 | `exitOnDone` | no | Default `false` (container keeps serving the UI so results stay browsable). `true` = exit when the matrix finishes, for CI — exit code **0** = every entry succeeded, **2** = every entry built but some verification tests failed, **1** = anything worse (build-error / error / cancelled). |
 
@@ -280,6 +281,14 @@ project's `prompt-images/` folder, then:
 - **Interactive sessions** stage the copies for you to reference inside opencode, since
   the prompting happens there: mention them as `@prompt-images/<file>` (the run log prints
   the exact mentions) or drag the files into the opencode composer.
+
+> **Needs a paid, vision-capable model.** Attachments only work with a model that can see
+> images — Claude, GPT, Gemini and friends, i.e. a **paid** provider model with an API key.
+> opencode's free / keyless hosted models (e.g. `opencode/big-pickle`) have no vision: they
+> ignore or reject the attachment, and the run quietly degrades to a text-only prompt that
+> looks like the mockup was never provided. The pipeline logs a warning when images are
+> attached with no API key, but only the provider can say for sure — pick a paid model
+> before drawing conclusions from an image-driven run.
 
 Accepted: `.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`, `.bmp`, `.avif`. Tunables:
 `PROMPT_IMAGE_MAX_BYTES` (per-file upload cap, default 10 MB) and

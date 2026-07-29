@@ -164,6 +164,9 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
             @click=${removeSelected}>✕ delete files</button>
         </div>
         <p class="note">${summary()}</p>
+        <p class="note warn" ?hidden=${!sel.size}>⚠ Attachments need a <strong>vision-capable paid model</strong> and an
+        API key. Free / keyless models (e.g. <code>opencode/big-pickle</code>) can't read images — they ignore or
+        reject the attachment, so the run silently falls back to a text-only prompt.</p>
       </div>`,
     selected: () => images.map((i) => i.name).filter((n) => sel.has(n)),
     setSelected: (names: string[]) => {

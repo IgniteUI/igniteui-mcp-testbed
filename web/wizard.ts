@@ -557,6 +557,12 @@ function tpl() {
             <p>In the <strong>Matrix</strong> tab the same images are attached to the
             one-shot prompt automatically (<code>opencode run --file …</code>), which is how
             you test “build this screen from the mockup” across platforms and variants.</p>
+            <p><strong>Model requirement:</strong> reading an image needs a vision-capable
+            model, which in practice means a <strong>paid</strong> one with an API key
+            (Claude, GPT, Gemini, …). The free / keyless hosted models — e.g.
+            <code>opencode/big-pickle</code> — have no vision, so they ignore or reject the
+            attachment and you get a text-only run that looks like the mockup was never
+            seen. Pick a paid model before relying on this.</p>
           </div>
         </details>
       </fieldset>

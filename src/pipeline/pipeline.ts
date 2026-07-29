@@ -312,6 +312,14 @@ export async function runPipeline(
   if (cfg.promptImages && cfg.promptImages.length) {
     emit('step', { step: 'attach-images' });
     promptImageFiles = stageImages(cfg.promptImages, appDir, emit);
+    // Reading an image needs a vision-capable model, which in practice means a paid one.
+    // No API key (and no custom base URL) ⇒ one of opencode's free hosted models, which
+    // have no vision: the attachment is ignored/rejected and the run quietly degrades to
+    // a text-only prompt. Warn rather than fail — only the provider knows for sure.
+    if (promptImageFiles.length && !cfg.apiKey && !cfg.customBaseUrl) {
+      emit('log', 'warning: images attached but no API key — free/keyless models have no vision '
+        + 'and will ignore them; use a paid vision-capable model to test image-driven generation');
+    }
     if (promptImageFiles.length && !headless) {
       emit('log', `reference these in opencode as ${promptImageFiles
         .map((f) => `@prompt-images/${path.basename(f)}`).join(' ')}`);

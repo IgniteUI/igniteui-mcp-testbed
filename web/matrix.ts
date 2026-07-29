@@ -488,7 +488,8 @@ function tpl() {
         <igc-textarea outlined id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></igc-textarea>
         <p class="note" style="margin-top:.7rem">Reference images (optional) — attached to the prompt of every entry
         via <code>opencode run --file</code>, so the mockup itself is the spec. Files live in
-        <code>./prompt-images/</code> on the host; uploads land there too.</p>
+        <code>./prompt-images/</code> on the host; uploads land there too. Needs a vision-capable
+        <strong>paid</strong> model (free/keyless ones can't read images).</p>
         ${imgPicker.tpl()}
       </fieldset>
 
