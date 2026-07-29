@@ -45,7 +45,12 @@ export async function refreshPromptImages(): Promise<void> {
 const fmtSize = (n: number): string =>
   n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 
-const thumbUrl = (name: string) => `/api/prompt-images/file?name=${encodeURIComponent(name)}`;
+// `v=<mtime>` is a cache-buster, not something the server reads: a file name can be
+// re-used for different content (delete a mockup, upload a new one under the same name),
+// and the browser would otherwise show the cached old image — which reads as "my delete
+// didn't work". Same bytes ⇒ same URL ⇒ still cached.
+const thumbUrl = (img: PromptImage) =>
+  `/api/prompt-images/file?name=${encodeURIComponent(img.name)}&v=${encodeURIComponent(img.mtime)}`;
 
 // ---------- picker ----------
 
@@ -129,7 +134,7 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
       return `No images in ${dir} — drop mockups/screenshots in that folder on the host, or upload them here.`;
     }
     return sel.size
-      ? `${sel.size}/${images.length} image(s) attached to the prompt.`
+      ? `${sel.size}/${images.length} image(s) attached to the prompt — click a thumbnail again to detach it.`
       : `${images.length} image(s) available — click to attach. None attached (text-only prompt).`;
   };
 
@@ -137,8 +142,8 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
     const on = sel.has(img.name);
     return html`
       <button type="button" class="img-item ${classMap({ on })}" title=${`${img.name} · ${fmtSize(img.size)}`}
-        aria-pressed=${String(on)} @click=${() => toggle(img.name)}>
-        <img loading="lazy" decoding="async" src=${thumbUrl(img.name)} alt=${img.name}>
+        aria-pressed=${on} @click=${() => toggle(img.name)}>
+        <img loading="lazy" decoding="async" src=${thumbUrl(img)} alt=${img.name}>
         <span class="cap">${img.name}</span>
         ${on ? html`<span class="tick">✓</span>` : nothing}
       </button>`;
@@ -158,10 +163,12 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
           </igc-file-input>
           <button type="button" class="viewbtn" title=${`Re-scan ${dir} on the host`}
             @click=${() => { note = null; refreshPromptImages(); }}>↻ rescan</button>
-          <button type="button" class="viewbtn" ?hidden=${!sel.size}
-            @click=${() => { sel.clear(); update(); }}>clear selection</button>
-          <button type="button" class="icon-btn" ?hidden=${!sel.size} title="Delete the selected files from the host folder"
-            @click=${removeSelected}>✕ delete files</button>
+          <!-- One removal action, not two: un-attaching is what clicking a thumbnail
+               already does, so a separate "clear selection" button only muddied what
+               "remove" meant. This deletes the files. -->
+          <button type="button" class="icon-btn" ?hidden=${!sel.size}
+            title=${`Delete the selected file(s) from ${dir} on the host`}
+            @click=${removeSelected}>✕ delete selected</button>
         </div>
         <p class="note">${summary()}</p>
         <p class="note warn" ?hidden=${!sel.size}>⚠ Attachments need a <strong>vision-capable paid model</strong> and an

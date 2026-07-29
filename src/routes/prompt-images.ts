@@ -50,6 +50,10 @@ export default function registerPromptImageRoutes(app: Express): void {
       res.status(404).json({ ok: false, error: 'image not found' });
       return;
     }
+    // Always revalidate: a name can be re-used for different content (delete a mockup,
+    // upload a new one under the same file name), and a cached thumbnail of the old
+    // image is indistinguishable from "my change didn't take effect".
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(abs);
   });
 
@@ -61,6 +65,10 @@ export default function registerPromptImageRoutes(app: Express): void {
       ensureImagesDir();
       if (!Buffer.isBuffer(req.body)) throw new Error('expected raw image bytes');
       const stored = saveUpload(name, req.body);
+      // Must always respond: without this the file lands on disk but the browser's
+      // `await r.json()` never settles, so the picker hangs on "Uploading…" and never
+      // refreshes its listing.
+      res.json({ ok: true, name: stored });
     } catch (e: any) {
       res.status(400).json({ ok: false, error: e.message });
     }
