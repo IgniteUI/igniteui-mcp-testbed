@@ -14,6 +14,7 @@ import type { FrameworkDef, ScaffoldDef } from './types.ts';
  *   {{name}}   project folder name
  *   {{type}}   project type (--type for `ig new`)
  *   {{theme}}  style theme (--theme for `ig new`)
+ *   {{agents}} `generic` or `none` (--agents for `ig new`; the skills toggle)
  *   {{dir}}    absolute project directory
  *   {{port}}   APP_PORT (the dev-server port the container publishes)
  */
@@ -24,6 +25,13 @@ export const APP_PORT = Number(process.env.APP_PORT || 5000);
 const TEMPLATE = process.env.BLAZOR_TEMPLATE || 'igb-blazor';
 
 // Frameworks scaffolded by the Ignite UI CLI (`ig new`).
+// `--agents`/`--assistants` are NOT optional here: `ig new` runs its own `ai-config`
+// pass internally, and when the flags are absent it falls back to the interactive
+// checkbox defaults (agents `generic`+`claude`, assistants `generic`) rather than to
+// nothing. So a scaffold without them writes .agents/skills/ + .claude/skills/ +
+// AGENTS.md + .claude/CLAUDE.md before the pipeline's configure stage ever runs, and
+// the later `ig ai-config --agents none` can't undo it — a "no skills" run would
+// still hand the agent a full skill set. Pass the toggle through at scaffold time.
 function igNew(framework: string): ScaffoldDef {
   return {
     cmd: 'ig',
@@ -32,6 +40,8 @@ function igNew(framework: string): ScaffoldDef {
       `--framework=${framework}`,
       '--type={{type}}',
       '--theme={{theme}}',
+      '--agents={{agents}}',
+      '--assistants=generic',
       '--skip-git',
     ],
     // `ig new` creates ./<name>; scaffold runs from the parent of {{dir}}.
