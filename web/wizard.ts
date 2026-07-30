@@ -466,8 +466,8 @@ function tpl() {
               <igc-toggle-button value=${fw.id} .selected=${(extFramework.get(pack.name) || pack.frameworks[0]?.id) === fw.id}>${fw.label}</igc-toggle-button>`)}
           </igc-button-group>`)}
         <!-- Project type + theme: only meaningful for ig new (IgniteUI) -->
-        <igc-input id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav" ?hidden=${!ig}></igc-input>
-        <igc-input id="theme" label="Theme (optional)" placeholder="e.g. default" ?hidden=${!ig}></igc-input>
+        <igc-input outlined id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav" ?hidden=${!ig}></igc-input>
+        <igc-input outlined id="theme" label="Theme (optional)" placeholder="e.g. default" ?hidden=${!ig}></igc-input>
       </fieldset>
 
       <fieldset>
@@ -484,7 +484,7 @@ function tpl() {
           </div>`)}
         <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
         <igc-checkbox data-mcp="custom" id="customMcpEnable" @igcChange=${onCustomMcpToggle}>Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
-        <igc-textarea id="customMcp" class="mcp-ta" rows="4" ?hidden=${!st.customMcpOn} @igcInput=${onCustomMcpInput}
+        <igc-textarea outlined id="customMcp" class="mcp-ta" rows="4" ?hidden=${!st.customMcpOn} @igcInput=${onCustomMcpInput}
           placeholder='{"command": "npx", "args": ["-y", "my-mcp-server"]}'></igc-textarea>
         <p class="note err" id="customMcpErr" ?hidden=${!st.customMcpErr}>${st.customMcpErr || ''}</p>
         <p class="note">Paste one server def (<code>{"command","args","env"}</code> or <code>{"url","headers"}</code>), a
@@ -496,7 +496,7 @@ function tpl() {
         <legend>Agent skills</legend>
         <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.agents/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
         <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
-        <igc-input id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
+        <igc-input outlined id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
         <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.agents/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>
@@ -532,7 +532,7 @@ function tpl() {
 
       <fieldset>
         <legend>Verification tests</legend>
-        <igc-combo id="testsCombo" label="Tests to run" placeholder="Select test files…"
+        <igc-combo outlined id="testsCombo" label="Tests to run" placeholder="Select test files…"
           value-key="id" display-key="file" group-key="category" @igcChange=${onTestsComboChange}></igc-combo>
         <p class="note" id="testsNote">${st.testsNote}</p>
         <details class="help">
@@ -555,9 +555,9 @@ function tpl() {
 
       <fieldset class="model-fields">
         <legend>Model</legend>
-        <igc-input id="model" label="Model id" value="anthropic/claude-haiku-4-5"></igc-input>
-        <igc-input id="key" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
-        <igc-input id="base" label="Custom base URL (OpenAI-compatible, optional)"
+        <igc-input outlined id="model" label="Model id" value="anthropic/claude-haiku-4-5"></igc-input>
+        <igc-input outlined id="key" label="API key" type="password" placeholder="sk-…" autocomplete="off"></igc-input>
+        <igc-input outlined id="base" label="Custom base URL (OpenAI-compatible, optional)"
                    placeholder="http://host.containers.internal:11434/v1"></igc-input>
         <p class="note">Local model? Prefix the id <code>custom/&lt;model&gt;</code> (e.g. <code>custom/llama3.1</code>),
         use <code>host.containers.internal</code> — not <code>localhost</code> — to reach the host, and put any
@@ -602,8 +602,8 @@ function tpl() {
       <details class="switcher">
         <summary>Switch model</summary>
         <div class="row">
-          <igc-input id="m2" label="Model id"></igc-input>
-          <igc-input id="k2" label="API key" type="password"></igc-input>
+          <igc-input outlined id="m2" label="Model id"></igc-input>
+          <igc-input outlined id="k2" label="API key" type="password"></igc-input>
           <igc-button type="button" id="swap" variant="contained" @click=${onSwapModel}>Apply</igc-button>
         </div>
       </details>
