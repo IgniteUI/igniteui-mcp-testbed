@@ -22,6 +22,11 @@ export default function registerMatrixRoutes(app: Express): void {
     if (loaded) {
       if (!body.apiKey && loaded.req.fixed.apiKey) body.apiKey = loaded.req.fixed.apiKey;
       if (body.customBaseUrl === undefined && loaded.req.fixed.customBaseUrl) body.customBaseUrl = loaded.req.fixed.customBaseUrl;
+      // Prompt images come along the same way, but only when the request omits the field
+      // entirely — an empty array is the UI's way of saying "attach none".
+      if (body.promptImages === undefined && body.images === undefined && loaded.req.fixed.promptImages) {
+        body.promptImages = loaded.req.fixed.promptImages;
+      }
     }
     const r = normalizeMatrixRequest(body);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
@@ -46,6 +51,7 @@ export default function registerMatrixRoutes(app: Express): void {
         customMcp: fixed.customMcp || '',
         customBaseUrl: fixed.customBaseUrl || null,
         selectedTests: fixed.selectedTests ?? null, // null = field omitted = "all"
+        promptImages: fixed.promptImages ?? null,   // null = field omitted = attach none
         hasApiKey: !!fixed.apiKey,
         autoRun: c.autoRun,
         dropped: c.req.dropped,

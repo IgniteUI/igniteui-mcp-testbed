@@ -17,6 +17,9 @@ export interface RunConfig {
   // Which injected test files to run in the verify stage, as `<category>/<file>` keys
   // (category = 'shared' or a framework). undefined ⇒ run all discovered; [] ⇒ run none.
   selectedTests?: string[];
+  // Reference images attached to the agent's prompt, as paths relative to
+  // PROMPT_IMAGES_DIR (e.g. 'dashboard/home.png'). See src/prompt-images.ts.
+  promptImages?: string[];
   model: string;
   apiKey?: string;
   customBaseUrl?: string | null;
@@ -136,8 +139,17 @@ export interface StoredConfig {
   overrideSkills: boolean;
   localSkillsOnly: boolean;
   selectedTests: string[];
+  promptImages: string[];
   models: string[];
   customBaseUrl: string | null;
+}
+
+// One reference image available under PROMPT_IMAGES_DIR. `name` is the path relative
+// to that dir (POSIX separators), which is also the id the UI and configs use.
+export interface PromptImage {
+  name: string;
+  size: number;
+  mtime: string;
 }
 
 export interface Screenshot {
@@ -208,6 +220,7 @@ export interface MatrixFixed {
   customBaseUrl?: string;
   customMcp?: string;
   selectedTests?: string[];
+  promptImages?: string[];
 }
 
 export interface Combo {

@@ -113,6 +113,7 @@ EXPOSE 8080 4096 5000
 ENV WORK_DIR=/work \
     HISTORY_DIR=/history \
     PROVIDERS_DIR=/providers \
+    PROMPT_IMAGES_DIR=/prompt-images \
     WIZARD_PORT=8080 \
     OPENCODE_PORT=4096 \
     APP_PORT=5000

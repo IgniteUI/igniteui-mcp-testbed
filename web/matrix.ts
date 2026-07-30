@@ -5,6 +5,7 @@ import { $, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { setMatrixLock } from './wizard.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
+import { createImagePicker, refreshPromptImages } from './prompt-images.ts';
 
 // Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
 // local = local-only (generated wiped); merge = generated + local overlaid.
@@ -36,6 +37,10 @@ interface EntryVm {
 
 let variantKey = 0;
 const newRow = (mcps: string[], mode: string): VariantRow => ({ key: ++variantKey, mcps, mode });
+
+// Reference images attached to the shared prompt — a fixed set applied to every entry
+// (they describe *what* to build; the axes are how it's built).
+const imgPicker = createImagePicker('mx', () => update());
 
 const st = {
   provider: 'igniteui', // currently selected provider name
@@ -368,6 +373,10 @@ export async function applyServerMatrixConfig() {
   $('#mxPrompt').value = cfg.prompt || '';
   if (cfg.customMcp) $('#mxCustomMcp').value = cfg.customMcp;
   updateMxCount();
+  // Prompt images: the picker must know what exists before a selection can be applied
+  // (selected() intersects with the loaded listing), so await the shared refresh first.
+  await refreshPromptImages();
+  if (Array.isArray(cfg.promptImages)) imgPicker.setSelected(cfg.promptImages);
   // The combo must be populated before the config's selection can be applied; the
   // seq guard makes this awaited refresh the one that owns the combo.
   await refreshMxTestFiles();
@@ -398,6 +407,7 @@ async function onSubmit(e: Event) {
     apiKey: $('#mxKey').value,
     customMcp: $('#mxCustomMcp').value.trim() || undefined,
     selectedTests: ($('#mxTestsCombo').value || []) as string[],
+    promptImages: imgPicker.selected(),
   };
   st.goDisabled = true;
   update();
@@ -476,6 +486,11 @@ function tpl() {
       <fieldset>
         <legend>Prompt <small style="color:var(--steel);font-weight:400">(one-shot, shared)</small></legend>
         <igc-textarea outlined id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></igc-textarea>
+        <p class="note" style="margin-top:.7rem">Reference images (optional) — attached to the prompt of every entry
+        via <code>opencode run --file</code>, so the mockup itself is the spec. Files live in
+        <code>./prompt-images/</code> on the host; uploads land there too. Needs a vision-capable
+        <strong>paid</strong> model (free/keyless ones can't read images).</p>
+        ${imgPicker.tpl()}
       </fieldset>
 
       <fieldset>

@@ -10,6 +10,7 @@ import registerStatsRoutes from './routes/stats.ts';
 import registerSkillsRoutes from './routes/skills.ts';
 import registerProviderRoutes from './routes/providers.ts';
 import registerTestsRoutes from './routes/tests.ts';
+import registerPromptImageRoutes from './routes/prompt-images.ts';
 
 const app = express();
 app.use(express.json());
@@ -26,5 +27,6 @@ registerStatsRoutes(app);
 registerSkillsRoutes(app);
 registerProviderRoutes(app);
 registerTestsRoutes(app);
+registerPromptImageRoutes(app);
 
 export default app;

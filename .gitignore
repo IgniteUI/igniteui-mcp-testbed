@@ -22,6 +22,11 @@ local-skills/*
 local-skills/*/*
 !local-skills/*/.gitkeep
 
+# User-supplied prompt reference images (bind-mounted read-write at /prompt-images;
+# the wizard's image uploads land here too) — keep the README, ignore the images.
+prompt-images/*
+!prompt-images/README.md
+
 # Logs
 *.log
 

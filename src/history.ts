@@ -52,6 +52,7 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     overrideSkills: !!c.overrideSkills,
     localSkillsOnly: !!c.localSkillsOnly,
     selectedTests: Array.isArray(c.selectedTests) ? c.selectedTests.slice() : [],
+    promptImages: Array.isArray(c.promptImages) ? c.promptImages.slice() : [],
     models: c.model ? [c.model] : [],
     customBaseUrl: c.customBaseUrl || null,
   };

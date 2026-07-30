@@ -4,6 +4,7 @@ import { html, render, nothing, repeat, classMap } from './lit.ts';
 import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
+import { createImagePicker } from './prompt-images.ts';
 
 const STEPS: Array<[string, string]> = [
   ['scaffold', 'Scaffold project'],
@@ -11,6 +12,7 @@ const STEPS: Array<[string, string]> = [
   ['translate', 'Translate MCP config'],
   ['prune', 'Prune skills'],
   ['overlay-skills', 'Overlay local skills'],
+  ['attach-images', 'Attach prompt images'],
   ['launch-app', 'Start app (watch)'],
   ['launch-opencode', 'Start opencode web'],
 ];
@@ -62,6 +64,11 @@ const st: WizardState = {
 
 // Per-pack selected framework id, so switching back to a pack retains the last choice.
 const extFramework = new Map<string, string>();
+
+// Reference images the session starts with. Interactive mode has no prompt box (the
+// prompting happens in opencode), so these are staged into the project's
+// prompt-images/ folder for the user to @-mention or drag into opencode web.
+const imgPicker = createImagePicker('wiz', () => update());
 
 // Read by the matrix view's launch-lock so it knows whether to re-enable the
 // wizard's controls when a matrix finishes.
@@ -121,6 +128,7 @@ function collect() {
     overrideSkills: $('#overrideSkills').checked,
     localSkillsOnly: $('#overrideSkills').checked && $('#localSkillsOnly').checked,
     selectedTests: ($('#testsCombo').value || []) as string[],
+    promptImages: imgPicker.selected(),
     model: $('#model').value.trim(),
     apiKey: $('#key').value,
     customBaseUrl: $('#base').value.trim() || undefined,
@@ -526,6 +534,35 @@ function tpl() {
             </ul>
             <p>Folders without a <code>SKILL.md</code> are skipped. The line above lists
             what’s currently found for the selected framework.</p>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset>
+        <legend>Prompt images <small style="color:var(--steel);font-weight:400">(optional reference mockups)</small></legend>
+        ${imgPicker.tpl()}
+        <details class="help">
+          <summary>How prompt images work</summary>
+          <div class="help-body">
+            <p>Drop design mockups, hand sketches or screenshots on the host under
+            <code>./prompt-images/</code> (subfolders allowed) — or upload them right here,
+            which writes them to that same folder so they persist and can be reused by a
+            terminal-driven matrix config.</p>
+            <p>The attached images are copied into the generated project’s
+            <code>prompt-images/</code> folder by the pipeline’s <strong>attach-images</strong>
+            stage. In this interactive mode there is no prompt box — you prompt inside
+            opencode — so reference them there with
+            <code>@prompt-images/&lt;file&gt;</code> (the run log prints the exact mentions),
+            or drag the files into the opencode composer.</p>
+            <p>In the <strong>Matrix</strong> tab the same images are attached to the
+            one-shot prompt automatically (<code>opencode run --file …</code>), which is how
+            you test “build this screen from the mockup” across platforms and variants.</p>
+            <p><strong>Model requirement:</strong> reading an image needs a vision-capable
+            model, which in practice means a <strong>paid</strong> one with an API key
+            (Claude, GPT, Gemini, …). The free / keyless hosted models — e.g.
+            <code>opencode/big-pickle</code> — have no vision, so they ignore or reject the
+            attachment and you get a text-only run that looks like the mockup was never
+            seen. Pick a paid model before relying on this.</p>
           </div>
         </details>
       </fieldset>

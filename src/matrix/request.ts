@@ -1,7 +1,8 @@
 'use strict';
 
-import { MATRIX_MAX_ENTRIES } from '../config.ts';
+import { MATRIX_MAX_ENTRIES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
 import { getFramework } from '../provider-registry.ts';
+import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, Variant } from '../types.ts';
 
@@ -59,12 +60,33 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   const selectedTests = Array.isArray(body.selectedTests)
     ? body.selectedTests.filter((t: unknown) => typeof t === 'string')
     : undefined;
+
+  // Reference images attached to the prompt — one fixed set for every entry (they
+  // describe *what* to build, which is the shared axis-independent part of the run).
+  // `images` is the config-file spelling, `promptImages` the API/UI one. Folder entries
+  // are expanded here so each entry's history record lists the actual files.
+  const rawImages: unknown = Array.isArray(body.promptImages) ? body.promptImages
+    : Array.isArray(body.images) ? body.images : undefined;
+  let promptImages: string[] | undefined;
+  if (Array.isArray(rawImages)) {
+    const { images, missing } = resolveSelection(rawImages.filter((s): s is string => typeof s === 'string'));
+    for (const m of missing) {
+      warnings.push(`prompt image '${m}' matched no image file under ${PROMPT_IMAGES_DIR}`);
+    }
+    promptImages = images.map((i) => i.name);
+    if (promptImages.length > PROMPT_IMAGE_MAX_COUNT) {
+      warnings.push(`prompt images capped at ${PROMPT_IMAGE_MAX_COUNT}; ${promptImages.length - PROMPT_IMAGE_MAX_COUNT} dropped`);
+      promptImages = promptImages.slice(0, PROMPT_IMAGE_MAX_COUNT);
+    }
+  }
+
   const fixed: MatrixFixed = {
     model,
     apiKey: body.apiKey || undefined,
     customBaseUrl: body.customBaseUrl || undefined,
     customMcp: body.customMcp || undefined,
     selectedTests,
+    promptImages,
   };
   return { ok: true, req: { platforms, variants, combos, prompt, name, fixed, dropped, warnings } };
 }

@@ -18,6 +18,10 @@ import { normalizeMatrixRequest, type NormalizedMatrixRequest } from './request.
 //   apiKeyEnv   — name of an env var holding the key (instead of a plaintext apiKey);
 //                 with neither, the PROVIDER_ENV var for the model's prefix is used.
 //   customMcp   — may be an object (stringified here; the pipeline expects a string).
+//   images      — reference images attached to the prompt, as paths relative to the
+//                 ./prompt-images/ mount; an entry may name a file or a whole subfolder
+//                 (expanded at load). Alias of the API's `promptImages`; entries that
+//                 match no image warn rather than fail.
 //   autoRun     — default true: begin the matrix at startup. false = UI prefill only.
 //   exitOnDone  — with autoRun: exit the process when the matrix finishes (0 iff every
 //                 entry succeeded), for CI. Default false: keep serving the UI.

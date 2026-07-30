@@ -47,6 +47,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     overrideSkills: !!c.variant.localSkills,
     localSkillsOnly: !!c.variant.localSkills && !c.variant.skills,
     selectedTests: fixed.selectedTests,
+    promptImages: fixed.promptImages,
     model: fixed.model,
     apiKey: fixed.apiKey,
     customBaseUrl: fixed.customBaseUrl || undefined,

@@ -29,6 +29,7 @@ if (process.env.MATRIX_VALIDATE === '1') {
     console.log(`  model      : ${req.fixed.model}`);
     console.log(`  api key    : ${req.fixed.apiKey ? 'resolved' : 'none (fine for keyless providers)'}`);
     console.log(`  tests      : ${req.fixed.selectedTests ? `${req.fixed.selectedTests.length} selected` : 'all discovered'}`);
+    console.log(`  images     : ${req.fixed.promptImages?.length ? req.fixed.promptImages.join(', ') : 'none'}`);
     console.log(`  autoRun    : ${c.autoRun} · exitOnDone: ${c.exitOnDone}`);
     for (const w of c.warnings) console.warn(`  warning    — ${w}`);
     process.exit(0);

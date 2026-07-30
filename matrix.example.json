@@ -8,6 +8,7 @@
   "model": "anthropic/claude-sonnet-4-5",
   "prompt": "Build a dashboard page with a data grid showing sample sales data and a bar chart summarizing it.",
   "apiKeyEnv": "ANTHROPIC_API_KEY",
+  "images": [],
   "selectedTests": ["angular::shared/smoke.spec.ts", "react::shared/smoke.spec.ts"],
   "autoRun": true,
   "exitOnDone": false

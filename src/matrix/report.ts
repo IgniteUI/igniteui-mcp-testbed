@@ -91,6 +91,10 @@ export function writeMatrixReport(
   const costs = records.filter((r) => r?.stats?.cost?.available);
   const totalCost = costs.reduce((acc, r) => acc + (r!.stats!.cost.amount || 0), 0);
   const generatedAt = new Date().toISOString();
+  // Prompt images are fixed across a matrix, so any entry's record carries the set.
+  // Only the names go in the report: the files live in the host's ./prompt-images/
+  // folder, outside the artifact store this report links into.
+  const promptImages = records.find((r) => r?.config?.promptImages?.length)?.config.promptImages || [];
 
   const rows = entries.map((e, i) => {
     const r = records[i];
@@ -190,6 +194,7 @@ export function writeMatrixReport(
 <main>
 <p class="meta">model <b>${esc(meta.model)}</b> · ${entries.length} entries — ${esc(summary)} · total run time <b>${fmtMs(totalMs)}</b> · <b>${fmtTokens(totalTokens)}</b> tokens${costs.length ? ` · <b>${totalCost.toFixed(4)} USD</b>` : ''}</p>
 <p class="prompt">${esc(meta.prompt)}</p>
+${promptImages.length ? `<p class="meta">prompt images: <b>${promptImages.map((n) => esc(n)).join('</b>, <b>')}</b></p>` : ''}
 <table>
 <thead><tr><th>#</th><th>Platform</th><th>Variant</th><th>Status</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th><th class="num">Tests</th><th class="num">Shots</th></tr></thead>
 <tbody>
@@ -208,6 +213,7 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
     generatedAt,
     model: meta.model,
     prompt: meta.prompt,
+    promptImages,
     cancelled: meta.cancelled,
     totals: {
       entries: entries.length,
