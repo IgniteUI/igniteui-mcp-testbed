@@ -27,7 +27,16 @@ export const PROMPT_IMAGES_DIR = process.env.PROMPT_IMAGES_DIR || '/prompt-image
 // Per-file upload cap and how many images one run may attach (models reject huge
 // image payloads and each image costs tokens, so both are bounded).
 export const PROMPT_IMAGE_MAX_BYTES = Number(process.env.PROMPT_IMAGE_MAX_BYTES || 10 * 1024 * 1024);
-export const PROMPT_IMAGE_MAX_COUNT = Number(process.env.PROMPT_IMAGE_MAX_COUNT || 8);
+// `0` is a meaningful setting — attachments off for this container — and is reported to
+// the UI, which then disables its picker. Coerced to a non-negative integer so a garbage
+// value can't reach the UI as NaN (which it would read as "no cap given" and fall back
+// from, while the pipeline silently dropped every image). Unset / empty / unparseable
+// falls back to the default rather than to 0, so a typo doesn't quietly turn the feature
+// off; a negative clamps to 0, which does.
+const rawImageMaxCount = process.env.PROMPT_IMAGE_MAX_COUNT?.trim();
+export const PROMPT_IMAGE_MAX_COUNT = rawImageMaxCount && Number.isFinite(Number(rawImageMaxCount))
+  ? Math.max(0, Math.trunc(Number(rawImageMaxCount)))
+  : 8;
 
 // Provider packs loaded at runtime — persists across container restarts via the
 // /providers bind mount (see run.sh / run.ps1).  Each .json file in this dir is
