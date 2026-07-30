@@ -48,8 +48,7 @@ intentionally complete, with multiple fields and options, so the usage of many I
 form components is clearly demonstrated. Use Ignite UI components: inputs, checkboxes,
 radio buttons, switches, select, multi combo, links, buttons, and icons. Include validation
 states, helper text, social login buttons, password visibility toggle, remember-me option,
-terms/privacy agreement, and a clean responsive layout. Do not use plain HTML controls when
-an Ignite UI component is available.
+terms/privacy agreement, and a clean responsive layout. Apply a dark application theme with the ignite ui dark blue (#27265F) as background, ignite ui orange (#F05A2B) as accent and ignite ui blue (#0099FF) as primary.
 ```
 
 **Expected coverage:**

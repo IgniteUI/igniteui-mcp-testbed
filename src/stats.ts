@@ -3,7 +3,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
-import type { Tokens, Stats } from './types.ts';
+import { collectToolUsage } from './capture/tool-usage.ts';
+import type { Tokens, Stats, ToolContext, ToolUsage } from './types.ts';
 
 const EMPTY_TOKENS = (): Tokens => ({ input: 0, output: 0, reasoning: 0, cache: 0, total: 0 });
 const TOKEN_KEYS: (keyof Tokens)[] = ['input', 'output', 'reasoning', 'cache', 'total'];
@@ -88,7 +89,15 @@ export class StatsCollector {
   reconcileTimer: NodeJS.Timeout | null;
   backoff: number;
   warnedShape: boolean;
+  // Tool/skill usage for the live session. Unlike tokens/cost (which come off the
+  // opencode API), this is read from opencode's SQLite store, so it is polled on the
+  // reconcile tick rather than pushed. Null until the pipeline hands over the context.
+  toolCtx: ToolContext | null;
+  tools: ToolUsage | null;
+  toolsBusy: boolean;
+  warnedTools: boolean;
   _onUpdate?: (snap: Stats) => void;
+  _onTools?: (usage: ToolUsage) => void;
   _onWarn?: (msg: string) => void;
 
   constructor({ port, dir, model, costAvailable }: StatsOpts) {
@@ -109,13 +118,18 @@ export class StatsCollector {
     this.reconcileTimer = null;
     this.backoff = 500;
     this.warnedShape = false;
+
+    this.toolCtx = null;
+    this.tools = null;
+    this.toolsBusy = false;
+    this.warnedTools = false;
   }
 
   start(): this {
     if (this.stopped) this.stopped = false;
     this._connect();
     if (!this.reconcileTimer) {
-      this.reconcileTimer = setInterval(() => this._backfill(), 30000);
+      this.reconcileTimer = setInterval(() => { this._backfill(); this._collectTools(); }, 30000);
       this.reconcileTimer.unref && this.reconcileTimer.unref();
     }
     return this;
@@ -126,15 +140,47 @@ export class StatsCollector {
     this._scheduleWrite();
   }
 
+  // Point the collector at this run's opencode store so it can start reporting which
+  // MCP tools and skills the agent invokes. Reads once immediately, then on each tick.
+  setToolContext(ctx: ToolContext | null): void {
+    this.toolCtx = ctx;
+    if (ctx) this._collectTools();
+  }
+
   stop(): void {
     this.stopped = true;
+    // One last read before shutting down, so the record reflects the whole session and
+    // not just up to the final 30s tick. Fire-and-forget: the write is atomic.
+    this._collectTools();
     if (this.req) { try { this.req.destroy(); } catch (_) {} this.req = null; }
     if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = null; this._writeNow(); }
   }
 
   onUpdate(cb: (snap: Stats) => void): void { this._onUpdate = cb; }
+  onTools(cb: (usage: ToolUsage) => void): void { this._onTools = cb; }
   onWarn(cb: (msg: string) => void): void { this._onWarn = cb; }
+
+  // Re-read tool/skill usage from the store. Overlapping reads are skipped rather than
+  // queued — the next tick catches up, and a slow read must not stack up behind itself.
+  _collectTools(): void {
+    if (!this.toolCtx || this.toolsBusy) return;
+    this.toolsBusy = true;
+    collectToolUsage(this.toolCtx)
+      .then((usage) => {
+        if (!usage) return;
+        this.tools = usage;
+        if (this._onTools) { try { this._onTools(usage); } catch (_) {} }
+      })
+      .catch((e) => {
+        // A live store can be transiently locked; a warning once is enough.
+        if (!this.warnedTools) {
+          this.warnedTools = true;
+          if (this._onWarn) this._onWarn(`stats: could not read tool usage (${e && e.message ? e.message : e})`);
+        }
+      })
+      .finally(() => { this.toolsBusy = false; });
+  }
 
   _connect(): void {
     if (this.stopped) return;

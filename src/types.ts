@@ -184,6 +184,63 @@ export interface TestResult {
   error?: string | null;      // harness-level error (runner couldn't execute / parse)
 }
 
+// ── Tool usage ────────────────────────────────────────────────────────────────
+// What the agent actually reached for during a run. The whole point of the testbed
+// is whether the MCP servers and skills we hand the agent get *used*, so this is
+// recorded per run alongside tokens/cost. Read from opencode's SQLite store (the
+// `part` table's tool parts) — see src/capture/tool-usage.ts.
+
+// One tool, aggregated over the run.
+export interface ToolCallStat {
+  /** Raw tool name as opencode reports it ('read', 'igniteui-cli_get_doc'). */
+  tool: string;
+  kind: 'mcp' | 'skill' | 'builtin';
+  /** MCP server the tool belongs to; null for skills and built-ins. */
+  server: string | null;
+  /** Display name: the bare tool for MCP, the skill name for skills, else `tool`. */
+  name: string;
+  calls: number;
+  errors: number;
+  /** Summed wall-clock across all calls, when opencode reported start/end. */
+  durationMs: number;
+}
+
+// One invocation, in order. Capped (TIMELINE_CAP) so a long run can't bloat the record.
+export interface ToolEvent {
+  at: number; // epoch ms
+  tool: string;
+  kind: ToolCallStat['kind'];
+  name: string;
+  ok: boolean;
+  ms: number | null;
+}
+
+// `configured`/`installed` are what the run was *given*; `used` is what the agent
+// actually called. `unused` is the interesting column — an MCP server or skill that
+// was wired up but never invoked means the agent never discovered it.
+export interface ToolUsageSet {
+  configured: string[];
+  used: string[];
+  unused: string[];
+}
+
+export interface ToolUsage {
+  /** Which source this was read from — the SQLite store, or the log-line fallback. */
+  source: 'db' | 'log';
+  /** Total tool invocations, and how many ended in an error state. */
+  calls: number;
+  errors: number;
+  mcpCalls: number;
+  skillCalls: number;
+  /** Every tool the agent called, most-called first (all three kinds). */
+  tools: ToolCallStat[];
+  servers: ToolUsageSet;
+  skills: ToolUsageSet;
+  timeline: ToolEvent[];
+  /** Set when the store was found but unreadable / an unrecognized shape. */
+  warning?: string;
+}
+
 export interface HistoryRecord {
   id: string;
   startedAt: string;
@@ -201,6 +258,8 @@ export interface HistoryRecord {
   stats: Stats | null;
   screenshots: Screenshot[];
   tests: TestResult | null;
+  /** MCP tools + skills the agent invoked. null until collected (or if unavailable). */
+  tools: ToolUsage | null;
   logs: string[];
 }
 
@@ -240,6 +299,9 @@ export interface MatrixEntry {
   runId: string | null;
   logs?: string[];
   step?: string;
+  /** MCP tool / skill invocation counts, retained so a reload keeps showing them. */
+  mcpCalls?: number;
+  skillCalls?: number;
 }
 
 export interface MatrixState {
@@ -266,6 +328,17 @@ export interface RouteDiscovery {
   stateNav?: boolean;
 }
 
+// Everything src/capture/tool-usage.ts needs to scope a read to one run. The pipeline
+// hands this out (PipelineOpts.onToolContext) because only it knows which MCP servers
+// ended up enabled and which skills survived the prune/overlay stages.
+export interface ToolContext {
+  dataDir: string;
+  /** Ignore store entries older than this epoch ms (an interactive store is shared). */
+  since: number;
+  mcpServers: string[];
+  skillNames: string[];
+}
+
 export interface InteractiveResult {
   appPort: number;
   opencodePort: number;
@@ -280,4 +353,5 @@ export interface HeadlessResult {
   appReady: boolean;
   appError?: string;
   tests?: TestResult | null;
+  tools?: ToolUsage | null;
 }

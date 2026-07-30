@@ -8,9 +8,10 @@ import { translate } from '../mcp-translate.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
+import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import {
   APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, MCP_COMMAND_BY_CLASS,
-  LOCAL_SKILLS_DIR,
+  LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
@@ -23,7 +24,7 @@ import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
-import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats } from '../types.ts';
+import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext } from '../types.ts';
 
 export interface PipelineOpts {
   emit: Emit;
@@ -33,7 +34,17 @@ export interface PipelineOpts {
   artifactDir?: string | null;
   onChild?: ((child: ChildProcess) => void) | null;
   appDir?: string;
+  // Called once the agent is about to start, with what the tool-usage collector needs
+  // to scope a read to this run. Headless mode collects for itself (the agent is a
+  // one-shot); an interactive session hands this to the StatsCollector, which keeps
+  // polling for as long as `opencode web` is up. See src/capture/tool-usage.ts.
+  onToolContext?: ((ctx: ToolContext) => void) | null;
 }
+
+// Servers opencode will actually expose tools from: `translate` keeps deselected
+// servers in the block with `enabled:false`, and those tools never reach the agent.
+const activeMcpServers = (block: Record<string, any>): string[] =>
+  Object.entries(block).filter(([, def]) => !def || def.enabled !== false).map(([name]) => name);
 
 // Stages 1–4b are identical for an interactive session and a headless matrix entry.
 // Stage 5+ branches: interactive launches `opencode web` (long-lived); headless runs
@@ -44,10 +55,14 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR }: PipelineOpts,
+  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
+
+  // MCP servers the agent will actually be offered, recorded so the tool-usage report
+  // can say which of them were never called. Filled in by whichever configure branch runs.
+  let mcpServers: string[] = [];
 
   // Report every spawned child to `onChild` (matrix cancel kills whatever is current)
   // so Cancel works during scaffold/npm-install too, not only the agent step.
@@ -201,6 +216,7 @@ export async function runPipeline(
       }
     }
     writeOpencodeConfig(cfg, mcpBlock, appDir);
+    mcpServers = activeMcpServers(mcpBlock);
     emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
 
   } else {
@@ -283,6 +299,7 @@ export async function runPipeline(
       }
     }
     writeOpencodeConfig(cfg, mcp, appDir);
+    mcpServers = activeMcpServers(mcp);
     emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
   } // end if (configureStrategy !== 'none')
 
@@ -326,6 +343,19 @@ export async function runPipeline(
     }
   }
 
+  // The skill set is final once prune (4) and overlay (4b) have run, so this is the
+  // list to compare against what the agent actually invoked. Both dirs opencode loads
+  // from are scanned — with skills off, this is legitimately empty.
+  const skillNames = installedSkills(appDir);
+  if (skillNames.length || mcpServers.length) {
+    emit('log', `agent tooling: ${mcpServers.length} MCP server(s)${mcpServers.length ? ` (${mcpServers.join(', ')})` : ''}, ${skillNames.length} skill(s)`);
+  }
+  // Everything after this point in the store belongs to this run. An interactive store
+  // is shared across /api/run invocations in one container, so the collector needs a
+  // floor; a matrix entry's store is already private but the floor is harmless there.
+  const toolDataDir = dataDir || OPENCODE_DATA_DIR;
+  const agentSince = Date.now();
+
   // 5. Interactive only: launch the app dev server now (watch) and hand off the
   // live app. In headless/matrix mode we deliberately do NOT start the dev server
   // here — running it during the agent's edits triggers constant rebuilds across
@@ -347,6 +377,10 @@ export async function runPipeline(
     spawnWatcher('opencode', 'opencode',
       ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], appDir, ocEnv);
     await waitForPort(OPENCODE_PORT, 60000, emit);
+    // An interactive session has no end the pipeline can observe — `opencode web` keeps
+    // running and the user keeps prompting — so hand the collection context off to the
+    // StatsCollector, which re-reads the store on its reconcile tick.
+    if (onToolContext) onToolContext({ dataDir: toolDataDir, since: agentSince, mcpServers, skillNames });
     return { appPort: APP_PORT, opencodePort: OPENCODE_PORT };
   }
 
@@ -386,6 +420,22 @@ export async function runPipeline(
     emit('log', `warning: opencode stats failed (${e.message})`);
   }
 
+  // Which MCP tools and skills the agent actually reached for. The one-shot agent has
+  // exited, so its store is complete and quiescent — read it once, right here, before
+  // the dev server and screenshot stages can fail and skip past it.
+  let entryTools: HeadlessResult['tools'] = null;
+  try {
+    entryTools = await collectToolUsage({ dataDir: toolDataDir, since: agentSince, mcpServers, skillNames });
+    if (entryTools) {
+      emit('log', `tools: ${summarizeToolUsage(entryTools)}`);
+      if (entryTools.warning) emit('log', `warning: ${entryTools.warning}`);
+    } else {
+      emit('log', 'warning: no opencode store found; tool/skill usage not recorded');
+    }
+  } catch (e: any) {
+    emit('log', `warning: tool usage collection failed (${e.message})`);
+  }
+
   // 7. Now that edits are done, build the app once and screenshot every route.
   // Bail as soon as the build is known to have failed (the agent's edits often don't
   // compile) instead of waiting out the full timeout, and surface the build errors.
@@ -408,7 +458,7 @@ export async function runPipeline(
     await killWatcher('app'); await killWatcher('opencode');
     emit('step', { step: 'cleanup' });
     await cleanupAppDir(appDir, emit);
-    return { appPort: APP_PORT, stats: entryStats, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason };
+    return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason };
   }
   await sleep(Number(process.env.SCREENSHOT_SETTLE_MS || 5000));
   const disc = discoverRoutes(appDir, cfg.framework);
@@ -444,5 +494,5 @@ export async function runPipeline(
   // Prune heavy regenerable dirs from the kept entry (screenshots already saved).
   emit('step', { step: 'cleanup' });
   await cleanupAppDir(appDir, emit);
-  return { appPort: APP_PORT, stats: entryStats, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true, tests };
+  return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true, tests };
 }
