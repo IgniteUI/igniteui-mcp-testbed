@@ -63,6 +63,11 @@ export function recordRun(obj: any): void {
 
 export function startStats(cfg: RunConfig): void {
   if (stats) stats.stop();
+  // Bind the record id now instead of reading `currentRunId` when a callback fires: a
+  // collector outlives its run (stop() flushes asynchronously, and beginRun() moves
+  // currentRunId on while the previous collector is still ticking), so a live read
+  // writes the old session's numbers into the new run's record.
+  const runId = currentRunId;
   stats = new StatsCollector({
     port: OPENCODE_PORT,
     dir: WORK,
@@ -70,13 +75,13 @@ export function startStats(cfg: RunConfig): void {
     costAvailable: !cfg.customBaseUrl,
   });
   stats.onUpdate((snap: Stats) => {
-    history.updateStats(currentRunId, snap);
+    history.updateStats(runId, snap);
     statsSSE.broadcast(snap);
   });
   // Which MCP tools / skills the agent has invoked so far, refreshed on the collector's
   // reconcile tick for as long as the interactive session lives.
   stats.onTools((usage: ToolUsage) => {
-    history.updateTools(currentRunId, usage);
+    history.updateTools(runId, usage);
     statsSSE.broadcast({ type: 'tools', tools: usage });
   });
   stats.onWarn((msg: string) => console.error(msg));
@@ -84,11 +89,12 @@ export function startStats(cfg: RunConfig): void {
   stats.start();
 }
 
-// Record the pipeline's tool-collection context. Called during runPipeline (before
-// startStats), and forwarded to the collector if one is already live.
+// Record the pipeline's tool-collection context. Called during runPipeline, which is
+// always immediately followed by startStats() — so it is only parked here, never pushed
+// into `stats`: the only collector live at that moment belongs to the *previous* run,
+// and handing it this run's context would file this run's usage under that record.
 export function setToolContext(ctx: ToolContext | null): void {
   toolCtx = ctx;
-  if (stats) stats.setToolContext(ctx);
 }
 
 // Begin a fresh interactive run: reset progress state, remember the config, and

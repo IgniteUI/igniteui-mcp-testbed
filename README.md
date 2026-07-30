@@ -146,7 +146,9 @@ token/cost usage, test results, and embedded screenshots; openable directly from
 filesystem, no container needed, and served at
 `http://localhost:8080/history/reports/<matrixId>/report.html` while one runs) and a
 machine-readable **`summary.json`** (per-entry status / duration / stage timings /
-tokens / cost / test counts — what a CI job reads to see *which* combo regressed). A
+tokens / cost / test counts — what a CI job reads to see *which* combo regressed;
+`tokens` is the total, with the input/output/reasoning/cache split alongside it in
+`tokensBreakdown`, on both the per-entry objects and the matrix `totals`). A
 final console message says where they are and that the container can be stopped. Both
 are generated for UI-submitted matrices too; set `MATRIX_CONSOLE=1` to get the console
 mirror for those as well (e.g. to follow via `podman logs`).

@@ -27,6 +27,7 @@ interface HistoryGridRow {
   toolsState: string;
   msgs: number;
   tok: number;
+  tokTitle: string;
   costSort: number | null;
   costDisplay: string;
   durationMs: number | null;
@@ -148,6 +149,23 @@ function toolSummary(t: any): { display: string; sort: number; state: string } {
   return { display: `${t.mcpCalls} · ${t.skillCalls}`, sort, state };
 }
 
+// The input/output/reasoning/cache split is collected for every run (src/stats.ts for
+// interactive, src/capture/usage.ts for matrix) — the grid only has room for the total,
+// so the breakdown goes in the cell tooltip and the detail panel.
+const TOKEN_PARTS: Array<[string, string]> = [
+  ['Input', 'input'], ['Output', 'output'], ['Reasoning', 'reasoning'], ['Cache', 'cache'],
+];
+
+function tokenParts(t: any): Array<[string, number]> {
+  const tk = t || {};
+  return TOKEN_PARTS.map(([label, key]) => [label, Number(tk[key]) || 0]);
+}
+
+function tokenTitle(t: any): string {
+  if (!t || !t.total) return 'No token usage recorded';
+  return tokenParts(t).map(([label, v]) => `${label.toLowerCase()} ${fmt(v)}`).join(' · ');
+}
+
 // Tool calls are usually tens of milliseconds; fmtDur would render those as "0.1s".
 function fmtToolMs(ms: number): string {
   if (!ms) return '—';
@@ -241,6 +259,7 @@ function rowVals(r: any): HistoryGridRow {
     toolsState: tl.state,
     msgs: (stats.messages || {}).total || 0,
     tok: (stats.tokens || {}).total || 0,
+    tokTitle: tokenTitle(stats.tokens),
     costSort: cost,
     costDisplay: cost == null ? 'n/a' : `$${cost.toFixed(4)}`,
     durationMs: r.durationMs,
@@ -317,10 +336,17 @@ function bindGridTemplates() {
             ? timings.map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
             : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
+        <div><h4>Tokens</h4><dl>
+          ${stats
+            ? tokenParts(stats.tokens).map(([label, v]) => gridHtml`<dt>${label}</dt><dd>${fmt(v)}</dd>`)
+            : gridHtml`<dt>—</dt><dd></dd>`}
+          ${stats ? gridHtml`<dt>Total</dt><dd>${fmt((stats.tokens || {}).total)}</dd>` : gridHtml``}
+        </dl></div>
         <div><h4>Per model</h4><dl>
           ${perModel.length
             ? perModel.map(([m, pm]: [string, any]) =>
-                gridHtml`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
+                gridHtml`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok
+                  (${fmt(pm.tokens.input)} in / ${fmt(pm.tokens.output)} out)${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
             : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
         ${r.prompt
@@ -434,7 +460,10 @@ function bindGridTemplates() {
       }}></igc-rating>`;
   };
   $('#historyMsgs').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
-  $('#historyTokens').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
+  $('#historyTokens').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    return gridHtml`<span class="num-cell" title="${row.tokTitle}">${fmt(row.tok)}</span>`;
+  };
   $('#historyCost').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
   $('#historyDuration').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
   // Export the same human-readable duration as the cell shows, not the raw millisecond
@@ -770,7 +799,7 @@ function tpl() {
     <igc-column id="historyMcps" field="mcps" header="MCPs" resizable="true"></igc-column>
     <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="110px"></igc-column>
     <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" resizable="true" width="5%"></igc-column>
-    <igc-column id="historyTools" field="toolsSort" header="MCP·Skill" data-type="number" resizable="true" width="6%"></igc-column>
+    <igc-column id="historyTools" field="toolsSort" header="MCP·Skill" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
     <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="135px"></igc-column>
     <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%"></igc-column>
     <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>

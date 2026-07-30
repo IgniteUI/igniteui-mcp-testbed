@@ -185,6 +185,17 @@ function fmtDur(ms){if(ms==null)return'\u2014';if(ms<1000)return ms+'ms';if(ms<6
 function fmt(n){return n==null?'\u2014':Number(n).toLocaleString()}
 function stars(n){if(!n)return'\u2014';return'\u2605'.repeat(n)+'\u2606'.repeat(5-n)}
 function skillSummary(c){const xs=(c.excludedSkills||[]).length;const gen=c.skills?(xs?'default (-'+xs+')':'default'):null;if(c.overrideSkills){if(c.localSkillsOnly||!c.skills)return'local';return gen+' + local'}return gen||'off'}
+/* The token split is recorded for every run; the grid has room only for the total, so
+   the breakdown goes in the cell tooltip and the detail panel. */
+var TOKEN_PARTS=[['Input','input'],['Output','output'],['Reasoning','reasoning'],['Cache','cache']];
+function tokenParts(t){const tk=t||{};return TOKEN_PARTS.map(p=>[p[0],Number(tk[p[1]])||0])}
+function tokenTitle(t){if(!t||!t.total)return'No token usage recorded';
+  return tokenParts(t).map(p=>p[0].toLowerCase()+' '+fmt(p[1])).join(' · ')}
+function tokensBlock(r){const t=r.stats?.tokens;
+  if(!t)return'<div><h4>Tokens</h4><dl><dt>—</dt><dd></dd></dl></div>';
+  return'<div><h4>Tokens</h4><dl>'+
+    tokenParts(t).map(p=>'<dt>'+esc(p[0])+'</dt><dd>'+esc(fmt(p[1]))+'</dd>').join('')+
+    '<dt>Total</dt><dd>'+esc(fmt(t.total))+'</dd></dl></div>'}
 /* Tool calls are usually tens of ms; fmtDur would render those as "0.1s". */
 function fmtToolMs(ms){if(!ms)return'—';return ms<1000?Math.round(ms)+'ms':fmtDur(ms)}
 /* Colour the MCP·Skill cell by whether configured tooling actually got used. */
@@ -239,7 +250,7 @@ const COLS=[
   {field:'durationMs',    label:'Duration', val:r=>r.durationMs??-1,          cell:r=>'<span class="num-r">'+esc(fmtDur(r.durationMs))+'</span>'},
   {field:'rating',        label:'Rating',   val:r=>r.rating??-1,              cell:r=>'<span class="stars">'+esc(stars(r.rating))+'</span>'},
   {field:'_tools',        label:'MCP·Skill',val:r=>r.tools?r.tools.mcpCalls+r.tools.skillCalls/1000:-1,cell:r=>r.tools?'<span class="num-r '+toolState(r.tools)+'">'+r.tools.mcpCalls+' · '+r.tools.skillCalls+'</span>':'<span class="num-r none">—</span>'},
-  {field:'_tok',          label:'Tokens',   val:r=>r.stats?.tokens?.total??-1,cell:r=>'<span class="num-r">'+esc(fmt(r.stats?.tokens?.total))+'</span>'},
+  {field:'_tok',          label:'Tokens',   val:r=>r.stats?.tokens?.total??-1,cell:r=>'<span class="num-r" title="'+esc(tokenTitle(r.stats?.tokens))+'">'+esc(fmt(r.stats?.tokens?.total))+'</span>'},
   {field:'_cost',         label:'Cost (USD)',val:r=>r.stats?.cost?.available?r.stats.cost.amount:-1, cell:r=>'<span class="num-r">'+(r.stats?.cost?.available?'$'+r.stats.cost.amount.toFixed(4):'n/a')+'</span>'},
 ];
 
@@ -280,8 +291,9 @@ function renderDetail(r){
     '<dt>Completed</dt><dd>'+esc(completed)+'</dd>'+
     timings.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(fmtDur(v))+'</dd>').join('')+
     '</dl></div>'+
+    tokensBlock(r)+
     '<div><h4>Per model</h4><dl>'+
-    (perModel.length?perModel.map(([m,pm])=>'<dt style="overflow-wrap:anywhere">'+esc(m)+'</dt><dd>'+esc(fmt(pm.tokens?.total))+' tok'+(pm.cost?' &middot; $'+pm.cost.toFixed(4):'')+'</dd>').join(''):'<dt>\u2014</dt><dd></dd>')+
+    (perModel.length?perModel.map(([m,pm])=>'<dt style="overflow-wrap:anywhere">'+esc(m)+'</dt><dd>'+esc(fmt(pm.tokens?.total))+' tok ('+esc(fmt(pm.tokens?.input))+' in / '+esc(fmt(pm.tokens?.output))+' out)'+(pm.cost?' &middot; $'+pm.cost.toFixed(4):'')+'</dd>').join(''):'<dt>\u2014</dt><dd></dd>')+
     '</dl></div>'+
     toolsBlock(r)+promptHtml+shotsHtml+logsHtml+errHtml+matrixHtml+
     '</div>';

@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as history from '../history.ts';
 import { REPORTS_DIR } from '../config.ts';
-import type { HistoryRecord, MatrixEntry } from '../types.ts';
+import type { HistoryRecord, MatrixEntry, Tokens } from '../types.ts';
 
 // Render a static, self-contained HTML report for a settled matrix from its history
 // records. Written to REPORTS_DIR/<matrixId>/report.html (i.e. sessions/history/
@@ -35,6 +35,26 @@ const fmtToolMs = (ms: number): string => {
 
 const fmtTokens = (n: number | undefined): string =>
   n == null ? '—' : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+
+// input/output/reasoning/cache are recorded per run; the summary table has room only for
+// the total, so the split rides along as the cell's tooltip and in the entry heading.
+const TOKEN_PARTS: Array<[string, keyof Tokens]> = [
+  ['input', 'input'], ['output', 'output'], ['reasoning', 'reasoning'], ['cache', 'cache'],
+];
+
+const tokenSplit = (t: Tokens | undefined): string =>
+  !t || !t.total ? '—' : TOKEN_PARTS.map(([label, key]) => `${label} ${fmtTokens(t[key])}`).join(' · ');
+
+// Summed across a matrix's entries, for the header rollup and summary.json's totals.
+const sumTokens = (records: Array<HistoryRecord | null>): Tokens => {
+  const out: Tokens = { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 };
+  for (const r of records) {
+    const t = r?.stats?.tokens;
+    if (!t) continue;
+    for (const k of Object.keys(out) as Array<keyof Tokens>) out[k] += Number(t[k]) || 0;
+  }
+  return out;
+};
 
 const fmtCost = (r: HistoryRecord): string => {
   const c = r.stats?.cost;
@@ -105,6 +125,7 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
     ${pill(r.status)}
     <span class="muted">${fmtMs(r.durationMs)} · ${fmtTokens(r.stats?.tokens?.total)} tokens · ${esc(fmtCost(r))}</span>
   </h2>
+  <p class="muted">tokens: ${tokenSplit(r.stats?.tokens)}</p>
   ${r.error ? `<p class="error">${esc(r.error)}</p>` : ''}
   ${stages ? `<p class="stages">${stages}</p>` : ''}
   <p class="muted">tests: ${tests}</p>
@@ -128,7 +149,8 @@ export function writeMatrixReport(
   for (const r of records) { const s = r?.status || 'missing'; counts[s] = (counts[s] || 0) + 1; }
   const summary = Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(', ');
   const totalMs = records.reduce((acc, r) => acc + (r?.durationMs || 0), 0);
-  const totalTokens = records.reduce((acc, r) => acc + (r?.stats?.tokens?.total || 0), 0);
+  const tokenTotals = sumTokens(records);
+  const totalTokens = tokenTotals.total;
   const costs = records.filter((r) => r?.stats?.cost?.available);
   const totalCost = costs.reduce((acc, r) => acc + (r!.stats!.cost.amount || 0), 0);
   const generatedAt = new Date().toISOString();
@@ -144,7 +166,7 @@ export function writeMatrixReport(
   <td>${esc(e.platform)}</td><td>${esc(variantOf(e))}</td>
   <td>${pill(r?.status)}</td>
   <td class="num">${fmtMs(r?.durationMs)}</td>
-  <td class="num">${fmtTokens(r?.stats?.tokens?.total)}</td>
+  <td class="num" title="${esc(tokenSplit(r?.stats?.tokens))}">${fmtTokens(r?.stats?.tokens?.total)}</td>
   <td class="num">${r ? esc(fmtCost(r)) : '—'}</td>
   <td class="num">${r?.tests?.ran ? `${r.tests.passed}/${r.tests.total}` : '—'}</td>
   <td class="num">${r?.tools ? r.tools.mcpCalls : '—'}</td>
@@ -241,6 +263,7 @@ export function writeMatrixReport(
 </header>
 <main>
 <p class="meta">model <b>${esc(meta.model)}</b> · ${entries.length} entries — ${esc(summary)} · total run time <b>${fmtMs(totalMs)}</b> · <b>${fmtTokens(totalTokens)}</b> tokens${costs.length ? ` · <b>${totalCost.toFixed(4)} USD</b>` : ''}</p>
+<p class="meta">tokens: ${tokenSplit(tokenTotals)}</p>
 <p class="prompt">${esc(meta.prompt)}</p>
 ${promptImages.length ? `<p class="meta">prompt images: <b>${promptImages.map((n) => esc(n)).join('</b>, <b>')}</b></p>` : ''}
 <table>
@@ -269,6 +292,11 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
       allSucceeded: entries.length > 0 && records.every((r) => r?.status === 'success'),
       durationMs: totalMs,
       tokens: totalTokens,
+      // Additive: `tokens` stays the total so existing CI assertions keep working.
+      tokensBreakdown: {
+        input: tokenTotals.input, output: tokenTotals.output,
+        reasoning: tokenTotals.reasoning, cache: tokenTotals.cache,
+      },
       cost: costs.length ? { amount: totalCost, currency: 'USD' } : null,
     },
     entries: entries.map((e, i) => {
@@ -286,6 +314,12 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
         durationMs: r?.durationMs ?? null,
         stages: r?.stages?.timings || {},
         tokens: r?.stats?.tokens?.total ?? null,
+        tokensBreakdown: r?.stats?.tokens
+          ? {
+            input: r.stats.tokens.input, output: r.stats.tokens.output,
+            reasoning: r.stats.tokens.reasoning, cache: r.stats.tokens.cache,
+          }
+          : null,
         cost: r?.stats?.cost?.available ? r.stats!.cost.amount : null,
         tests: r?.tests
           ? { ran: r.tests.ran, ok: r.tests.ok, total: r.tests.total, passed: r.tests.passed, failed: r.tests.failed }
