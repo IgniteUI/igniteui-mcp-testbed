@@ -82,9 +82,9 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
     // reset below empties it. Its `value` setter only accepts '' (the file list is
     // read-only, like the native input), and clearing it needs an explicit re-render
     // for the component to drop the chosen-file names it shows.
-    const input = e.target as any;
-    const files: File[] = [...(input.files || [])];
-    try { input.value = ''; input.requestUpdate?.(); } catch (_) {}
+    const input = e.target as (EventTarget & { files?: FileList; value?: string; requestUpdate?: () => void }) | null;
+    const files: File[] = [...(input?.files || [])];
+    try { if (input) { input.value = ''; input.requestUpdate?.(); } } catch (_) {}
     if (!files.length) return;
     busy = true;
     note = `Uploading ${files.length} file(s)…`;
