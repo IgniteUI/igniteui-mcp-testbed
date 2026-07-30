@@ -25,6 +25,10 @@ export interface ImagePicker {
 let images: PromptImage[] = [];
 let dir = './prompt-images';
 let maxBytes = 10 * 1024 * 1024;
+// Per-run attachment cap (PROMPT_IMAGE_MAX_COUNT). The server enforces it too, but only
+// by dropping the extras into the run log after launch — so the picker holds the line
+// here and the count you see is the count the run sends.
+let maxCount = 8;
 let listError: string | null = null;
 const listeners = new Set<() => void>();
 
@@ -35,6 +39,10 @@ export async function refreshPromptImages(): Promise<void> {
     images = j.images || [];
     dir = j.dir || dir;
     if (j.maxBytes) maxBytes = j.maxBytes;
+    // Explicitly numeric, not truthy: 0 is a real setting (attachments off for this
+    // container) and must not fall through to the default cap, or the picker would show
+    // images as attached that the pipeline then drops.
+    if (typeof j.maxCount === 'number' && Number.isFinite(j.maxCount)) maxCount = Math.max(0, j.maxCount);
     listError = null;
   } catch {
     listError = 'Could not list prompt images.';
@@ -70,7 +78,15 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
   });
 
   function toggle(name: string) {
-    if (sel.has(name)) sel.delete(name); else sel.add(name);
+    if (sel.has(name)) {
+      sel.delete(name);
+    } else if (sel.size >= maxCount) {
+      note = `At most ${maxCount} image(s) per run — detach one before attaching another.`;
+      update();
+      return;
+    } else {
+      sel.add(name);
+    }
     note = null;
     update();
   }
@@ -82,9 +98,9 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
     // reset below empties it. Its `value` setter only accepts '' (the file list is
     // read-only, like the native input), and clearing it needs an explicit re-render
     // for the component to drop the chosen-file names it shows.
-    const input = e.target as any;
-    const files: File[] = [...(input.files || [])];
-    try { input.value = ''; input.requestUpdate?.(); } catch (_) {}
+    const input = e.target as (EventTarget & { files?: FileList; value?: string; requestUpdate?: () => void }) | null;
+    const files: File[] = [...(input?.files || [])];
+    try { if (input) { input.value = ''; input.requestUpdate?.(); } } catch (_) {}
     if (!files.length) return;
     busy = true;
     note = `Uploading ${files.length} file(s)…`;
@@ -105,10 +121,19 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
       }
     }
     busy = false;
-    // Refresh first (it prunes unknown selections), then attach what was just uploaded.
+    // Refresh first (it prunes unknown selections), then attach what was just uploaded —
+    // up to the cap. Anything past it is still stored on the host, just not attached.
     await refreshPromptImages();
-    for (const name of added) sel.add(name);
-    note = failed.length ? `Could not upload: ${failed.join(', ')}` : null;
+    const overflow: string[] = [];
+    for (const name of added) {
+      if (sel.size < maxCount) sel.add(name); else overflow.push(name);
+    }
+    const notes: string[] = [];
+    if (failed.length) notes.push(`Could not upload: ${failed.join(', ')}`);
+    if (overflow.length) {
+      notes.push(`uploaded but not attached (${maxCount}-image cap): ${overflow.join(', ')}`);
+    }
+    note = notes.length ? notes.join(' · ') : null;
     update();
   }
 
@@ -133,9 +158,11 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
     if (!images.length) {
       return `No images in ${dir} — drop mockups/screenshots in that folder on the host, or upload them here.`;
     }
-    return sel.size
-      ? `${sel.size}/${images.length} image(s) attached to the prompt — click a thumbnail again to detach it.`
-      : `${images.length} image(s) available — click to attach. None attached (text-only prompt).`;
+    if (!sel.size) {
+      return `${images.length} image(s) available — click to attach (max ${maxCount} per run). None attached (text-only prompt).`;
+    }
+    const cap = sel.size >= maxCount ? ` Cap of ${maxCount} per run reached.` : '';
+    return `${sel.size}/${images.length} image(s) attached to the prompt — click a thumbnail again to detach it.${cap}`;
   };
 
   const item = (img: PromptImage) => {
@@ -149,8 +176,17 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
       </button>`;
   };
 
+  // Cap of 0 = the container has attachments turned off. Render the picker as
+  // unavailable rather than letting images be selected that the pipeline would drop.
+  const off = () => maxCount <= 0;
+
   return {
-    tpl: () => html`
+    tpl: () => off() ? html`
+      <div class="img-picker">
+        <p class="note warn">⚠ Prompt images are turned off for this container
+        (<code>PROMPT_IMAGE_MAX_COUNT=0</code>) — nothing can be attached. Raise the cap and
+        restart to use them.</p>
+      </div>` : html`
       <div class="img-picker">
         <div class="img-strip" ?hidden=${!images.length}>
           ${repeat(images, (i) => i.name, item)}
@@ -175,10 +211,10 @@ export function createImagePicker(id: string, update: () => void): ImagePicker {
         API key. Free / keyless models (e.g. <code>opencode/big-pickle</code>) can't read images — they ignore or
         reject the attachment, so the run silently falls back to a text-only prompt.</p>
       </div>`,
-    selected: () => images.map((i) => i.name).filter((n) => sel.has(n)),
+    selected: () => (off() ? [] : images.map((i) => i.name).filter((n) => sel.has(n))),
     setSelected: (names: string[]) => {
       sel.clear();
-      for (const n of names) sel.add(n);
+      for (const n of names.slice(0, maxCount)) sel.add(n);
       update();
     },
   };
