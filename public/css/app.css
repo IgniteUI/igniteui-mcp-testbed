@@ -43,6 +43,7 @@ legend { font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0; }
 body { --ig-size: 1; }
 form igc-input { display:block; margin-top:.7rem; }
 igc-input::part(input) { font-family:var(--mono); font-size:.85rem; }
+form igc-combo { display:block; margin-top:.5rem; }
 igc-input::part(input)::placeholder,
 igc-textarea::part(input)::placeholder { color: var(--steel); opacity: 1; }
 igc-combo::part(label) { font-size:.85rem; }
