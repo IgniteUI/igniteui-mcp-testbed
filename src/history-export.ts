@@ -114,6 +114,21 @@ tr.run-row.expanded .chevron{transform:rotate(90deg)}
 .shot-fail{display:inline-block;padding:.4rem .5rem;font-size:.7rem;color:#ff9c8a;border:1px solid var(--line);border-radius:6px}
 .log-details summary{cursor:pointer;color:var(--steel);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;user-select:none}
 .log-pre{max-height:300px;overflow:auto;white-space:pre-wrap;font-family:var(--mono);font-size:.71rem;line-height:1.42;color:var(--steel);background:#050f0e;margin:.4rem 0 0;padding:.6rem .8rem;border:1px solid var(--line);border-radius:4px}
+/* MCP-tool / skill usage */
+.num-r.idle{color:var(--red);font-weight:600}
+.num-r.unused{color:var(--amber)}
+.num-r.none{color:var(--steel)}
+.tool-summary{margin:.1rem 0 .3rem;color:var(--ink)}
+.tool-warn{margin:.15rem 0;color:var(--amber)}
+.tool-lists{margin:.2rem 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.15rem .7rem}
+.tool-lists dt{color:var(--steel)}
+.tool-lists dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.tool-table{width:100%;border-collapse:collapse;margin:.4rem 0 0;font-size:.72rem}
+.tool-table th{text-align:left;color:var(--steel);font-weight:500;padding:.15rem .5rem .15rem 0}
+.tool-table td{padding:.1rem .5rem .1rem 0;color:var(--ink);overflow-wrap:anywhere}
+.tool-table tr.mcp td:first-child{color:var(--teal)}
+.tool-table tr.skill td:first-child{color:var(--green)}
+.tool-table tr.builtin td:first-child{color:var(--steel)}
 /* Lightbox */
 #lb{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center}
 #lb.open{display:flex}
@@ -170,6 +185,46 @@ function fmtDur(ms){if(ms==null)return'\u2014';if(ms<1000)return ms+'ms';if(ms<6
 function fmt(n){return n==null?'\u2014':Number(n).toLocaleString()}
 function stars(n){if(!n)return'\u2014';return'\u2605'.repeat(n)+'\u2606'.repeat(5-n)}
 function skillSummary(c){const xs=(c.excludedSkills||[]).length;const gen=c.skills?(xs?'default (-'+xs+')':'default'):null;if(c.overrideSkills){if(c.localSkillsOnly||!c.skills)return'local';return gen+' + local'}return gen||'off'}
+/* The token split is recorded for every run; the grid has room only for the total, so
+   the breakdown goes in the cell tooltip and the detail panel. */
+var TOKEN_PARTS=[['Input','input'],['Output','output'],['Reasoning','reasoning'],['Cache','cache']];
+function tokenParts(t){const tk=t||{};return TOKEN_PARTS.map(p=>[p[0],Number(tk[p[1]])||0])}
+function tokenTitle(t){if(!t||!t.total)return'No token usage recorded';
+  return tokenParts(t).map(p=>p[0].toLowerCase()+' '+fmt(p[1])).join(' · ')}
+function tokensBlock(r){const t=r.stats?.tokens;
+  if(!t)return'<div><h4>Tokens</h4><dl><dt>—</dt><dd></dd></dl></div>';
+  return'<div><h4>Tokens</h4><dl>'+
+    tokenParts(t).map(p=>'<dt>'+esc(p[0])+'</dt><dd>'+esc(fmt(p[1]))+'</dd>').join('')+
+    '<dt>Total</dt><dd>'+esc(fmt(t.total))+'</dd></dl></div>'}
+/* Tool calls are usually tens of ms; fmtDur would render those as "0.1s". */
+function fmtToolMs(ms){if(!ms)return'—';return ms<1000?Math.round(ms)+'ms':fmtDur(ms)}
+/* Colour the MCP·Skill cell by whether configured tooling actually got used. */
+function toolState(u){const hm=(u.servers?.configured||[]).length>0,hs=(u.skills?.configured||[]).length>0;
+  if((hm&&!u.mcpCalls)||(hs&&!u.skillCalls))return'idle';
+  if((u.servers?.unused||[]).length||(u.skills?.unused||[]).length)return'unused';return'ok'}
+function toolNames(tools,kind){const of=(tools||[]).filter(t=>t.kind===kind);
+  if(!of.length)return'none';return of.map(t=>esc(t.name)+(t.calls>1?' ×'+t.calls:'')).join(', ')}
+function toolsBlock(r){const u=r.tools;
+  if(!u)return'<div class="full-col"><h4>Tool usage</h4><div class="detail-note">Not recorded for this run.</div></div>';
+  const us=u.servers?.unused||[],uk=u.skills?.unused||[];
+  const noMcp=(u.servers?.configured||[]).length>0&&!u.mcpCalls;
+  const noSkills=(u.skills?.configured||[]).length>0&&!u.skillCalls;
+  const rows=(u.tools||[]).map(t=>'<tr class="'+esc(t.kind)+'"><td>'+esc(t.kind)+'</td><td>'+esc(t.server||'—')+'</td><td>'+esc(t.name)+'</td>'+
+    '<td class="num-r">'+t.calls+'</td><td class="num-r">'+(t.errors||'—')+'</td><td class="num-r">'+esc(fmtToolMs(t.durationMs))+'</td></tr>').join('');
+  return'<div class="full-col"><h4>Tool usage</h4>'+
+    '<div class="tool-summary">'+u.calls+' tool call'+(u.calls===1?'':'s')+' &middot; <strong>'+u.mcpCalls+'</strong> MCP &middot; <strong>'+u.skillCalls+'</strong> skill'+(u.errors?' &middot; '+u.errors+' errored':'')+'</div>'+
+    '<dl class="tool-lists"><dt>MCP tools</dt><dd>'+toolNames(u.tools,'mcp')+'</dd>'+
+    '<dt>Skills</dt><dd>'+toolNames(u.tools,'skill')+'</dd>'+
+    '<dt>MCP servers</dt><dd>'+esc((u.servers?.configured||[]).join(', ')||'none configured')+'</dd></dl>'+
+    (noMcp?'<div class="tool-warn">The agent never called any MCP tool, though '+esc(us.join(', '))+' '+(us.length===1?'was':'were')+' configured.</div>':
+      us.length?'<div class="tool-warn">MCP server'+(us.length===1?'':'s')+' never called: '+esc(us.join(', '))+'</div>':'')+
+    (noSkills?'<div class="tool-warn">The agent never invoked a skill, though '+(u.skills?.configured||[]).length+' were installed.</div>':
+      uk.length?'<div class="tool-warn">'+uk.length+' of '+(u.skills?.configured||[]).length+' skills never invoked: '+esc(uk.join(', '))+'</div>':'')+
+    (rows?'<details class="log-details"><summary>All '+(u.tools||[]).length+' tools</summary><table class="tool-table">'+
+      '<thead><tr><th>Kind</th><th>Server</th><th>Tool</th><th class="num-r">Calls</th><th class="num-r">Errors</th><th class="num-r">Time</th></tr></thead>'+
+      '<tbody>'+rows+'</tbody></table></details>':'')+
+    (u.warning?'<div class="detail-note">'+esc(u.warning)+'</div>':'')+
+    '</div>'}
 function matrixColor(mid){if(!mid)return null;let h=0;for(let i=0;i<mid.length;i++)h=(h*31+mid.charCodeAt(i))>>>0;return'hsl('+(h%360)+',55%,62%)'}
 
 // ---- Lightbox ----
@@ -194,11 +249,12 @@ const COLS=[
   {field:'status',        label:'Status',   val:r=>r.status||'',              cell:r=>'<span class="pill '+esc(r.status)+'">'+esc(r.status)+'</span>'},
   {field:'durationMs',    label:'Duration', val:r=>r.durationMs??-1,          cell:r=>'<span class="num-r">'+esc(fmtDur(r.durationMs))+'</span>'},
   {field:'rating',        label:'Rating',   val:r=>r.rating??-1,              cell:r=>'<span class="stars">'+esc(stars(r.rating))+'</span>'},
-  {field:'_tok',          label:'Tokens',   val:r=>r.stats?.tokens?.total??-1,cell:r=>'<span class="num-r">'+esc(fmt(r.stats?.tokens?.total))+'</span>'},
+  {field:'_tools',        label:'MCP·Skill',val:r=>r.tools?r.tools.mcpCalls+r.tools.skillCalls/1000:-1,cell:r=>r.tools?'<span class="num-r '+toolState(r.tools)+'">'+r.tools.mcpCalls+' · '+r.tools.skillCalls+'</span>':'<span class="num-r none">—</span>'},
+  {field:'_tok',          label:'Tokens',   val:r=>r.stats?.tokens?.total??-1,cell:r=>'<span class="num-r" title="'+esc(tokenTitle(r.stats?.tokens))+'">'+esc(fmt(r.stats?.tokens?.total))+'</span>'},
   {field:'_cost',         label:'Cost (USD)',val:r=>r.stats?.cost?.available?r.stats.cost.amount:-1, cell:r=>'<span class="num-r">'+(r.stats?.cost?.available?'$'+r.stats.cost.amount.toFixed(4):'n/a')+'</span>'},
 ];
 
-function getFilter(r){return[r.config?.framework,r.config?.models?.join(' '),r.status,r.matrixId,r.id,r.prompt,(r.config?.enabledMcps||[]).join(' ')].join(' ').toLowerCase()}
+function getFilter(r){return[r.config?.framework,r.config?.models?.join(' '),r.status,r.matrixId,r.id,r.prompt,(r.config?.enabledMcps||[]).join(' '),(r.tools?.tools||[]).map(t=>t.name).join(' ')].join(' ').toLowerCase()}
 
 function renderDetail(r){
   const c=r.config,st=r.stats,stg=r.stages||{};
@@ -235,10 +291,11 @@ function renderDetail(r){
     '<dt>Completed</dt><dd>'+esc(completed)+'</dd>'+
     timings.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(fmtDur(v))+'</dd>').join('')+
     '</dl></div>'+
+    tokensBlock(r)+
     '<div><h4>Per model</h4><dl>'+
-    (perModel.length?perModel.map(([m,pm])=>'<dt style="overflow-wrap:anywhere">'+esc(m)+'</dt><dd>'+esc(fmt(pm.tokens?.total))+' tok'+(pm.cost?' &middot; $'+pm.cost.toFixed(4):'')+'</dd>').join(''):'<dt>\u2014</dt><dd></dd>')+
+    (perModel.length?perModel.map(([m,pm])=>'<dt style="overflow-wrap:anywhere">'+esc(m)+'</dt><dd>'+esc(fmt(pm.tokens?.total))+' tok ('+esc(fmt(pm.tokens?.input))+' in / '+esc(fmt(pm.tokens?.output))+' out)'+(pm.cost?' &middot; $'+pm.cost.toFixed(4):'')+'</dd>').join(''):'<dt>\u2014</dt><dd></dd>')+
     '</dl></div>'+
-    promptHtml+shotsHtml+logsHtml+errHtml+matrixHtml+
+    toolsBlock(r)+promptHtml+shotsHtml+logsHtml+errHtml+matrixHtml+
     '</div>';
 }
 

@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as history from '../history.ts';
 import { REPORTS_DIR } from '../config.ts';
-import type { HistoryRecord, MatrixEntry } from '../types.ts';
+import type { HistoryRecord, MatrixEntry, Tokens } from '../types.ts';
 
 // Render a static, self-contained HTML report for a settled matrix from its history
 // records. Written to REPORTS_DIR/<matrixId>/report.html (i.e. sessions/history/
@@ -26,8 +26,35 @@ const fmtMs = (ms: number | null | undefined): string => {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
+// Tool calls are usually tens of milliseconds, which fmtMs would flatten to "0s".
+const fmtToolMs = (ms: number): string => {
+  if (!ms) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return fmtMs(ms);
+};
+
 const fmtTokens = (n: number | undefined): string =>
   n == null ? '—' : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+
+// input/output/reasoning/cache are recorded per run; the summary table has room only for
+// the total, so the split rides along as the cell's tooltip and in the entry heading.
+const TOKEN_PARTS: Array<[string, keyof Tokens]> = [
+  ['input', 'input'], ['output', 'output'], ['reasoning', 'reasoning'], ['cache', 'cache'],
+];
+
+const tokenSplit = (t: Tokens | undefined): string =>
+  !t || !t.total ? '—' : TOKEN_PARTS.map(([label, key]) => `${label} ${fmtTokens(t[key])}`).join(' · ');
+
+// Summed across a matrix's entries, for the header rollup and summary.json's totals.
+const sumTokens = (records: Array<HistoryRecord | null>): Tokens => {
+  const out: Tokens = { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 };
+  for (const r of records) {
+    const t = r?.stats?.tokens;
+    if (!t) continue;
+    for (const k of Object.keys(out) as Array<keyof Tokens>) out[k] += Number(t[k]) || 0;
+  }
+  return out;
+};
 
 const fmtCost = (r: HistoryRecord): string => {
   const c = r.stats?.cost;
@@ -42,6 +69,39 @@ const pill = (status: string | undefined): string => {
 };
 
 const variantOf = (e: MatrixEntry): string => e.variantLabel || '—';
+
+// "get_doc ×3, search_api" — the per-tool call list for one kind.
+const toolList = (r: HistoryRecord | null, kind: 'mcp' | 'skill'): string => {
+  const tools = (r?.tools?.tools || []).filter((t) => t.kind === kind);
+  if (!tools.length) return 'none';
+  return tools.map((t) => `${esc(t.name)}${t.calls > 1 ? ` &times;${t.calls}` : ''}`).join(', ');
+};
+
+// The tool/skill block for one entry. This is the comparison the matrix exists to make:
+// two variants can both build and still differ entirely in whether the agent reached for
+// the MCP servers and skills it was given.
+function toolsSection(r: HistoryRecord): string {
+  const u = r.tools;
+  if (!u) return '<p class="muted">tool usage: not recorded</p>';
+  const rows = u.tools.map((t) => `<tr>
+  <td>${esc(t.kind)}</td><td>${esc(t.server || '—')}</td><td>${esc(t.name)}</td>
+  <td class="num">${t.calls}</td><td class="num">${t.errors || '—'}</td><td class="num">${fmtToolMs(t.durationMs || 0)}</td>
+</tr>`).join('\n');
+  const unusedServers = u.servers.unused.length
+    ? `<p class="warn">MCP servers configured but never called: <b>${u.servers.unused.map(esc).join('</b>, <b>')}</b></p>` : '';
+  const unusedSkills = u.skills.unused.length
+    ? `<details><summary>${u.skills.unused.length} of ${u.skills.configured.length} skills never invoked</summary><p class="muted">${u.skills.unused.map(esc).join(', ')}</p></details>` : '';
+  return `<div class="tools">
+  <p class="muted">${u.calls} tool calls · <b>${u.mcpCalls}</b> MCP · <b>${u.skillCalls}</b> skill${u.errors ? ` · ${u.errors} errored` : ''}${u.source === 'log' ? ' · from log (no timings)' : ''}</p>
+  <p class="muted">MCP tools: ${toolList(r, 'mcp')}</p>
+  <p class="muted">skills: ${toolList(r, 'skill')}</p>
+  ${unusedServers}
+  ${unusedSkills}
+  ${rows ? `<details><summary>all ${u.tools.length} tools</summary><table class="tools-table">
+<thead><tr><th>Kind</th><th>Server</th><th>Tool</th><th class="num">Calls</th><th class="num">Err</th><th class="num">Time</th></tr></thead>
+<tbody>${rows}</tbody></table></details>` : ''}
+</div>`;
+}
 
 function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
   if (!r) return `<section class="entry"><h2>#${e.index + 1} ${esc(e.platform)} · ${esc(variantOf(e))}</h2><p class="muted">history record missing</p></section>`;
@@ -65,9 +125,11 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
     ${pill(r.status)}
     <span class="muted">${fmtMs(r.durationMs)} · ${fmtTokens(r.stats?.tokens?.total)} tokens · ${esc(fmtCost(r))}</span>
   </h2>
+  <p class="muted">tokens: ${tokenSplit(r.stats?.tokens)}</p>
   ${r.error ? `<p class="error">${esc(r.error)}</p>` : ''}
   ${stages ? `<p class="stages">${stages}</p>` : ''}
   <p class="muted">tests: ${tests}</p>
+  ${toolsSection(r)}
   ${failures ? `<ul class="failures">${failures}</ul>` : ''}
   ${shots ? `<div class="shot-strip">${shots}</div>` : '<p class="muted">no screenshots</p>'}
   ${logTail ? `<details><summary>log tail (${Math.min(60, (r.logs || []).length)} of ${(r.logs || []).length} lines)</summary><pre class="console">${esc(logTail)}</pre></details>` : ''}
@@ -87,7 +149,8 @@ export function writeMatrixReport(
   for (const r of records) { const s = r?.status || 'missing'; counts[s] = (counts[s] || 0) + 1; }
   const summary = Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(', ');
   const totalMs = records.reduce((acc, r) => acc + (r?.durationMs || 0), 0);
-  const totalTokens = records.reduce((acc, r) => acc + (r?.stats?.tokens?.total || 0), 0);
+  const tokenTotals = sumTokens(records);
+  const totalTokens = tokenTotals.total;
   const costs = records.filter((r) => r?.stats?.cost?.available);
   const totalCost = costs.reduce((acc, r) => acc + (r!.stats!.cost.amount || 0), 0);
   const generatedAt = new Date().toISOString();
@@ -103,9 +166,11 @@ export function writeMatrixReport(
   <td>${esc(e.platform)}</td><td>${esc(variantOf(e))}</td>
   <td>${pill(r?.status)}</td>
   <td class="num">${fmtMs(r?.durationMs)}</td>
-  <td class="num">${fmtTokens(r?.stats?.tokens?.total)}</td>
+  <td class="num" title="${esc(tokenSplit(r?.stats?.tokens))}">${fmtTokens(r?.stats?.tokens?.total)}</td>
   <td class="num">${r ? esc(fmtCost(r)) : '—'}</td>
   <td class="num">${r?.tests?.ran ? `${r.tests.passed}/${r.tests.total}` : '—'}</td>
+  <td class="num">${r?.tools ? r.tools.mcpCalls : '—'}</td>
+  <td class="num">${r?.tools ? r.tools.skillCalls : '—'}</td>
   <td class="num">${(r?.screenshots || []).filter((s) => s.ok).length}</td>
 </tr>`;
   }).join('\n');
@@ -181,6 +246,11 @@ export function writeMatrixReport(
   details summary { cursor:pointer; color:var(--steel); font-family:var(--mono); font-size:.72rem;
                     letter-spacing:.1em; text-transform:uppercase; }
   details summary:hover { color:var(--ink); }
+  .tools { margin:.4rem 0; }
+  .tools p { margin:.15rem 0; }
+  .tools .warn { color:var(--amber); font-family:var(--mono); font-size:.74rem; }
+  .tools-table { margin:.4rem 0 0; font-size:.74rem; }
+  .tools-table th { text-transform:none; letter-spacing:0; }
 </style>
 </head>
 <body>
@@ -193,10 +263,11 @@ export function writeMatrixReport(
 </header>
 <main>
 <p class="meta">model <b>${esc(meta.model)}</b> · ${entries.length} entries — ${esc(summary)} · total run time <b>${fmtMs(totalMs)}</b> · <b>${fmtTokens(totalTokens)}</b> tokens${costs.length ? ` · <b>${totalCost.toFixed(4)} USD</b>` : ''}</p>
+<p class="meta">tokens: ${tokenSplit(tokenTotals)}</p>
 <p class="prompt">${esc(meta.prompt)}</p>
 ${promptImages.length ? `<p class="meta">prompt images: <b>${promptImages.map((n) => esc(n)).join('</b>, <b>')}</b></p>` : ''}
 <table>
-<thead><tr><th>#</th><th>Platform</th><th>Variant</th><th>Status</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th><th class="num">Tests</th><th class="num">Shots</th></tr></thead>
+<thead><tr><th>#</th><th>Platform</th><th>Variant</th><th>Status</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th><th class="num">Tests</th><th class="num">MCP</th><th class="num">Skill</th><th class="num">Shots</th></tr></thead>
 <tbody>
 ${rows}
 </tbody>
@@ -221,6 +292,11 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
       allSucceeded: entries.length > 0 && records.every((r) => r?.status === 'success'),
       durationMs: totalMs,
       tokens: totalTokens,
+      // Additive: `tokens` stays the total so existing CI assertions keep working.
+      tokensBreakdown: {
+        input: tokenTotals.input, output: tokenTotals.output,
+        reasoning: tokenTotals.reasoning, cache: tokenTotals.cache,
+      },
       cost: costs.length ? { amount: totalCost, currency: 'USD' } : null,
     },
     entries: entries.map((e, i) => {
@@ -238,9 +314,32 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
         durationMs: r?.durationMs ?? null,
         stages: r?.stages?.timings || {},
         tokens: r?.stats?.tokens?.total ?? null,
+        tokensBreakdown: r?.stats?.tokens
+          ? {
+            input: r.stats.tokens.input, output: r.stats.tokens.output,
+            reasoning: r.stats.tokens.reasoning, cache: r.stats.tokens.cache,
+          }
+          : null,
         cost: r?.stats?.cost?.available ? r.stats!.cost.amount : null,
         tests: r?.tests
           ? { ran: r.tests.ran, ok: r.tests.ok, total: r.tests.total, passed: r.tests.passed, failed: r.tests.failed }
+          : null,
+        // Which tooling the agent actually exercised — the per-variant comparison a CI
+        // consumer wants alongside pass/fail (a green run that never called the MCP
+        // server proves the app builds, not that the toolchain works).
+        tools: r?.tools
+          ? {
+            calls: r.tools.calls,
+            errors: r.tools.errors,
+            mcpCalls: r.tools.mcpCalls,
+            skillCalls: r.tools.skillCalls,
+            mcp: r.tools.tools.filter((t) => t.kind === 'mcp')
+              .map((t) => ({ server: t.server, tool: t.name, calls: t.calls, errors: t.errors })),
+            skills: r.tools.tools.filter((t) => t.kind === 'skill')
+              .map((t) => ({ skill: t.name, calls: t.calls })),
+            serversUnused: r.tools.servers.unused,
+            skillsUnused: r.tools.skills.unused,
+          }
           : null,
         screenshots: {
           ok: (r?.screenshots || []).filter((s) => s.ok).length,

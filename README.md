@@ -146,7 +146,9 @@ token/cost usage, test results, and embedded screenshots; openable directly from
 filesystem, no container needed, and served at
 `http://localhost:8080/history/reports/<matrixId>/report.html` while one runs) and a
 machine-readable **`summary.json`** (per-entry status / duration / stage timings /
-tokens / cost / test counts — what a CI job reads to see *which* combo regressed). A
+tokens / cost / test counts — what a CI job reads to see *which* combo regressed;
+`tokens` is the total, with the input/output/reasoning/cache split alongside it in
+`tokensBreakdown`, on both the per-entry objects and the matrix `totals`). A
 final console message says where they are and that the container can be stopped. Both
 are generated for UI-submitted matrices too; set `MATRIX_CONSOLE=1` to get the console
 mirror for those as well (e.g. to follow via `podman logs`).
@@ -296,6 +298,53 @@ Accepted: `.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`, `.bmp`, `.avif`. Tunables:
 attached set is recorded per run in History (with thumbnails in the detail panel) and in a
 matrix's `report.html` / `summary.json`. See
 [`prompt-images/README.md`](prompt-images/README.md) for the full reference.
+
+## Tool & skill usage
+
+Every run records **which MCP tools the agent called and which skills it loaded**. This is
+the metric the testbed exists to produce: an MCP server can be configured perfectly and a
+run can finish green without the agent ever reaching for it, and that is a completely
+different result from one where it called `get_api_reference` twelve times. Tokens and cost
+tell you how hard the agent worked; this tells you *what it worked with*.
+
+It is collected from opencode's own store (`<data dir>/opencode/opencode.db`) after the
+agent finishes, and needs no configuration — there is nothing to switch on.
+
+**What's recorded per run:**
+
+| | |
+| --- | --- |
+| **MCP tools** | every tool call, grouped by server and tool name, with call counts, error counts, and total time |
+| **Skills** | every skill the agent loaded, by name, with how many times |
+| **Built-in tools** | `read` / `write` / `edit` / `bash` / `grep` / … , for context on the shape of the run |
+| **Never used** | MCP servers that were configured but never called, and installed skills that were never invoked |
+| **Timeline** | the first 500 calls in order, so you can see *when* a skill was loaded relative to the edits |
+
+**Where to see it:**
+
+- **History grid** — an `MCP·Skill` column showing `<mcp calls> · <skill invocations>`.
+  It turns **amber** when some configured tooling went unused and **red** when the agent
+  never touched a configured MCP server or an installed skill at all. Sortable, so
+  "which variants ignored the MCP server" is one click.
+- **History detail panel** — the per-tool breakdown, the never-used lists, and a full
+  table of every tool with counts, errors, and timings.
+- **Matrix `report.html` / `summary.json`** — `MCP` and `Skill` columns in the per-entry
+  table plus a tool block per entry. `summary.json` carries the structured lists
+  (`tools.mcp`, `tools.skills`, `tools.serversUnused`, `tools.skillsUnused`) so CI can
+  assert *"the igniteui MCP server was actually exercised"*, not just that the app built.
+- **Run log** — a one-line summary (`tools: 81 tool call(s) · MCP: 2 (create_theme,
+  detect_platform) · skills: 3 (…) · MCP servers never called: igniteui-cli`).
+
+An interactive session has no end the pipeline can observe, so its usage is refreshed on
+the stats collector's 30-second tick for as long as `opencode web` is up (rather than
+written once at the end like a matrix entry's).
+
+> Both opencode's schema and its tool naming are version-dependent. If the SQLite store
+> can't be read, the collector falls back to parsing the permission lines in
+> `<data dir>/opencode/log/*.log` — that still answers "was this server/skill used", but
+> without per-call timings or error status, and the record is marked `source: "log"`. If
+> neither is readable the run's `tools` stays `null` rather than reporting a misleading
+> zero. See [`src/capture/tool-usage.ts`](src/capture/tool-usage.ts).
 
 ## Verification tests
 

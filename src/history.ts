@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult } from './types.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage } from './types.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -117,6 +117,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     stats: null,
     screenshots: [], // [{ route, file, ok, error }]
     tests: null, // Playwright verification outcome (headless/matrix only)
+    tools: null, // MCP tools + skills the agent invoked (src/capture/tool-usage.ts)
     logs: [], // streamed pipeline log lines, retained for post-run inspection
   };
   writeAtomic(id, record);
@@ -131,10 +132,11 @@ export interface FinishOpts {
   finishedAt?: string;
   screenshots?: Screenshot[];
   tests?: TestResult | null;
+  tools?: ToolUsage | null;
   logs?: string[];
 }
 
-export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, tests, logs }: FinishOpts = {}): HistoryRecord | null {
+export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, tests, tools, logs }: FinishOpts = {}): HistoryRecord | null {
   return update(id, (r) => {
     r.status = status || 'success';
     r.error = error || null;
@@ -144,6 +146,7 @@ export function finish(id: string, { status, error, completed, timings, finished
     if (timings) r.stages.timings = timings;
     if (Array.isArray(screenshots)) r.screenshots = screenshots;
     if (tests !== undefined) r.tests = tests;
+    if (tools !== undefined) r.tools = tools;
     if (Array.isArray(logs)) r.logs = logs.slice();
   });
 }
@@ -158,6 +161,13 @@ export function markRunning(id: string | null): HistoryRecord | null {
 export function updateStats(id: string | null, snapshot: Stats | null): HistoryRecord | null {
   if (!id || !snapshot) return null;
   return update(id, (r) => { r.stats = snapshot; });
+}
+
+// Tool/skill usage accrues while the agent works, so (like stats) an interactive run's
+// record is refreshed repeatedly as its session goes on rather than written once.
+export function updateTools(id: string | null, usage: ToolUsage | null): HistoryRecord | null {
+  if (!id || !usage) return null;
+  return update(id, (r) => { r.tools = usage; });
 }
 
 export function addModel(id: string | null, model: string): HistoryRecord | null {

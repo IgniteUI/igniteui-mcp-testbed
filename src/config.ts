@@ -64,6 +64,10 @@ export const APP_READY_TIMEOUT_MS = Number(process.env.APP_READY_TIMEOUT_MS || 6
 // running `opencode web` share one data dir and the usage data survives the
 // ephemeral container. opencode honours XDG_DATA_HOME for its storage location.
 process.env.XDG_DATA_HOME = process.env.XDG_DATA_HOME || path.join(WORK, '.opencode-data');
+// Where that store ended up. Matrix entries override it per entry (see matrix.ts's
+// `dataDir`); an interactive session uses this one, and the tool-usage collector reads
+// `<dir>/opencode/opencode.db` out of it (src/capture/tool-usage.ts).
+export const OPENCODE_DATA_DIR = process.env.XDG_DATA_HOME as string;
 
 // Reliable launch commands for the known MCP servers, run from globally-installed
 // packages (see Containerfile) instead of the `npx` invocations that cold-fetch

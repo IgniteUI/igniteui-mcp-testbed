@@ -154,17 +154,26 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       const outcomeErr = status === 'build-error' ? (result.appError || 'app build failed')
         : status === 'test-failed' ? (tests?.error || `${tests?.failed} test(s) failed`)
         : null;
-      history.finish(runId, { status, error: outcomeErr, completed, timings, screenshots: result.screenshots || [], tests, logs: entry.logs || [] });
+      const tools = result.tools || null;
+      history.finish(runId, { status, error: outcomeErr, completed, timings, screenshots: result.screenshots || [], tests, tools, logs: entry.logs || [] });
       entry.status = status;
+      // Surfaced on the entry so the Matrix tab shows which tooling was exercised
+      // without opening History — the point of comparison between variants.
+      if (tools) {
+        entry.mcpCalls = tools.mcpCalls;
+        entry.skillCalls = tools.skillCalls;
+      }
       // Retain the summary label so a reload shows the outcome, not the last live step.
       if (status === 'success') {
         const shots = `${(result.screenshots || []).filter((s) => s.ok).length} shots`;
-        entry.step = tests && tests.ran ? `${shots} · ${tests.passed}/${tests.total} tests` : shots;
+        const parts = [tests && tests.ran ? `${shots} · ${tests.passed}/${tests.total} tests` : shots];
+        if (tools) parts.push(`${tools.mcpCalls} mcp · ${tools.skillCalls} skill`);
+        entry.step = parts.join(' · ');
       } else if (status === 'build-error') entry.step = 'build failed';
       else if (status === 'test-failed') entry.step = tests ? `tests failed (${tests.failed}/${tests.total})` : 'tests failed';
       broadcast({
         type: 'entry-done', index: i, status, runId,
-        screenshots: result.screenshots || [], stats: result.stats || null, tests, error: outcomeErr,
+        screenshots: result.screenshots || [], stats: result.stats || null, tests, tools, error: outcomeErr,
       });
     } catch (err: any) {
       closeStep();

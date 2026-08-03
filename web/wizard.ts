@@ -36,6 +36,7 @@ interface WizardState {
   appUrl: string;
   redirect: string;
   stats: any | null;
+  tools: any | null;
   statsLive: boolean;
   usageText: string;
 }
@@ -58,6 +59,7 @@ const st: WizardState = {
   appUrl: '#',
   redirect: '',
   stats: null,
+  tools: null,
   statsLive: false,
   usageText: 'No stats yet — run the agent, then Refresh.',
 };
@@ -406,8 +408,18 @@ let statsES: EventSource | null = null;
 function startStatsStream() {
   if (statsES) statsES.close();
   statsES = new EventSource('/api/stats/stream');
+  // Two payload shapes share this channel: the StatsCollector's snapshot (messages /
+  // tokens / cost, untagged) and the tool-usage read it does on the same tick
+  // (`type:'tools'`). Discriminate — assigning a tools payload to `st.stats` blanks the
+  // whole panel until the next snapshot arrives.
   statsES.onmessage = (e) => {
-    try { st.stats = JSON.parse(e.data); st.statsLive = true; update(); } catch {}
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.type === 'tools') st.tools = msg.tools;
+      else st.stats = msg;
+      st.statsLive = true;
+      update();
+    } catch {}
   };
   statsES.onerror = () => { st.statsLive = false; update(); };
 }
@@ -423,6 +435,7 @@ async function onSwapModel() {
 function statsRows() {
   const s = st.stats || {};
   const m = s.messages || {}, t = s.tokens || {}, c = s.cost || {};
+  const u = st.tools;
   const dash = (v: any) => (st.stats ? v : '—');
   return html`
     <tr><th>Messages</th><td>${dash(`${fmt(m.total)} (${fmt(m.user)} user / ${fmt(m.assistant)} assistant)`)}</td></tr>
@@ -431,7 +444,10 @@ function statsRows() {
     <tr><th>Reasoning</th><td>${dash(fmt(t.reasoning))}</td></tr>
     <tr><th>Cache</th><td>${dash(fmt(t.cache))}</td></tr>
     <tr><th>Total tokens</th><td>${dash(fmt(t.total))}</td></tr>
-    <tr><th>Cost</th><td>${dash(c.available ? `$${(c.amount || 0).toFixed(4)} ${c.currency || ''}`.trim() : 'n/a')}</td></tr>`;
+    <tr><th>Cost</th><td>${dash(c.available ? `$${(c.amount || 0).toFixed(4)} ${c.currency || ''}`.trim() : 'n/a')}</td></tr>
+    <tr><th>Tool calls</th><td>${u
+      ? `${fmt(u.calls)} (${fmt(u.mcpCalls)} MCP · ${fmt(u.skillCalls)} skill)`
+      : '—'}</td></tr>`;
 }
 
 const statsUpdated = () => st.stats?.updatedAt

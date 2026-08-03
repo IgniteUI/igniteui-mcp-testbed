@@ -22,8 +22,12 @@ interface HistoryGridRow {
   testsSort: number;
   testsDisplay: string;
   testsState: string;
+  toolsSort: number;
+  toolsDisplay: string;
+  toolsState: string;
   msgs: number;
   tok: number;
+  tokTitle: string;
   costSort: number | null;
   costDisplay: string;
   durationMs: number | null;
@@ -129,11 +133,112 @@ function testSummary(t: any): { display: string; sort: number; state: string } {
   return { display: `${t.passed}/${t.total}`, sort, state: t.ok ? 'pass' : 'fail' };
 }
 
+// One-cell summary of what the agent reached for: MCP tool calls · skill invocations.
+// The `state` drives the colour, and it is the interesting part — a run handed an MCP
+// server (or skills) that it never once called is the failure this metric exists to
+// catch, so it is flagged rather than shown as a neutral zero.
+function toolSummary(t: any): { display: string; sort: number; state: string } {
+  if (!t) return { display: '—', sort: -1, state: 'none' };
+  const hadMcp = (t.servers?.configured || []).length > 0;
+  const hadSkills = (t.skills?.configured || []).length > 0;
+  const state = (hadMcp && !t.mcpCalls) || (hadSkills && !t.skillCalls) ? 'idle'
+    : (t.servers?.unused || []).length || (t.skills?.unused || []).length ? 'unused'
+    : 'ok';
+  // Sort on MCP calls (the primary signal); nothing-configured runs sort below zero-call ones.
+  const sort = !hadMcp && !hadSkills ? -0.5 : t.mcpCalls + t.skillCalls / 1000;
+  return { display: `${t.mcpCalls} · ${t.skillCalls}`, sort, state };
+}
+
+// The input/output/reasoning/cache split is collected for every run (src/stats.ts for
+// interactive, src/capture/usage.ts for matrix) — the grid only has room for the total,
+// so the breakdown goes in the cell tooltip and the detail panel.
+const TOKEN_PARTS: Array<[string, string]> = [
+  ['Input', 'input'], ['Output', 'output'], ['Reasoning', 'reasoning'], ['Cache', 'cache'],
+];
+
+function tokenParts(t: any): Array<[string, number]> {
+  const tk = t || {};
+  return TOKEN_PARTS.map(([label, key]) => [label, Number(tk[key]) || 0]);
+}
+
+function tokenTitle(t: any): string {
+  if (!t || !t.total) return 'No token usage recorded';
+  return tokenParts(t).map(([label, v]) => `${label.toLowerCase()} ${fmt(v)}`).join(' · ');
+}
+
+// Tool calls are usually tens of milliseconds; fmtDur would render those as "0.1s".
+function fmtToolMs(ms: number): string {
+  if (!ms) return '—';
+  return ms < 1000 ? `${Math.round(ms)}ms` : fmtDur(ms);
+}
+
+// "get_doc ×3, search_api" for one kind of tool.
+function toolNames(tools: any[], kind: string): string {
+  const of = tools.filter((t) => t.kind === kind);
+  if (!of.length) return 'none';
+  return of.map((t) => `${t.name}${t.calls > 1 ? ` ×${t.calls}` : ''}`).join(', ');
+}
+
+// The detail-panel "Tool usage" block: what the agent called, and — the part that
+// matters for a comparison — what it was given but never touched. Built with gridHtml
+// because it renders inside the igc-grid's own lit instance (see the file header).
+function toolsDetailTpl(r: any) {
+  const u = r.tools;
+  if (!u) {
+    // Interactive runs before the collector's first tick, and any run whose store
+    // couldn't be read, legitimately have nothing here.
+    return gridHtml`<div class="shots"><h4>Tool usage</h4>
+      <p class="note detail-note">Not recorded for this run.</p></div>`;
+  }
+  const unusedServers = u.servers?.unused || [];
+  const unusedSkills = u.skills?.unused || [];
+  const noMcp = (u.servers?.configured || []).length > 0 && !u.mcpCalls;
+  const noSkills = (u.skills?.configured || []).length > 0 && !u.skillCalls;
+  return gridHtml`
+    <div class="shots"><h4>Tool usage</h4>
+      <div class="tool-summary">
+        ${u.calls} tool call${u.calls === 1 ? '' : 's'} ·
+        <strong>${u.mcpCalls}</strong> MCP · <strong>${u.skillCalls}</strong> skill${u.errors ? ` · ${u.errors} errored` : ''}
+      </div>
+      <dl class="tool-lists">
+        <dt>MCP tools</dt><dd>${toolNames(u.tools || [], 'mcp')}</dd>
+        <dt>Skills</dt><dd>${toolNames(u.tools || [], 'skill')}</dd>
+        <dt>MCP servers</dt><dd>${(u.servers?.configured || []).join(', ') || 'none configured'}</dd>
+      </dl>
+      ${noMcp ? gridHtml`<p class="tool-warn">The agent never called any MCP tool, though
+        ${unusedServers.join(', ')} ${unusedServers.length === 1 ? 'was' : 'were'} configured.</p>` : gridHtml``}
+      ${!noMcp && unusedServers.length ? gridHtml`<p class="tool-warn">MCP server${unusedServers.length === 1 ? '' : 's'}
+        never called: ${unusedServers.join(', ')}</p>` : gridHtml``}
+      ${noSkills ? gridHtml`<p class="tool-warn">The agent never invoked a skill, though
+        ${(u.skills?.configured || []).length} ${(u.skills?.configured || []).length === 1 ? 'was' : 'were'} installed.</p>` : gridHtml``}
+      ${!noSkills && unusedSkills.length ? gridHtml`
+        <details class="shot-details">
+          <summary>${unusedSkills.length} of ${(u.skills?.configured || []).length} skills never invoked</summary>
+          <p class="note detail-note">${unusedSkills.join(', ')}</p>
+        </details>` : gridHtml``}
+      ${(u.tools || []).length ? gridHtml`
+        <details class="shot-details">
+          <summary>All ${u.tools.length} tools</summary>
+          <table class="tool-table">
+            <thead><tr><th>Kind</th><th>Server</th><th>Tool</th>
+              <th class="num">Calls</th><th class="num">Errors</th><th class="num">Time</th></tr></thead>
+            <tbody>${u.tools.map((t: any) => gridHtml`<tr class="${t.kind}">
+              <td>${t.kind}</td><td>${t.server || '—'}</td><td>${t.name}</td>
+              <td class="num">${t.calls}</td><td class="num">${t.errors || '—'}</td>
+              <td class="num">${fmtToolMs(t.durationMs)}</td></tr>`)}
+            </tbody>
+          </table>
+        </details>` : gridHtml``}
+      ${u.warning ? gridHtml`<p class="note detail-note">${u.warning}</p>` : gridHtml``}
+    </div>`;
+}
+
 // Flatten a record into the comparable values shown in the grid.
 function rowVals(r: any): HistoryGridRow {
   const stats = r.stats || {};
   const cost = stats.cost && stats.cost.available ? stats.cost.amount : null;
   const ts = testSummary(r.tests);
+  const tl = toolSummary(r.tools);
   return {
     id: r.id,
     whenTs: Date.parse(r.startedAt) || 0,
@@ -149,8 +254,12 @@ function rowVals(r: any): HistoryGridRow {
     testsSort: ts.sort,
     testsDisplay: ts.display,
     testsState: ts.state,
+    toolsSort: tl.sort,
+    toolsDisplay: tl.display,
+    toolsState: tl.state,
     msgs: (stats.messages || {}).total || 0,
     tok: (stats.tokens || {}).total || 0,
+    tokTitle: tokenTitle(stats.tokens),
     costSort: cost,
     costDisplay: cost == null ? 'n/a' : `$${cost.toFixed(4)}`,
     durationMs: r.durationMs,
@@ -227,10 +336,17 @@ function bindGridTemplates() {
             ? timings.map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
             : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
+        <div><h4>Tokens</h4><dl>
+          ${stats
+            ? tokenParts(stats.tokens).map(([label, v]) => gridHtml`<dt>${label}</dt><dd>${fmt(v)}</dd>`)
+            : gridHtml`<dt>—</dt><dd></dd>`}
+          ${stats ? gridHtml`<dt>Total</dt><dd>${fmt((stats.tokens || {}).total)}</dd>` : gridHtml``}
+        </dl></div>
         <div><h4>Per model</h4><dl>
           ${perModel.length
             ? perModel.map(([m, pm]: [string, any]) =>
-                gridHtml`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
+                gridHtml`<dt>${m}</dt><dd>${fmt(pm.tokens.total)} tok
+                  (${fmt(pm.tokens.input)} in / ${fmt(pm.tokens.output)} out)${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
             : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
         ${r.prompt
@@ -262,6 +378,7 @@ function bindGridTemplates() {
               </div>
             </details>
           </div>` : gridHtml``}
+        ${toolsDetailTpl(r)}
         ${r.tests ? gridHtml`
           <div class="shots"><h4>Tests</h4>
             <div class="test-summary ${r.tests.ran ? (r.tests.ok ? 'pass' : 'fail') : 'error'}">
@@ -321,6 +438,15 @@ function bindGridTemplates() {
   };
   // The exporter ignores body templates; map the numeric sort field back to the display.
   $('#historyTests').formatter = (_v: number, row: any) => (row && row.testsDisplay) || '—';
+  $('#historyTools').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    const title = row.toolsState === 'idle' ? 'Configured MCP servers or skills were never used'
+      : row.toolsState === 'unused' ? 'Some configured MCP servers / skills were never used'
+      : row.toolsState === 'none' ? 'Tool usage not recorded for this run'
+      : 'MCP tool calls · skill invocations';
+    return gridHtml`<span class="tools-cell ${row.toolsState}" title="${title}">${row.toolsDisplay}</span>`;
+  };
+  $('#historyTools').formatter = (_v: number, row: any) => (row && row.toolsDisplay) || '—';
   $('#historyRating').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     const readonly = !isRateable(row.status);
@@ -334,7 +460,10 @@ function bindGridTemplates() {
       }}></igc-rating>`;
   };
   $('#historyMsgs').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
-  $('#historyTokens').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).tok)}</span>`;
+  $('#historyTokens').bodyTemplate = (ctx: any) => {
+    const row = getCellRow(ctx);
+    return gridHtml`<span class="num-cell" title="${row.tokTitle}">${fmt(row.tok)}</span>`;
+  };
   $('#historyCost').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).costDisplay}</span>`;
   $('#historyDuration').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${getCellRow(ctx).durationDisplay}</span>`;
   // Export the same human-readable duration as the cell shows, not the raw millisecond
@@ -662,14 +791,15 @@ function tpl() {
         <igc-grid-toolbar-exporter id="historyExcelExporter"></igc-grid-toolbar-exporter>
       </igc-grid-toolbar-actions>
     </igc-grid-toolbar>
-    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="13%"></igc-column>
-    <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="7%"></igc-column>
+    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="12%"></igc-column>
+    <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="5%"></igc-column>
     <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="7%"></igc-column>
     <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="11%"></igc-column>
-    <igc-column id="historySkills" field="skills" header="Skills" sortable="false" resizable="true" width="4%"></igc-column>
-    <igc-column id="historyMcps" field="mcps" header="MCPs" sortable="false" resizable="true"></igc-column>
+    <igc-column id="historySkills" field="skills" header="Skills" resizable="true" width="4%"></igc-column>
+    <igc-column id="historyMcps" field="mcps" header="MCPs" resizable="true"></igc-column>
     <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="110px"></igc-column>
-    <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" sortable="false" resizable="true" width="5%"></igc-column>
+    <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" resizable="true" width="5%"></igc-column>
+    <igc-column id="historyTools" field="toolsSort" header="MCP·Skill" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
     <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="135px"></igc-column>
     <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%"></igc-column>
     <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>

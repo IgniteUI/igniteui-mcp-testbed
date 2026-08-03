@@ -40,8 +40,9 @@ export default function registerRunRoutes(app: Express): void {
     const runId = session.beginRun(cfg);
 
     try {
-      const result = await runPipeline(cfg, { emit });
-      // Begin gathering live stats (messages / tokens / cost) into /work/stats.json.
+      const result = await runPipeline(cfg, { emit, onToolContext: session.setToolContext });
+      // Begin gathering live stats (messages / tokens / cost) into /work/stats.json,
+      // plus the MCP-tool / skill usage the tool context above scopes to this run.
       session.startStats(cfg);
       emit('log', 'stats collector started → stats.json');
       emit('done', result);

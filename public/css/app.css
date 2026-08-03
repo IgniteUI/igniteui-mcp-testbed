@@ -272,6 +272,25 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .test-failures { display:flex; flex-direction:column; gap:.5rem; margin-top:.4rem; }
 .test-failure small { color:var(--steel); margin-left:.4rem; }
 .test-failure pre { margin:.2rem 0 0; max-height:200px; }
+/* MCP-tool / skill usage: grid cell + detail block. `.unused` flags a run that was
+   given an MCP server the agent never called — the signal the testbed is measuring. */
+.tools-cell { display:block; text-align:right; font-variant-numeric:tabular-nums; }
+.tools-cell.ok { color:var(--ink); }
+.tools-cell.idle { color:var(--red); font-weight:600; }
+.tools-cell.unused { color:var(--amber); }
+.tools-cell.none { color:var(--steel); }
+.tool-summary { margin:.1rem 0 .4rem; color:var(--ink); }
+.tool-warn { margin:.1rem 0; color:var(--amber); }
+.tool-lists { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:.15rem .7rem; margin:.2rem 0; }
+.tool-lists dt { color:var(--steel); }
+.tool-lists dd { margin:0; color:var(--ink); overflow-wrap:anywhere; }
+.tool-table { width:100%; border-collapse:collapse; margin:.35rem 0 0; font-size:.74rem; }
+.tool-table th { text-align:left; color:var(--steel); font-weight:500; padding:.15rem .5rem .15rem 0; }
+.tool-table td { padding:.1rem .5rem .1rem 0; color:var(--ink); overflow-wrap:anywhere; }
+.tool-table td.num, .tool-table th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.tool-table tr.mcp td:first-child { color:var(--teal); }
+.tool-table tr.skill td:first-child { color:var(--green); }
+.tool-table tr.builtin td:first-child { color:var(--steel); }
 .pill.matrix { background:rgba(26,169,158,.16); color:var(--teal); }
 .pill.pending, .pill.cancelled, .pill.interrupted { background:rgba(142,166,164,.15); color:var(--steel); }
 /* per-matrix tag: hue set inline from a hash of the matrixId so same-matrix rows match */
