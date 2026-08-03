@@ -20,6 +20,9 @@ export default function registerStatsRoutes(app: Express): void {
   app.get('/api/stats/stream', (req, res) => {
     const stats = session.getStats();
     session.statsSSE.attach(req, res, stats ? stats.snapshot() : undefined);
+    // Tool usage rides the same channel as a `type:'tools'` frame, so replay the last
+    // read too — otherwise a reconnecting client shows no tools until the next tick.
+    if (stats?.tools) res.write(`data: ${JSON.stringify({ type: 'tools', tools: stats.tools })}\n\n`);
   });
 
   // Token usage + cost for this session, straight from `opencode stats`.
