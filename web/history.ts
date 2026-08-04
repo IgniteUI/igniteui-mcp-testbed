@@ -791,10 +791,10 @@ function tpl() {
         <igc-grid-toolbar-exporter id="historyExcelExporter"></igc-grid-toolbar-exporter>
       </igc-grid-toolbar-actions>
     </igc-grid-toolbar>
-    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="12%"></igc-column>
+    <igc-column id="historyWhen" field="whenTs" header="When" data-type="number" sortable="true" resizable="true" width="13%"></igc-column>
     <igc-column id="historyMatrix" field="matrixId" header="Matrix" sortable="true" resizable="true" width="5%"></igc-column>
     <igc-column id="historyFramework" field="framework" header="Framework" sortable="true" resizable="true" width="7%"></igc-column>
-    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="11%"></igc-column>
+    <igc-column id="historyModel" field="model" header="Model" sortable="true" resizable="true" width="8%"></igc-column>
     <igc-column id="historySkills" field="skills" header="Skills" resizable="true" width="4%"></igc-column>
     <igc-column id="historyMcps" field="mcps" header="MCPs" resizable="true"></igc-column>
     <igc-column id="historyStatus" field="status" header="Status" sortable="true" resizable="true" width="110px"></igc-column>
