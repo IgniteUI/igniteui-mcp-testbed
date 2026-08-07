@@ -9,6 +9,7 @@ Add new prompts here as useful test cases are discovered.
 
 - [Data & Charts](#data--charts)
 - [Forms & Authentication](#forms--authentication)
+- [Project & Task Management](#project--task-management)
 
 ---
 
@@ -77,6 +78,36 @@ I'm Sauron, the Dark Lord, and I want to create an application to manage Mordor,
 - Complex data management and reporting
 - Hierarchical org chart
 - Multi-source data integration (generals, suppliers, spies)
+
+---
+
+## Project & Task Management
+
+### P-04 · Kanban Board App
+
+> **Focus:** Card/board layout, drag-and-drop, modal-based CRUD, dark theme with a contrast palette
+
+```
+Generate a Kanban application using Ignite UI components. It should be functional and modern,
+with multiple columns (e.g. To Do, In Progress, Review, Done) containing draggable task cards
+that can be moved between columns. Each task card should show a title, description, tags,
+priority level, due date, and an assignee avatar. Support creating, editing, and deleting tasks
+through a dialog/modal form with fields for all of the above, plus a column and assignee
+picker. Add a WIP limit indicator on at least one column, a search/filter box, and toast/snackbar
+notifications for task actions. Use a dark theme with a high-contrast accent palette.
+```
+
+**Expected coverage:**
+- `IgxCard` / `igc-card` for task cards, with header/content/actions slots
+- Drag-and-drop of cards between columns
+- `IgxDialog` / `igc-dialog` (or equivalent modal) for add/edit task forms
+- `IgxInput` / `igc-input`, select/dropdown, and date picker fields inside the form
+- `IgxChip` / `igc-chip` for tags, `IgxBadge` / `igc-badge` for column counts
+- `IgxAvatar` / `igc-avatar` for assignees
+- `IgxLinearProgress` / `igc-linear-progress` (or similar) for a WIP limit indicator
+- `IgxButton` / `igc-button` + `IgxIcon` / `igc-icon` for actions
+- `IgxSnackbar` / `igc-snackbar` (or toast equivalent) for action confirmations
+- Dark theme with high-contrast accent palette
 
 ## Contributing
 
