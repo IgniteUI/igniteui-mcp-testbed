@@ -171,11 +171,10 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
     return null;
   }
   const { matrixId, total, completion } = matrix.begin(loaded.req.combos, {
-    prompt: loaded.req.prompt,
+    passes: loaded.req.passes,
     fixed: loaded.req.fixed,
-    name: loaded.req.name,
   });
-  console.log(`matrix config: auto-run started (${matrixId}, ${total} entries)`);
+  console.log(`matrix config: auto-run started (${matrixId}, ${total} entries × ${loaded.req.passes.length} pass${loaded.req.passes.length === 1 ? '' : 'es'})`);
   if (loaded.exitOnDone) {
     completion.then(() => {
       const entries = matrix.getState().entries;

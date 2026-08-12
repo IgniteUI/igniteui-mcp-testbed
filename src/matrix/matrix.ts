@@ -11,7 +11,7 @@ import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
 import { writeMatrixReport } from './report.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
-import type { Combo, MatrixEntry, MatrixState, MatrixFixed as Fixed, RunConfig } from '../types.ts';
+import type { Combo, MatrixEntry, MatrixPass, MatrixState, MatrixFixed as Fixed, RunConfig } from '../types.ts';
 
 // Run the same prompt across platform × variant as one-shot headless runs. Sequential
 // (the app + opencode bind fixed ports, so only one entry can be live at a time).
@@ -28,7 +28,7 @@ const broadcast = (obj: any) => {
 let matrixRunning = false;
 let matrixCancelled = false;
 let currentChild: ChildProcess | null = null; // the in-flight pipeline child (scaffold/agent/…), for cancellation
-let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done: 0, entries: [] };
+let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done: 0, entries: [], currentPass: 1, totalPasses: 1, pendingPasses: 0 };
 // runIds individually cancelled from the History tab — a per-entry cancel that
 // (unlike the whole-matrix `cancel()`) only aborts that one entry and lets the rest run.
 const cancelledEntries = new Set<string>();
@@ -72,7 +72,6 @@ function pushEntryLog(entry: MatrixEntry, line: string): void {
 }
 
 async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { prompt: string; matrixId: string; fixed: Fixed; name: string | null }): Promise<void> {
-  broadcast({ type: 'matrix-start', matrixId, name, total: combos.length, entries: matrixState.entries });
   for (let i = 0; i < combos.length; i++) {
     const c = combos[i];
     const entry = matrixState.entries[i];
@@ -192,49 +191,113 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
     matrixState.done = i + 1;
   }
   killWatcher('app'); killWatcher('opencode');
-  matrixState.running = false;
-  matrixRunning = false;
-  // Assemble the post-run artifacts (report.html + summary.json) from the entries'
-  // (now settled) history records. Best-effort: a report failure must never turn a
-  // finished matrix into an error.
-  let report: string | null = null;
-  let summary: string | null = null;
-  try {
-    writeMatrixReport(matrixId, matrixState.entries, {
-      prompt, model: fixed.model, cancelled: matrixCancelled, name,
-    });
-    report = `/history/reports/${matrixId}/report.html`;
-    summary = `/history/reports/${matrixId}/summary.json`;
-  } catch (e: any) {
-    broadcast({ type: 'log', msg: `report generation failed: ${e.message}` });
-  }
-  broadcast({ type: 'matrix-done', matrixId, total: combos.length, cancelled: matrixCancelled, report, summary });
+  // runMatrix job done — runAllPasses handles state reset, report generation, and
+  // the matrix-done broadcast so the outer loop can proceed to the next pass (if any).
 }
 
-// Set up state for a (validated, already-capped) set of combos and kick off the run
-// in the background. Returns { matrixId, total, completion }; the caller responds
-// immediately and the client follows progress via the matrix SSE stream. `completion`
-// settles when the whole matrix finishes (never rejects — errors are broadcast).
-export function begin(combos: Combo[], { prompt, fixed, name = null }: { prompt: string; fixed: Fixed; name?: string | null }): { matrixId: string; total: number; completion: Promise<void> } {
-  const matrixId = newMatrixId();
+// Run the combo set once per pass (outer loop) — each with its own prompt, matrixId,
+// and pre-created history records. All records are created up-front by begin() so
+// they appear in History the moment the matrix is submitted.
+async function runAllPasses(combos: Combo[], passes: MatrixPass[], allPassIds: string[][], matrixIds: string[], fixed: Fixed): Promise<void> {
+  for (let r = 0; r < passes.length; r++) {
+    const { prompt, name = null } = passes[r];
+    const matrixId = matrixIds[r];
+    const isLast = r === passes.length - 1;
+
+    // Swap matrixState to this pass's entries (pre-created in begin()).
+    matrixState.matrixId = matrixId;
+    matrixState.name = name;
+    matrixState.total = combos.length;
+    matrixState.done = 0;
+    matrixState.currentPass = r + 1;
+    matrixState.totalPasses = passes.length;
+    matrixState.pendingPasses = passes.length - (r + 1);
+    matrixState.entries = combos.map((c, i) => ({
+      index: i, platform: c.platform, variantLabel: c.variantLabel,
+      mcps: c.variant.mcps, skills: c.variant.skills, localSkills: c.variant.localSkills,
+      status: 'pending', runId: allPassIds[r][i],
+    }));
+
+    broadcast({ type: 'matrix-start', matrixId, name, total: combos.length,
+      entries: matrixState.entries, currentPass: r + 1, totalPasses: passes.length });
+
+    if (matrixCancelled) {
+      // Queue-level cancel arrived before this pass started — settle its entries.
+      for (const entry of matrixState.entries) {
+        entry.status = 'cancelled';
+        if (entry.runId) {
+          history.finish(entry.runId, { status: 'cancelled', error: 'cancelled' });
+          broadcast({ type: 'entry-done', index: entry.index, status: 'cancelled', runId: entry.runId });
+        }
+      }
+    } else {
+      await runMatrix(combos, { prompt, matrixId, fixed, name: name ?? null });
+    }
+
+    // Per-pass report (best-effort: a failure must never surface as a pass error).
+    let report: string | null = null;
+    let summary: string | null = null;
+    try {
+      writeMatrixReport(matrixId, matrixState.entries, {
+        prompt, model: fixed.model, cancelled: matrixCancelled, name: name ?? null,
+      });
+      report = `/history/reports/${matrixId}/report.html`;
+      summary = `/history/reports/${matrixId}/summary.json`;
+    } catch (e: any) {
+      broadcast({ type: 'log', msg: `report generation failed: ${e.message}` });
+    }
+
+    broadcast({ type: 'matrix-done', matrixId, total: combos.length, cancelled: matrixCancelled,
+      report, summary, last: isLast, currentPass: r + 1, totalPasses: passes.length });
+
+    if (matrixCancelled) {
+      // Settle pre-created history records for every un-started pass.
+      for (let rr = r + 1; rr < passes.length; rr++) {
+        for (const runId of allPassIds[rr]) {
+          if (runId) history.finish(runId, { status: 'cancelled', error: 'cancelled' });
+        }
+      }
+      break;
+    }
+  }
+  matrixState.running = false;
+  matrixRunning = false;
+}
+
+// Set up state for a (validated, already-capped) set of combos and kick off all passes
+// in the background. Creates every pass's history records up-front (status 'pending')
+// so they appear in History the moment the request is submitted, not one row at a time.
+// Returns { matrixId, total, completion }; the caller responds immediately and the
+// client follows progress via the matrix SSE stream.
+export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]; fixed: Fixed }): { matrixId: string; total: number; completion: Promise<void> } {
+  const matrixIds = passes.map(() => newMatrixId());
+  // Pre-create ALL history records across ALL passes, all as 'pending'.
+  const allPassIds: string[][] = passes.map((pass, r) =>
+    combos.map((c) =>
+      history.createRecord(buildCfg(c, fixed), {
+        mode: 'matrix', prompt: pass.prompt,
+        matrixId: matrixIds[r], matrixName: pass.name ?? null, status: 'pending',
+      })
+    )
+  );
   matrixRunning = true;
   matrixCancelled = false;
   cancelledEntries.clear();
   matrixState = {
-    running: true, matrixId, name, total: combos.length, done: 0,
-    // Create every entry's history record up-front (status 'pending') so the whole
-    // matrix shows in History the moment it's submitted, not one row at a time.
+    running: true, matrixId: matrixIds[0], name: passes[0].name ?? null,
+    total: combos.length, done: 0,
+    currentPass: 1, totalPasses: passes.length, pendingPasses: passes.length - 1,
     entries: combos.map((c, i) => ({
       index: i, platform: c.platform, variantLabel: c.variantLabel,
-      mcps: c.variant.mcps, skills: c.variant.skills, localSkills: c.variant.localSkills, status: 'pending',
-      runId: history.createRecord(buildCfg(c, fixed), { mode: 'matrix', prompt, matrixId, matrixName: name, status: 'pending' }),
+      mcps: c.variant.mcps, skills: c.variant.skills, localSkills: c.variant.localSkills,
+      status: 'pending', runId: allPassIds[0][i],
     })),
   };
-  const completion = runMatrix(combos, { prompt, matrixId, fixed, name }).catch((e: any) => {
+  const completion = runAllPasses(combos, passes, allPassIds, matrixIds, fixed).catch((e: any) => {
     matrixRunning = false; matrixState.running = false;
     broadcast({ type: 'error', msg: e.message });
   });
-  return { matrixId, total: combos.length, completion };
+  return { matrixId: matrixIds[0], total: combos.length, completion };
 }
 
 // Abort the in-progress matrix: kill whatever the current entry is running (whole

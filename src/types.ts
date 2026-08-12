@@ -304,6 +304,11 @@ export interface MatrixEntry {
   skillCalls?: number;
 }
 
+export interface MatrixPass {
+  prompt: string;
+  name?: string | null;
+}
+
 export interface MatrixState {
   running: boolean;
   matrixId: string | null;
@@ -311,6 +316,10 @@ export interface MatrixState {
   total: number;
   done: number;
   entries: MatrixEntry[];
+  /** Multi-pass support: which pass (1-based) is currently executing and how many total. */
+  currentPass: number;
+  totalPasses: number;
+  pendingPasses: number;
 }
 
 export interface SkippedRoute {

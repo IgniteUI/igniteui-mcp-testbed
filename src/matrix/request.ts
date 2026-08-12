@@ -4,7 +4,7 @@ import { MATRIX_MAX_ENTRIES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '.
 import { getFramework } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
-import type { Combo, MatrixFixed, Variant } from '../types.ts';
+import type { Combo, MatrixFixed, MatrixPass, Variant } from '../types.ts';
 
 // A matrix request (the POST /api/matrix body or a MATRIX_CONFIG file) normalized
 // into what the engine consumes: filtered axes, the capped cartesian, and the fixed
@@ -14,8 +14,9 @@ export interface NormalizedMatrixRequest {
   platforms: string[];
   variants: Variant[];
   combos: Combo[];
-  prompt: string;
-  name: string | null;
+  prompt: string;       // back-compat alias for passes[0].prompt
+  name: string | null;  // back-compat alias for passes[0].name
+  passes: MatrixPass[]; // always ≥ 1 element; passes[0] = the primary pass
   fixed: MatrixFixed;
   dropped: number;
   warnings: string[];
@@ -36,15 +37,31 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     .map((p: string) => `unknown platform '${p}' ignored`);
   const variants = parseVariants(body.variants);
   const model = String(body.model || '').trim();
-  const prompt = String(body.prompt || '').trim();
-  // Optional human label for the whole matrix, recorded on every entry's history
-  // record so a submission is findable later without decoding timestamps.
-  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : null;
+  // Parse passes: body.passes[] takes precedence over body.prompt (single-pass back-compat).
+  // Each pass has its own prompt and optional name; passes[0] values are aliased as the
+  // top-level `prompt`/`name` fields for callers that predate multi-pass support.
+  let passes: MatrixPass[];
+  if (Array.isArray(body.passes) && body.passes.length > 0) {
+    const parsed: MatrixPass[] = [];
+    for (let i = 0; i < body.passes.length; i++) {
+      const r = body.passes[i] || {};
+      const p = String(r.prompt || '').trim();
+      if (!p) return { ok: false, error: `passes[${i}].prompt is required` };
+      parsed.push({ prompt: p, name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 80) : null });
+    }
+    passes = parsed;
+  } else {
+    const p = String(body.prompt || '').trim();
+    const n = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : null;
+    if (!p) return { ok: false, error: 'a prompt is required for matrix runs' };
+    passes = [{ prompt: p, name: n }];
+  }
+  const prompt = passes[0].prompt;    // back-compat alias
+  const name = passes[0].name ?? null; // back-compat alias
   if (!platforms.length || !variants.length) {
     return { ok: false, error: 'select at least one platform and one variant' };
   }
   if (!model) return { ok: false, error: 'a model is required for matrix runs' };
-  if (!prompt) return { ok: false, error: 'a prompt is required for matrix runs' };
 
   let combos: Combo[] = [];
   for (const platform of platforms) for (const variant of variants) {
@@ -88,5 +105,5 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     selectedTests,
     promptImages,
   };
-  return { ok: true, req: { platforms, variants, combos, prompt, name, fixed, dropped, warnings } };
+  return { ok: true, req: { platforms, variants, combos, prompt, name, passes, fixed, dropped, warnings } };
 }
