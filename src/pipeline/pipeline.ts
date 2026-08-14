@@ -424,17 +424,22 @@ export async function runPipeline(
   const opencodeLogPath = path.join(toolDataDir, 'opencode', 'log', 'opencode.log');
   let opencodeLogOffset = 0;
   try {
-    if (fs.existsSync(opencodeLogPath)) opencodeLogOffset = fs.statSync(opencodeLogPath).size;
+    const fd = fs.openSync(opencodeLogPath, 'r');
+    try {
+      opencodeLogOffset = fs.fstatSync(fd).size;
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (_) {}
   const readFreshOpencodeLog = () => {
     try {
-      const stat = fs.statSync(opencodeLogPath);
-      // log rotate/truncate: restart from the new beginning
-      if (stat.size < opencodeLogOffset) opencodeLogOffset = 0;
-      const bytes = stat.size - opencodeLogOffset;
-      if (bytes <= 0) return '';
       const fd = fs.openSync(opencodeLogPath, 'r');
       try {
+        const stat = fs.fstatSync(fd);
+        // log rotate/truncate: restart from the new beginning
+        if (stat.size < opencodeLogOffset) opencodeLogOffset = 0;
+        const bytes = stat.size - opencodeLogOffset;
+        if (bytes <= 0) return '';
         const buf = Buffer.allocUnsafe(bytes);
         const read = fs.readSync(fd, buf, 0, bytes, opencodeLogOffset);
         opencodeLogOffset += read;
