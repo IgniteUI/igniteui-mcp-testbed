@@ -11,9 +11,9 @@ import { parseOpencodeStats } from '../capture/usage.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import {
   APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, MCP_COMMAND_BY_CLASS,
-  LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR,
+  LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, RATE_LIMIT_PATTERN,
 } from '../config.ts';
-import { run, capture, type RunOpts } from '../proc/exec.ts';
+import { run, capture, terminateTree, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
 import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts';
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
@@ -46,6 +46,13 @@ export interface PipelineOpts {
 const activeMcpServers = (block: Record<string, any>): string[] =>
   Object.entries(block).filter(([, def]) => !def || def.enabled !== false).map(([name]) => name);
 
+// RATE_LIMIT_PATTERN is env-overridable (see config.ts) so a bad override can't crash
+// the pipeline — fall back to a literal match of the configured text.
+const RATE_LIMIT_RE = (() => {
+  try { return new RegExp(RATE_LIMIT_PATTERN, 'i'); }
+  catch (_) { return new RegExp(RATE_LIMIT_PATTERN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); }
+})();
+
 // Stages 1–4b are identical for an interactive session and a headless matrix entry.
 // Stage 5+ branches: interactive launches `opencode web` (long-lived); headless runs
 // `opencode run "<prompt>"` once, parses usage, then screenshots every route.
@@ -66,8 +73,14 @@ export async function runPipeline(
 
   // Report every spawned child to `onChild` (matrix cancel kills whatever is current)
   // so Cancel works during scaffold/npm-install too, not only the agent step.
-  const runStep = (cmd: string, argv: string[], cwd: string, e: Emit, opts: RunOpts = {}) =>
-    run(cmd, argv, cwd, e, { ...opts, onChild });
+  const runStep = (cmd: string, argv: string[], cwd: string, e: Emit, opts: RunOpts = {}) => {
+    const localOnChild = opts.onChild;
+    const mergedOnChild = (child: ChildProcess) => {
+      if (onChild) onChild(child);
+      if (localOnChild) localOnChild(child);
+    };
+    return run(cmd, argv, cwd, e, { ...opts, onChild: mergedOnChild });
+  };
 
   ensureDirs();
   // Clean any previous attempt. In matrix mode `appDir` is unique per entry, so
@@ -404,9 +417,72 @@ export async function runPipeline(
     'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
     ...promptImageFiles.flatMap((f) => ['--file', f]),
   ];
-  await runStep('opencode', agentArgv, appDir, emit, {
-    env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
-  });
+  let rateLimited = false;
+  let rateLimitLine = '';
+  let agentChild: ChildProcess | null = null;
+  let signaled = false;
+  const opencodeLogPath = path.join(toolDataDir, 'opencode', 'log', 'opencode.log');
+  let opencodeLogOffset = 0;
+  try {
+    if (fs.existsSync(opencodeLogPath)) opencodeLogOffset = fs.statSync(opencodeLogPath).size;
+  } catch (_) {}
+  const readFreshOpencodeLog = () => {
+    try {
+      const stat = fs.statSync(opencodeLogPath);
+      // log rotate/truncate: restart from the new beginning
+      if (stat.size < opencodeLogOffset) opencodeLogOffset = 0;
+      const bytes = stat.size - opencodeLogOffset;
+      if (bytes <= 0) return '';
+      const fd = fs.openSync(opencodeLogPath, 'r');
+      try {
+        const buf = Buffer.allocUnsafe(bytes);
+        const read = fs.readSync(fd, buf, 0, bytes, opencodeLogOffset);
+        opencodeLogOffset += read;
+        return read > 0 ? buf.subarray(0, read).toString() : '';
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (_) {
+      return '';
+    }
+  };
+  const rateLimitWatch = setInterval(() => {
+    if (rateLimited || signaled) return;
+    const fresh = readFreshOpencodeLog();
+    if (!fresh) return;
+    const lines = fresh.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (!RATE_LIMIT_RE.test(line)) continue;
+      rateLimited = true;
+      rateLimitLine = line;
+      emit('log', 'rate limit detected in opencode log; aborting agent early');
+      if (agentChild) {
+        signaled = true;
+        terminateTree(agentChild);
+      }
+      break;
+    }
+  }, 1000);
+  rateLimitWatch.unref && rateLimitWatch.unref();
+
+  try {
+    await runStep('opencode', agentArgv, appDir, emit, {
+      env: ocEnv,
+      timeoutMs: AGENT_TIMEOUT_MS,
+      heartbeatMs: 20000,
+      onChild: (child) => { agentChild = child; },
+    });
+    if (rateLimited) {
+      throw new Error(`opencode rate-limited${rateLimitLine ? `: ${rateLimitLine}` : ''}`);
+    }
+  } catch (e: any) {
+    if (rateLimited) {
+      throw new Error(`opencode rate-limited${rateLimitLine ? `: ${rateLimitLine}` : ''}`);
+    }
+    throw e;
+  } finally {
+    clearInterval(rateLimitWatch);
+  }
 
   // Parse token/cost usage from `opencode stats` (against this entry's data dir).
   let entryStats: Stats | null = null;

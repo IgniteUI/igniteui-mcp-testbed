@@ -4,7 +4,7 @@ import * as path from 'path';
 import type { ChildProcess } from 'child_process';
 import * as history from '../history.ts';
 import { WORK, ARTIFACT_DIR } from '../config.ts';
-import { killTree } from '../proc/exec.ts';
+import { terminateTree } from '../proc/exec.ts';
 import { killWatcher } from '../proc/watcher.ts';
 import { createSSE } from '../stream/sse.ts';
 import { cleanupAppDir } from './cleanup.ts';
@@ -136,7 +136,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
     // instead of running the step (e.g. don't start the agent after Cancel).
     const onChild = (child: ChildProcess) => {
       currentChild = child;
-      if (matrixCancelled || cancelledEntries.has(runId)) killTree(child, 'SIGTERM');
+      if (matrixCancelled || cancelledEntries.has(runId)) terminateTree(child);
     };
     try {
       const result = await runPipeline(cfg, { emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir });
@@ -244,7 +244,7 @@ export function begin(combos: Combo[], { prompt, fixed, name = null }: { prompt:
 export function cancel(): { ok: boolean; error?: string } {
   if (!matrixRunning) return { ok: false, error: 'no matrix run in progress' };
   matrixCancelled = true;
-  killTree(currentChild, 'SIGTERM');
+  terminateTree(currentChild);
   killWatcher('app'); killWatcher('opencode');
   broadcast({ type: 'log', msg: 'cancellation requested — stopping the current step' });
   return { ok: true };
@@ -263,7 +263,7 @@ export function cancelEntry(runId: string): { ok: boolean; error?: string } {
   }
   cancelledEntries.add(runId);
   if (entry.status === 'running') {
-    killTree(currentChild, 'SIGTERM');
+    terminateTree(currentChild);
     killWatcher('app'); killWatcher('opencode');
     broadcast({ type: 'log', index: entry.index, msg: 'entry cancellation requested — stopping this run' });
   }

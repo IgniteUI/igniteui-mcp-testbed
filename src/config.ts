@@ -55,6 +55,13 @@ export const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS || 5 * 60 * 10
 export const MATRIX_CONFIG = process.env.MATRIX_CONFIG || '';
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
+// Text that flags a provider rate limit in opencode's own log
+// (<dataDir>/opencode/log/opencode.log) during the headless agent step; matched
+// case-insensitively against each fresh line so the entry aborts early instead of
+// burning the rest of AGENT_TIMEOUT_MS waiting on a provider that's already refusing
+// requests. opencode/provider-wording dependent (like the label regexes in
+// src/capture/usage.ts) — override if your provider phrases it differently.
+export const RATE_LIMIT_PATTERN = process.env.RATE_LIMIT_PATTERN || 'rate limit exceeded';
 // How long to wait for the (headless) post-edit dev-server build before giving up
 // and screenshotting anyway. Generous because the first build of an agent-edited
 // app (esp. Blazor) is slow across the bind mount.

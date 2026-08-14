@@ -18,6 +18,17 @@ export function killTree(child: ChildProcess | null | undefined, sig: NodeJS.Sig
   catch (_) { try { child.kill(sig); } catch (_) {} }
 }
 
+// Gracefully terminate a child's whole process group, then force-kill if it
+// ignores/outlives SIGTERM (e.g. stuck mid-request).
+export function terminateTree(child: ChildProcess | null | undefined, graceMs = 5000): void {
+  if (!child) return;
+  killTree(child, 'SIGTERM');
+  const t = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) killTree(child, 'SIGKILL');
+  }, graceMs);
+  t.unref && t.unref();
+}
+
 // Run a command to completion, streaming its output through `emit`. Optional
 // `opts.env` is merged over process.env; `opts.timeoutMs` kills + rejects on hang;
 // `opts.heartbeatMs` emits a liveness tick so a long-but-working run (e.g. the agent)
@@ -41,7 +52,7 @@ export function run(cmd: string, argv: string[], cwd: string, emit: Emit, opts: 
     if (opts.timeoutMs) {
       timer = setTimeout(() => {
         cleanup();
-        killTree(child, 'SIGTERM');
+        terminateTree(child);
         reject(new Error(`${cmd} timed out after ${opts.timeoutMs}ms`));
       }, opts.timeoutMs);
     }
