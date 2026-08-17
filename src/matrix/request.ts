@@ -1,6 +1,6 @@
 'use strict';
 
-import { MATRIX_MAX_ENTRIES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
+import { MATRIX_MAX_ENTRIES, MATRIX_MAX_PASSES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
 import { getFramework } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
@@ -58,6 +58,10 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   }
   const prompt = passes[0].prompt;    // back-compat alias
   const name = passes[0].name ?? null; // back-compat alias
+  if (passes.length > MATRIX_MAX_PASSES) {
+    return { ok: false, error: `passes capped at ${MATRIX_MAX_PASSES}; reduce the number of passes` };
+  }
+
   if (!platforms.length || !variants.length) {
     return { ok: false, error: 'select at least one platform and one variant' };
   }

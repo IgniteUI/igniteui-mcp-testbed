@@ -503,7 +503,7 @@ async function onSubmit(e: Event) {
 
 const extraPassSection = () => html`
   ${st.extraPasses.length ? html`<div class="mx-passes-stack">
-    ${st.extraPasses.map((pass, i) => {
+    ${repeat(st.extraPasses, (p) => p.key, (pass, i) => {
       const num = i + 2;
       return html`
         <div class="mx-extra-pass">
