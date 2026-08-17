@@ -404,9 +404,23 @@ export async function runPipeline(
     'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
     ...promptImageFiles.flatMap((f) => ['--file', f]),
   ];
-  await runStep('opencode', agentArgv, appDir, emit, {
-    env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
-  });
+  try {
+    await runStep('opencode', agentArgv, appDir, emit, {
+      env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
+    });
+  } catch (err: any) {
+    if (err.message === `opencode timed out after ${AGENT_TIMEOUT_MS}ms`) {
+      // Free/keyless models often just hang instead of returning a 429, so a timed-out
+      // one-shot agent run is treated as a rate limit — flagged (rateLimited) so the
+      // UI can surface it as a warning rather than a generic error.
+      const message = 'Rate limit exceeded. Please try again later.';
+      emit('log', `warning: ${message} This is usually temporary — the model provider is throttling requests rather than this run failing outright. Wait a few minutes, then re-run the matrix.`);
+      const rateLimitErr: any = new Error(message);
+      rateLimitErr.rateLimited = true;
+      throw rateLimitErr;
+    }
+    throw err;
+  }
 
   // Parse token/cost usage from `opencode stats` (against this entry's data dir).
   let entryStats: Stats | null = null;

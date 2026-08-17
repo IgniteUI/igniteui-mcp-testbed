@@ -244,6 +244,7 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
 .pill.error { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
+.pill.rate-limited { background:rgba(202,162,60,.18); color:var(--amber); }
 .pill.test-failed { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
 .detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem 1.6rem;

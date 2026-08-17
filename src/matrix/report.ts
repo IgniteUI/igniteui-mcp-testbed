@@ -62,7 +62,7 @@ const fmtCost = (r: HistoryRecord): string => {
 };
 
 // Statuses with a dedicated .pill class in the UI; anything else renders as .pill.other.
-const PILL_STATUSES = new Set(['success', 'error', 'build-error', 'test-failed', 'running', 'pending', 'cancelled', 'interrupted']);
+const PILL_STATUSES = new Set(['success', 'error', 'build-error', 'rate-limited', 'test-failed', 'running', 'pending', 'cancelled', 'interrupted']);
 const pill = (status: string | undefined): string => {
   const s = status || 'missing';
   return `<span class="pill ${PILL_STATUSES.has(s) ? esc(s) : 'other'}">${esc(s)}</span>`;
@@ -207,7 +207,7 @@ export function writeMatrixReport(
   .pill { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem; font-family:var(--sans); }
   .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
   .pill.error, .pill.test-failed { background:rgba(224,106,85,.16); color:var(--red); }
-  .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
+  .pill.build-error, .pill.rate-limited { background:rgba(202,162,60,.18); color:var(--amber); }
   .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
   .pill.pending, .pill.cancelled, .pill.interrupted, .pill.other { background:rgba(142,166,164,.15); color:var(--steel); }
   .prompt { background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem; line-height:1.45;

@@ -182,10 +182,14 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       await killWatcher('app'); await killWatcher('opencode');
       try { await cleanupAppDir(appDir, emit); } catch (_) {}
       const cancelled = matrixCancelled || cancelledEntries.has(runId);
-      const status = cancelled ? 'cancelled' : 'error';
-      history.finish(runId, { status, error: cancelled ? 'cancelled' : err.message, completed, timings, logs: entry.logs || [] });
+      // A rate-limited agent run isn't a code/test failure — give it its own status
+      // (amber "warning" pill in the UI) so it reads distinctly from a hard error.
+      const status = cancelled ? 'cancelled' : err.rateLimited ? 'rate-limited' : 'error';
+      const error = cancelled ? 'cancelled' : err.message;
+      history.finish(runId, { status, error, completed, timings, logs: entry.logs || [] });
       entry.status = status;
-      broadcast({ type: 'entry-done', index: i, status, runId, error: status === 'error' ? err.message : null });
+      entry.step = cancelled ? 'cancelled' : error;
+      broadcast({ type: 'entry-done', index: i, status, runId, error: cancelled ? null : error });
     } finally {
       currentChild = null;
     }

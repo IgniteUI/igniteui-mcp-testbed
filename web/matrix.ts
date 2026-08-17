@@ -321,6 +321,8 @@ function handleMx(m: any) {
         entry.step = m.tests && m.tests.ran ? `${shots} · ${m.tests.passed}/${m.tests.total} tests` : shots;
       } else if (m.status === 'build-error') entry.step = 'build failed';
       else if (m.status === 'test-failed') entry.step = m.tests ? `tests failed (${m.tests.failed}/${m.tests.total})` : 'tests failed';
+      else if (m.status === 'rate-limited') entry.step = m.error || 'Rate limit exceeded. Please try again later.';
+      else if (m.status === 'error') entry.step = m.error || 'run failed';
     }
     update();
   }
