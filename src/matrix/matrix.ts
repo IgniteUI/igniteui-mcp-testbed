@@ -276,6 +276,7 @@ export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]
     combos.map((c) =>
       history.createRecord(buildCfg(c, fixed), {
         mode: 'matrix', prompt: pass.prompt,
+        stagePrompts: pass.stages && pass.stages.length > 1 ? pass.stages : null,
         matrixId: matrixIds[r], matrixName: pass.name ?? null, status: 'pending',
       })
     )

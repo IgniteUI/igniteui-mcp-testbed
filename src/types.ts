@@ -251,10 +251,12 @@ export interface HistoryRecord {
   rating: number | null;
   mode: 'interactive' | 'matrix';
   prompt: string | null;
+  /** All stage prompts for multi-stage runs (stages.length > 1). Absent on old/one-shot records. */
+  stagePrompts?: string[] | null;
   matrixId: string | null;
   matrixName?: string | null; // user-set label from the matrix request / config file
   config: StoredConfig;
-  stages: { completed: string[]; timings: Record<string, number> };
+  steps: { completed: string[]; timings: Record<string, number> };
   stats: Stats | null;
   screenshots: Screenshot[];
   tests: TestResult | null;

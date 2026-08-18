@@ -19,6 +19,7 @@ interface HistoryGridRow {
   mcps: string;
   status: string;
   rating: number;
+  stageCount: number;
   testsSort: number;
   testsDisplay: string;
   testsState: string;
@@ -251,6 +252,7 @@ function rowVals(r: any): HistoryGridRow {
     mcps: (r.config.enabledMcps || []).join(', ') || '—',
     status: r.status || '—',
     rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
+    stageCount: r.stagePrompts?.length ?? 1,
     testsSort: ts.sort,
     testsDisplay: ts.display,
     testsState: ts.state,
@@ -308,7 +310,7 @@ function bindGridTemplates() {
     const r = runById.get(row.id);
     if (!r) return gridHtml``;
 
-    const c = r.config, stats = r.stats, stg = r.stages || {};
+    const c = r.config, stats = r.stats, stg = r.steps || {};
     const timings = Object.entries(stg.timings || {});
     const completed = (stg.completed || []).join(' → ') || '—';
     const perModel = stats && stats.perModel ? Object.entries(stats.perModel) : [];
@@ -330,7 +332,7 @@ function bindGridTemplates() {
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}
         </dl></div>
-        <div><h4>Stages</h4><dl>
+        <div><h4>Pipeline steps</h4><dl>
           <dt>Completed</dt><dd>${completed}</dd>
           ${timings.length
             ? timings.map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${fmtDur(v as number)}</dd>`)
@@ -349,9 +351,14 @@ function bindGridTemplates() {
                   (${fmt(pm.tokens.input)} in / ${fmt(pm.tokens.output)} out)${pm.cost ? ` · $${pm.cost.toFixed(4)}` : ''}</dd>`)
             : gridHtml`<dt>—</dt><dd></dd>`}
         </dl></div>
-        ${r.prompt
-          ? gridHtml`<div class="shots"><h4>Prompt</h4><div class="note detail-note">${r.prompt}</div></div>`
-          : gridHtml``}
+        ${r.prompt ? gridHtml`
+          <div class="shots">
+            <h4>${r.stagePrompts && r.stagePrompts.length > 1 ? 'Prompts' : 'Prompt'}</h4>
+            ${r.stagePrompts && r.stagePrompts.length > 1
+              ? r.stagePrompts.map((sp: string, i: number) => gridHtml`
+                  <div class="note detail-note"><strong>Stage ${i + 1}:</strong> ${sp}</div>`)
+              : gridHtml`<div class="note detail-note">${r.prompt}</div>`}
+          </div>` : gridHtml``}
         ${(c.promptImages || []).length ? gridHtml`
           <div class="shots"><h4>Prompt images</h4>
             <div class="shot-strip">${c.promptImages.map((name: string) => gridHtml`
@@ -459,6 +466,11 @@ function bindGridTemplates() {
         saveRating(row.id, Number(ev.detail || 0));
       }}></igc-rating>`;
   };
+  $('#historyStages').bodyTemplate = (ctx: any) => {
+    const v = getCellRow(ctx).stageCount;
+    return gridHtml`<span class="num-cell">${v || '\u2014'}</span>`;
+  };
+  $('#historyStages').formatter = (v: number) => v || '—';
   $('#historyMsgs').bodyTemplate = (ctx: any) => gridHtml`<span class="num-cell">${fmt(getCellRow(ctx).msgs)}</span>`;
   $('#historyTokens').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
@@ -801,6 +813,7 @@ function tpl() {
     <igc-column id="historyTests" field="testsSort" header="Tests" data-type="number" resizable="true" width="5%"></igc-column>
     <igc-column id="historyTools" field="toolsSort" header="MCP·Skill" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
     <igc-column id="historyRating" field="rating" header="Rating" data-type="number" sortable="true" resizable="true" width="135px"></igc-column>
+    <igc-column id="historyStages" field="stageCount" header="Stages" data-type="number" sortable="true" resizable="true" width="60px"></igc-column>
     <igc-column id="historyMsgs" field="msgs" header="Msgs" data-type="number" sortable="true" resizable="true" width="5%"></igc-column>
     <igc-column id="historyTokens" field="tok" header="Tokens" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>
     <igc-column id="historyCost" field="costSort" header="Cost (USD)" data-type="number" sortable="true" resizable="true" width="6%"></igc-column>

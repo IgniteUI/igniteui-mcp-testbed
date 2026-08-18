@@ -257,7 +257,7 @@ const COLS=[
 function getFilter(r){return[r.config?.framework,r.config?.models?.join(' '),r.status,r.matrixId,r.id,r.prompt,(r.config?.enabledMcps||[]).join(' '),(r.tools?.tools||[]).map(t=>t.name).join(' ')].join(' ').toLowerCase()}
 
 function renderDetail(r){
-  const c=r.config,st=r.stats,stg=r.stages||{};
+  const c=r.config,st=r.stats,stg=r.steps||{};
   const timings=Object.entries(stg.timings||{});
   const completed=(stg.completed||[]).join(' \u2192')||'\u2014';
   const perModel=st?.perModel?Object.entries(st.perModel):[];

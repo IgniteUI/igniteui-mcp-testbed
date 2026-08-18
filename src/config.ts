@@ -81,6 +81,46 @@ export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = {
   theming: ['igniteui-theming-mcp'],
 };
 
+// Model used by the "Split into stages" LLM call. Defaults to opencode/big-pickle
+// (a free, keyless hosted model). Override with SIS_MODEL / SIS_API_KEY to use any
+// other model supported by opencode (e.g. anthropic/claude-sonnet-4-5).
+export const SIS_MODEL = process.env.SIS_MODEL || 'opencode/big-pickle';
+export const SIS_API_KEY = process.env.SIS_API_KEY || '';
+// Maximum number of stages the SIS decomposition may produce. Raise if a prompt
+// is consistently too heavy even after splitting (each stage is one agent call).
+export const SIS_MAX_STAGES = Math.max(2, Number(process.env.SIS_MAX_STAGES || 8));
+
+// Decomposition prompt sent to the SIS model. {MAX} and {PROMPT} are substituted at
+// call time. Kept here alongside the other SIS tunables so all SIS knobs are in one place.
+export const SIS_PROMPT_TEMPLATE = `You are a prompt decomposition assistant for AI coding agents.
+Your goal is to split a software development prompt into sequential, self-contained stages
+so that no single stage is too large for one agent call to handle well.
+
+Context the agent already has before stage 1 runs:
+- The project is ALREADY fully scaffolded: the framework is installed, dependencies are resolved,
+  routing is configured, and the dev server is ready. Do NOT include any of the following in any
+  stage: project creation, framework installation, package installs, global style imports, theme
+  setup, module/app configuration, or any other project initialisation step.
+- Do NOT name or assume a specific framework, library version, or technology stack. The platform
+  is fixed by external configuration — keep every stage framework-agnostic (say "the application"
+  or "the existing project", not "the Angular app" or "React component").
+- Stage 1 must begin with the first piece of FEATURE WORK, not setup.
+
+Decomposition rules:
+- Prefer MORE stages over fewer — if in doubt, split further rather than bundle work together
+- Aim for EVEN load across stages: each stage should represent a similar amount of coding work
+- A stage should cover at most one coherent feature area (e.g. a single page, one service, one UI feature)
+- Each stage runs as a separate agent call that reads the current filesystem state, so stage N+1
+  should reference specific file paths, component names, or functions that stage N was supposed to create
+- Each stage must be a self-sufficient instruction with no reliance on prior conversation context
+- Target 4\u20136 stages for typical prompts; use up to {MAX} stages for large or complex ones
+- Return ONLY a valid JSON array of strings \u2014 no explanation, no markdown, no code fences
+
+Prompt to split:
+"""
+{PROMPT}
+"""`;
+
 // Which env var carries the API key, keyed by the provider prefix of the model id.
 export const PROVIDER_ENV: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',

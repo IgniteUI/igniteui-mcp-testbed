@@ -1,9 +1,65 @@
 'use strict';
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Express } from 'express';
 import * as matrix from '../matrix/matrix.ts';
+import { run } from '../proc/exec.ts';
 import { normalizeMatrixRequest } from '../matrix/request.ts';
 import { getLoadedMatrixConfig } from '../matrix/matrix-config.ts';
+import { SIS_MODEL, SIS_API_KEY, SIS_MAX_STAGES, SIS_PROMPT_TEMPLATE, PROVIDER_ENV } from '../config.ts';
+
+async function splitPrompt(userPrompt: string): Promise<string[]> {
+  const tmpDir = fs.mkdtempSync('/tmp/split-prompt-');
+  const dataDir = path.join(tmpDir, '.data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpDir, 'opencode.json'),
+    JSON.stringify({ model: SIS_MODEL, permission: 'allow' }, null, 2),
+  );
+  // Resolve API key: explicit SIS_API_KEY env > PROVIDER_ENV lookup by model prefix.
+  const providerPrefix = SIS_MODEL.split('/')[0];
+  const keyEnvVar = PROVIDER_ENV[providerPrefix];
+  const resolvedKey = SIS_API_KEY || (keyEnvVar ? (process.env[keyEnvVar] || '') : '');
+  try {
+    const fullPrompt = SIS_PROMPT_TEMPLATE
+      .replace('{MAX}', String(SIS_MAX_STAGES))
+      .replace('{PROMPT}', userPrompt);
+    const ocEnv: Record<string, string> = { XDG_DATA_HOME: dataDir };
+    if (resolvedKey && keyEnvVar) ocEnv[keyEnvVar] = resolvedKey;
+    await run('opencode', ['run', fullPrompt], tmpDir, () => {}, {
+      env: ocEnv,
+      timeoutMs: 60_000,
+    });
+    const dbPath = path.join(dataDir, 'opencode', 'opencode.db');
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    let text: string | null = null;
+    try {
+      const rows = db.prepare(
+        'SELECT data FROM part ORDER BY time_created DESC LIMIT 30',
+      ).all() as Array<{ data: string }>;
+      for (const row of rows) {
+        let part: any;
+        try { part = JSON.parse(String(row.data)); } catch (_) { continue; }
+        if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+          text = part.text; break;
+        }
+      }
+    } finally {
+      try { db.close(); } catch (_) {}
+    }
+    if (!text) throw new Error('no text response from model');
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error('model response did not contain a JSON array');
+    const stages: unknown = JSON.parse(match[0]);
+    if (!Array.isArray(stages) || stages.length < 2 || !stages.every((s) => typeof s === 'string'))
+      throw new Error('expected an array of 2+ strings');
+    return (stages as string[]).slice(0, SIS_MAX_STAGES).map((s) => s.trim()).filter(Boolean);
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
 
 export default function registerMatrixRoutes(app: Express): void {
   // Kick off a matrix: body = { prompt, platforms[], variants[], model, apiKey, ... }.
@@ -59,6 +115,18 @@ export default function registerMatrixRoutes(app: Express): void {
         warnings: c.warnings,
       },
     });
+  });
+
+  app.post('/api/matrix/split-prompt', async (req, res) => {
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ ok: false, error: 'prompt is required' });
+    if (prompt.length > 10_000) return res.status(400).json({ ok: false, error: 'prompt too long' });
+    try {
+      const stages = await splitPrompt(prompt);
+      res.json({ ok: true, stages });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message || 'split failed' });
+    }
   });
 
   app.get('/api/matrix/status', (_req, res) => {

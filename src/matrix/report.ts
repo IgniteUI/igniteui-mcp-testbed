@@ -110,7 +110,7 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
       ? `${r.tests.passed}/${r.tests.total} passed${r.tests.failed ? `, ${r.tests.failed} failed` : ''}`
       : `did not run${r.tests.error ? ` — ${esc(r.tests.error)}` : ''}`
     : 'none';
-  const stages = Object.entries(r.stages?.timings || {})
+  const steps = Object.entries(r.steps?.timings || {})
     .map(([name, ms]) => `<span class="stage">${esc(name)} <b>${fmtMs(ms)}</b></span>`).join(' ');
   const shots = (r.screenshots || []).map((s) =>
     s.ok
@@ -127,7 +127,7 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
   </h2>
   <p class="muted">tokens: ${tokenSplit(r.stats?.tokens)}</p>
   ${r.error ? `<p class="error">${esc(r.error)}</p>` : ''}
-  ${stages ? `<p class="stages">${stages}</p>` : ''}
+  ${steps ? `<p class="stages">${steps}</p>` : ''}
   <p class="muted">tests: ${tests}</p>
   ${toolsSection(r)}
   ${failures ? `<ul class="failures">${failures}</ul>` : ''}
@@ -312,7 +312,7 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
         status: r?.status || 'missing',
         error: r?.error || null,
         durationMs: r?.durationMs ?? null,
-        stages: r?.stages?.timings || {},
+        steps: r?.steps?.timings || {},
         tokens: r?.stats?.tokens?.total ?? null,
         tokensBreakdown: r?.stats?.tokens
           ? {

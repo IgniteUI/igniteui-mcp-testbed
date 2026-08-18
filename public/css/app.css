@@ -137,6 +137,10 @@ header nav.views { display:flex; gap:.2rem; margin-left:1.8rem; align-self:stret
            background:transparent; color:var(--steel); border:1px solid var(--line); border-radius:6px;
            padding:.3rem .7rem; cursor:pointer; }
 .viewbtn:hover { color:var(--ink); }
+.viewbtn:disabled { opacity:.35; cursor:not-allowed; }
+.viewbtn:disabled:hover { color:var(--steel); }
+.sis-loading { animation:sis-pulse 1.1s ease-in-out infinite; }
+@keyframes sis-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
 
 /* history view */
 .history-view { height:calc(100vh - 60px); padding:1.4rem 1.5rem; display:flex; flex-direction:column; overflow:hidden; }

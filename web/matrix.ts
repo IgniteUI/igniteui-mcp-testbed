@@ -69,6 +69,8 @@ const st = {
   totalPasses: 1,
   multiStage: false,
   extraStages: [] as StageRow[],
+  promptHasText: false,
+  splitInProgress: false,
 };
 
 const activePack = (): ProviderPack | undefined =>
@@ -270,6 +272,39 @@ function setMultiStage(on: boolean) {
   st.multiStage = on;
   if (!on) st.extraStages = [];
   update();
+}
+
+function onPromptInput() {
+  const el = document.getElementById('mxPrompt') as any;
+  st.promptHasText = !!(el?.value?.trim());
+  update();
+}
+
+async function splitInStages() {
+  const el = document.getElementById('mxPrompt') as any;
+  const prompt: string = el?.value?.trim() || '';
+  if (!prompt || st.splitInProgress || st.extraStages.length > 0) return;
+  st.splitInProgress = true;
+  update();
+  try {
+    const j = await postJSON('/api/matrix/split-prompt', { prompt });
+    if (!j.ok) { alert(j.error || 'Split failed'); return; }
+    const stages: string[] = j.stages;
+    if (!Array.isArray(stages) || stages.length < 2) { alert('Unexpected response from model'); return; }
+    st.multiStage = true;
+    st.extraStages = stages.slice(1).map(() => newStageRow());
+    update();
+    if (el) { el.value = stages[0]; st.promptHasText = !!stages[0].trim(); }
+    for (let i = 0; i < st.extraStages.length; i++) {
+      const ta = document.getElementById(`mxStage-${st.extraStages[i].key}`) as any;
+      if (ta) ta.value = stages[i + 1] || '';
+    }
+  } catch (err: any) {
+    alert(`Split failed: ${err.message}`);
+  } finally {
+    st.splitInProgress = false;
+    update();
+  }
 }
 
 // ---------- run lock / progress ----------
@@ -654,15 +689,20 @@ function tpl() {
 
       <fieldset>
         <legend>Prompt${st.multiStage ? ' (Stage 1)' : ''} <small style="color:var(--steel);font-weight:400">${st.multiStage ? 'multi-stage, shared' : 'one-shot, shared'}</small>
-          ${st.multiStage ? html`<button type="button" class="viewbtn" disabled
-            title="Automatic prompt splitting — coming soon" style="margin-left:.5rem;opacity:.45">Split into stages</button>` : ''}
+          <button type="button" class="viewbtn${st.splitInProgress ? ' sis-loading' : ''}"
+            style="margin-left:.5rem"
+            title="Ask an AI to split this prompt into sequential stages"
+            ?disabled=${!st.promptHasText || st.splitInProgress || st.extraStages.length > 0}
+            @click=${splitInStages}>${st.splitInProgress ? 'Splitting\u2026' : 'Split into stages'}</button>
         </legend>
         <igc-button-group selection="single-required" style="margin-bottom:.5rem"
           @igcSelect=${(e: any) => setMultiStage((e.detail || '') === 'multistage')}>
           <igc-toggle-button value="oneshot" .selected=${!st.multiStage}>One-shot</igc-toggle-button>
           <igc-toggle-button value="multistage" .selected=${st.multiStage}>Multi-stage</igc-toggle-button>
         </igc-button-group>
-        <igc-textarea outlined id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></igc-textarea>
+        <igc-textarea outlined id="mxPrompt" class="ta" rows="4"
+          placeholder="e.g. Build a dashboard page with a data grid and a chart."
+          @igcInput=${onPromptInput}></igc-textarea>
         ${st.multiStage ? html`
           ${st.extraStages.length ? html`<div class="mx-stages-stack">
             ${repeat(st.extraStages, (s) => s.key, (stage, i) => {

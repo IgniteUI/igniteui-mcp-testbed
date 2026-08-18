@@ -92,6 +92,7 @@ export interface CreateOpts {
   startedAt?: string;
   mode?: HistoryRecord['mode'];
   prompt?: string | null;
+  stagePrompts?: string[] | null;
   matrixId?: string | null;
   matrixName?: string | null;
   status?: string;
@@ -110,10 +111,11 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     rating: null,
     mode: opts.mode || 'interactive', // 'interactive' | 'matrix'
     prompt: opts.prompt || null, // the one-shot instruction (matrix mode)
+    stagePrompts: (opts.stagePrompts && opts.stagePrompts.length > 1) ? opts.stagePrompts.slice() : null,
     matrixId: opts.matrixId || null, // groups entries of one matrix submission
     matrixName: opts.matrixName || null, // user-set label for the matrix submission
     config: redact(cfg),
-    stages: { completed: [], timings: {} },
+    steps: { completed: [], timings: {} },
     stats: null,
     screenshots: [], // [{ route, file, ok, error }]
     tests: null, // Playwright verification outcome (headless/matrix only)
@@ -142,8 +144,8 @@ export function finish(id: string, { status, error, completed, timings, finished
     r.error = error || null;
     r.finishedAt = finishedAt || new Date().toISOString();
     r.durationMs = Date.parse(r.finishedAt) - Date.parse(r.startedAt);
-    if (Array.isArray(completed)) r.stages.completed = completed.slice();
-    if (timings) r.stages.timings = timings;
+    if (Array.isArray(completed)) r.steps.completed = completed.slice();
+    if (timings) r.steps.timings = timings;
     if (Array.isArray(screenshots)) r.screenshots = screenshots;
     if (tests !== undefined) r.tests = tests;
     if (tools !== undefined) r.tools = tools;
