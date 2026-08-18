@@ -23,6 +23,10 @@ export default function registerStatsRoutes(app: Express): void {
     // Tool usage rides the same channel as a `type:'tools'` frame, so replay the last
     // read too — otherwise a reconnecting client shows no tools until the next tick.
     if (stats?.tools) res.write(`data: ${JSON.stringify({ type: 'tools', tools: stats.tools })}\n\n`);
+    // Same for diagnostics: they live on the session collector, not the stats snapshot,
+    // so without this replay a reload silently drops a live provider warning.
+    const diagnostics = session.getDiagnostics();
+    if (diagnostics.length) res.write(`data: ${JSON.stringify({ type: 'diagnostics', diagnostics })}\n\n`);
   });
 
   // Token usage + cost for this session, straight from `opencode stats`.

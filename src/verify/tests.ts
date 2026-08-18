@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { APP_PORT } from '../frameworks.ts';
 import { TESTS_DIR, TEST_TIMEOUT_MS } from '../config.ts';
 import { killTree } from '../proc/exec.ts';
+import { stripAnsi } from '../ansi.ts';
 import type { Emit, TestResult, TestFailure } from '../types.ts';
 
 const SPEC_RE = /\.(spec|test)\.(m|c)?[jt]sx?$/;
@@ -118,7 +119,7 @@ function parseReport(reportPath: string): Omit<TestResult, 'ran' | 'ok' | 'files
       failures.push({
         title: spec.title || '(untitled)',
         file: cleanSpecPath(spec.file || suiteFile || ''),
-        error: error.replace(/\u001b\[[0-9;]*m/g, '').split('\n').slice(0, 6).join('\n'),
+        error: stripAnsi(error).split('\n').slice(0, 6).join('\n'),
       });
     }
     for (const child of suite.suites || []) walkSuite(child, suiteFile);

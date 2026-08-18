@@ -6,6 +6,8 @@ import { getJSON, postJSON } from './api.ts';
 import { setMatrixLock } from './wizard.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
 import { createImagePicker, refreshPromptImages } from './prompt-images.ts';
+import { statusLabel, KIND_CHIP, pillClass } from '../src/status-meta.ts';
+import type { Diagnostic, MatrixBanner } from '../src/types.ts';
 
 // Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
 // local = local-only (generated wiped); merge = generated + local overlaid.
@@ -33,7 +35,12 @@ interface VariantRow { key: number; mcps: string[]; mode: string }
 interface EntryVm {
   index: number; platform: string; variantLabel: string;
   status: string; step: string; logs: string[]; open: boolean;
+  /** Retained so the warning chip survives an SSE reconnect (see MatrixEntry). */
+  diagnostics?: Diagnostic[];
 }
+
+const activeDiags = (e: EntryVm): Diagnostic[] =>
+  (e.diagnostics || []).filter((d) => !d.resolvedAt && !d.supersededAt);
 
 let variantKey = 0;
 const newRow = (mcps: string[], mode: string): VariantRow => ({ key: ++variantKey, mcps, mode });
@@ -54,6 +61,7 @@ const st = {
   keyPlaceholder: 'sk-…',
   entries: [] as EntryVm[],
   overall: '',
+  banner: null as MatrixBanner | null,
   active: false,
   goDisabled: false,
   total: 0,
@@ -279,6 +287,7 @@ function handleMx(m: any) {
   if (m.type === 'state') {
     const s = m.state || {};
     st.total = s.total || 0; st.done = s.done || 0; st.overall = overallText();
+    st.banner = s.banner || null;
     (s.entries || []).forEach((e: any) => {
       const entry = ensureEntry(e);
       entry.status = e.status;
@@ -286,6 +295,7 @@ function handleMx(m: any) {
       if (e.step != null) entry.step = e.step;
       // Replay retained logs so a reconnect/reload doesn't lose past entries' output.
       if (Array.isArray(e.logs)) entry.logs = e.logs.slice();
+      if (Array.isArray(e.diagnostics)) entry.diagnostics = e.diagnostics.slice();
     });
     setMatrixActive(!!s.running);
     if (!s.running) st.goDisabled = false;
@@ -294,6 +304,7 @@ function handleMx(m: any) {
   }
   if (m.type === 'matrix-start') {
     st.total = m.total; st.done = 0; st.overall = overallText();
+    st.banner = null;
     (m.entries || []).forEach((e: any) => ensureEntry(e));
     setMatrixActive(true);
     update();
@@ -313,16 +324,23 @@ function handleMx(m: any) {
     if (m.type === 'step') { entry.step = m.step; appendLog(entry, `— ${m.step} —`); }
     else if (m.type === 'log') appendLog(entry, m.msg);
     else if (m.type === 'error') appendLog(entry, 'ERROR: ' + m.msg);
+    // Full set every time, so replacing wholesale is correct and a dropped event
+    // self-heals on the next one.
+    else if (m.type === 'diagnostics') entry.diagnostics = (m.diagnostics || []).slice();
     else if (m.type === 'entry-done') {
       entry.status = m.status;
       st.done += 1; st.overall = overallText();
+      if (Array.isArray(m.diagnostics)) entry.diagnostics = m.diagnostics.slice();
+      if (m.banner !== undefined) st.banner = m.banner || null;
       if (m.status === 'success') {
         const shots = `${(m.screenshots || []).filter((s: any) => s.ok).length} shots`;
         entry.step = m.tests && m.tests.ran ? `${shots} · ${m.tests.passed}/${m.tests.total} tests` : shots;
       } else if (m.status === 'build-error') entry.step = 'build failed';
       else if (m.status === 'test-failed') entry.step = m.tests ? `tests failed (${m.tests.failed}/${m.tests.total})` : 'tests failed';
-      else if (m.status === 'rate-limited') entry.step = m.error || 'Rate limit exceeded. Please try again later.';
-      else if (m.status === 'error') entry.step = m.error || 'run failed';
+      // Everything else — including every provider status — comes from the shared
+      // status→label table, so a new kind is covered by construction rather than by
+      // someone remembering to add another branch here.
+      else entry.step = m.error || statusLabel(m.status);
     }
     update();
   }
@@ -439,14 +457,28 @@ const variantRow = (row: VariantRow) => html`
     <button type="button" class="rm" title="Remove variant" @click=${() => removeVariant(row)}>✕</button>
   </div>`;
 
-const entryItem = (e: EntryVm) => html`
+const diagItem = (d: Diagnostic) => html`
+  <div class="diag ${classMap({
+    resolved: !!d.resolvedAt, superseded: !!d.supersededAt, suspected: d.confidence === 'suspected',
+  })}">
+    <div class="diag-title">${d.title}${d.count > 1 ? ` ×${d.count}` : ''}${d.confidence === 'suspected' ? ' (possible cause)' : ''}</div>
+    <div class="diag-advice">${d.advice}</div>
+    <div class="diag-detail">${d.detail}</div>
+  </div>`;
+
+const entryItem = (e: EntryVm) => {
+  const diags = activeDiags(e);
+  return html`
   <li class="mx-entry ${classMap({ open: e.open })}">
     <div class="top" @click=${() => { e.open = !e.open; update(); }}>
-      <span class="caret">▸</span><span class="pill ${e.status || 'pending'}">${e.status || 'pending'}</span>
+      <span class="caret">▸</span><span class="pill ${pillClass(e.status || 'pending')}">${e.status || 'pending'}</span>
       <span class="who">${e.platform} · ${e.variantLabel}</span><span class="step">${e.step}</span>
+      ${diags.length ? html`<span class="diag-chip" title=${diags.map((d) => d.title).join('; ')}>⚠ ${diags.map((d) => KIND_CHIP[d.kind] || d.kind).join(' ')}</span>` : ''}
     </div>
+    ${(e.diagnostics || []).length ? html`<div class="diags">${(e.diagnostics || []).map(diagItem)}</div>` : ''}
     <div class="mini">${e.logs.join('\n')}</div>
   </li>`;
+};
 
 function tpl() {
   const ig = st.provider === 'igniteui';
@@ -551,6 +583,7 @@ function tpl() {
     <p class="eyebrow">Matrix progress <span class="note" id="mxOverall" style="margin:0">${st.overall}</span>
       <button class="viewbtn" id="mxCancel" ?hidden=${!st.active} style="margin-left:.6rem" @click=${onCancel}>Cancel</button></p>
     <p class="note" id="mxEmpty" ?hidden=${st.entries.length > 0}>Configure platforms × models and a prompt, then Run matrix. Each entry is a one-shot agent run; screenshots land in History.</p>
+    ${st.banner ? html`<div class="mx-banner" id="mxBanner">⚠ ${st.banner.message}</div>` : ''}
     <ul class="mx-entries" id="mxEntries">${repeat(st.entries, (e) => e.index, entryItem)}</ul>
   </section>`;
 }

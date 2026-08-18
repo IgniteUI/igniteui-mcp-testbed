@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { HistoryRecord } from './types.ts';
 import { ARTIFACT_DIR } from './config.ts';
+import { PILL_STATUSES } from './status-meta.ts';
 
 // Read a screenshot file and return a base64 data-URL, or null on any error.
 async function toDataUrl(runId: string, filename: string): Promise<string | null> {
@@ -87,7 +88,18 @@ tbody tr.detail-row.open{display:table-row}
 .pill{display:inline-block;padding:.05rem .5rem;border-radius:10px;font-size:.7rem}
 .pill.success{background:rgba(43,179,104,.15);color:var(--green)}
 .pill.error{background:rgba(224,106,85,.16);color:var(--red)}
-.pill.build-error{background:rgba(202,162,60,.18);color:var(--amber)}
+.pill.build-error,.pill.rate-limited,.pill.provider-down,.pill.no-credits,.pill.auth,.pill.timed-out{background:rgba(202,162,60,.18);color:var(--amber)}
+.pill.other{background:rgba(142,166,164,.15);color:var(--steel)}
+.diag{border-left:3px solid var(--amber);padding:.35rem .6rem;margin:.35rem 0;background:rgba(202,162,60,.07)}
+.diag .diag-title{color:var(--amber);font-weight:600}
+.diag .diag-advice{color:var(--ink);margin-top:.15rem}
+.diag .diag-detail{color:var(--steel);font-family:var(--mono);font-size:.72rem;margin-top:.25rem;overflow-wrap:anywhere;white-space:pre-wrap}
+.diag .diag-meta{color:var(--steel);font-size:.7rem;margin-top:.2rem}
+.diag.suspected{border-left-style:dashed}
+.diag.resolved{border-left-color:var(--green);background:rgba(43,179,104,.06);opacity:.75}
+.diag.resolved .diag-title{color:var(--green)}
+.diag.superseded{border-left-color:var(--steel);background:transparent;opacity:.6}
+.diag.superseded .diag-title{color:var(--steel);text-decoration:line-through}
 .pill.test-failed{background:rgba(224,106,85,.16);color:var(--red)}
 .pill.running,.pill.pending{background:rgba(202,162,60,.16);color:var(--amber)}
 .pill.cancelled,.pill.interrupted{background:rgba(142,166,164,.15);color:var(--steel)}
@@ -176,6 +188,9 @@ tr.run-row.expanded .chevron{transform:rotate(90deg)}
 
 <script>
 const RUNS = ${dataJson};
+// Injected from src/status-meta.ts so the export can never drift from the app's
+// vocabulary — the drift is exactly why .pill.rate-limited was missing here.
+const PILL_SET = new Set(${JSON.stringify(PILL_STATUSES)});
 
 // ---- Utilities ----
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -225,6 +240,19 @@ function toolsBlock(r){const u=r.tools;
       '<tbody>'+rows+'</tbody></table></details>':'')+
     (u.warning?'<div class="detail-note">'+esc(u.warning)+'</div>':'')+
     '</div>'}
+function diagBlock(r){const ds=r.diagnostics||[];
+  if(!ds.length)return'';
+  const rows=ds.map(function(d){
+    const state=d.resolvedAt?' resolved':d.supersededAt?' superseded':'';
+    const hedge=d.confidence==='suspected'?' suspected':'';
+    const note=d.resolvedAt?' · recovered':d.supersededAt?' · overtaken':'';
+    return'<div class="diag'+state+hedge+'">'+
+      '<div class="diag-title">'+esc(d.title)+(d.count>1?' ×'+d.count:'')+
+      (d.confidence==='suspected'?' (possible cause)':'')+note+'</div>'+
+      '<div class="diag-advice">'+esc(d.advice)+'</div>'+
+      '<div class="diag-detail">'+esc(d.detail)+'</div>'+
+      '<div class="diag-meta">'+esc(d.at)+'</div></div>'}).join('');
+  return'<div class="full-col"><h4>Diagnostics</h4>'+rows+'</div>'}
 function matrixColor(mid){if(!mid)return null;let h=0;for(let i=0;i<mid.length;i++)h=(h*31+mid.charCodeAt(i))>>>0;return'hsl('+(h%360)+',55%,62%)'}
 
 // ---- Lightbox ----
@@ -246,7 +274,7 @@ const COLS=[
   {field:'_fw',           label:'Framework',val:r=>r.config.framework||'',    cell:r=>esc(r.config.framework||'\u2014')},
   {field:'_model',        label:'Model',    val:r=>(r.config.models||[])[0]||'',cell:r=>esc((r.config.models||[]).join(', ')||'\u2014')},
   {field:'_mcps',         label:'MCPs',     val:r=>(r.config.enabledMcps||[]).join(','),cell:r=>esc((r.config.enabledMcps||[]).join(', ')||'\u2014')},
-  {field:'status',        label:'Status',   val:r=>r.status||'',              cell:r=>'<span class="pill '+esc(r.status)+'">'+esc(r.status)+'</span>'},
+  {field:'status',        label:'Status',   val:r=>r.status||'',              cell:r=>'<span class="pill '+esc(PILL_SET.has(r.status)?r.status:'other')+'">'+esc(r.status)+'</span>'},
   {field:'durationMs',    label:'Duration', val:r=>r.durationMs??-1,          cell:r=>'<span class="num-r">'+esc(fmtDur(r.durationMs))+'</span>'},
   {field:'rating',        label:'Rating',   val:r=>r.rating??-1,              cell:r=>'<span class="stars">'+esc(stars(r.rating))+'</span>'},
   {field:'_tools',        label:'MCP·Skill',val:r=>r.tools?r.tools.mcpCalls+r.tools.skillCalls/1000:-1,cell:r=>r.tools?'<span class="num-r '+toolState(r.tools)+'">'+r.tools.mcpCalls+' · '+r.tools.skillCalls+'</span>':'<span class="num-r none">—</span>'},
@@ -295,7 +323,7 @@ function renderDetail(r){
     '<div><h4>Per model</h4><dl>'+
     (perModel.length?perModel.map(([m,pm])=>'<dt style="overflow-wrap:anywhere">'+esc(m)+'</dt><dd>'+esc(fmt(pm.tokens?.total))+' tok ('+esc(fmt(pm.tokens?.input))+' in / '+esc(fmt(pm.tokens?.output))+' out)'+(pm.cost?' &middot; $'+pm.cost.toFixed(4):'')+'</dd>').join(''):'<dt>\u2014</dt><dd></dd>')+
     '</dl></div>'+
-    toolsBlock(r)+promptHtml+shotsHtml+logsHtml+errHtml+matrixHtml+
+    diagBlock(r)+toolsBlock(r)+promptHtml+shotsHtml+logsHtml+errHtml+matrixHtml+
     '</div>';
 }
 

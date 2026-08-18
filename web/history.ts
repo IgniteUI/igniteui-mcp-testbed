@@ -6,6 +6,8 @@ import { html, render, keyed } from './lit.ts';
 import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
+import { pillClass } from '../src/status-meta.ts';
+import type { Diagnostic } from '../src/types.ts';
 
 interface HistoryGridRow {
   id: string;
@@ -177,6 +179,28 @@ function toolNames(tools: any[], kind: string): string {
   const of = tools.filter((t) => t.kind === kind);
   if (!of.length) return 'none';
   return of.map((t) => `${t.name}${t.calls > 1 ? ` ×${t.calls}` : ''}`).join(', ');
+}
+
+// The detail-panel "Diagnostics" block. Records written before this feature (and any
+// run that produced none) have no diagnostics at all, so absence is normal and is not
+// worth a "not recorded" note the way missing tool usage is.
+function diagsDetailTpl(r: any) {
+  const ds: Diagnostic[] = r.diagnostics || [];
+  if (!ds.length) return gridHtml``;
+  return gridHtml`
+    <div class="shots"><h4>Diagnostics</h4>
+      ${ds.map((d) => gridHtml`
+        <div class="diag ${d.resolvedAt ? 'resolved' : d.supersededAt ? 'superseded' : ''} ${d.confidence === 'suspected' ? 'suspected' : ''}">
+          <div class="diag-title">
+            ${d.title}${d.count > 1 ? ` ×${d.count}` : ''}
+            ${d.confidence === 'suspected' ? ' (possible cause)' : ''}
+            ${d.resolvedAt ? ' · recovered' : d.supersededAt ? ' · overtaken' : ''}
+          </div>
+          <div class="diag-advice">${d.advice}</div>
+          <div class="diag-detail">${d.detail}</div>
+          <div class="diag-meta">${d.at}${d.count > 1 ? ` → ${d.lastAt}` : ''}</div>
+        </div>`)}
+    </div>`;
 }
 
 // The detail-panel "Tool usage" block: what the agent called, and — the part that
@@ -378,6 +402,7 @@ function bindGridTemplates() {
               </div>
             </details>
           </div>` : gridHtml``}
+        ${diagsDetailTpl(r)}
         ${toolsDetailTpl(r)}
         ${r.tests ? gridHtml`
           <div class="shots"><h4>Tests</h4>
@@ -431,7 +456,11 @@ function bindGridTemplates() {
           renderRuns();
         }}>#${tag.label}</span>`;
   };
-  $('#historyStatus').bodyTemplate = (ctx: any) => gridHtml`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  // Just the pill. A diagnostics chip used to sit beside it, but for the provider
+  // statuses it simply restated the pill ('timed-out' + '⚠ timeout'), and the column is
+  // narrow. The diagnostics themselves live in the row's detail panel.
+  $('#historyStatus').bodyTemplate = (ctx: any) =>
+    gridHtml`<span class="pill ${pillClass(getCellRow(ctx).status)}">${getCellRow(ctx).status}</span>`;
   $('#historyTests').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     return gridHtml`<span class="tests-cell ${row.testsState}" title="Playwright verification">${row.testsDisplay}</span>`;

@@ -244,7 +244,32 @@ igc-grid.runs-grid igc-grid-toolbar-exporter {
 .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
 .pill.error { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
-.pill.rate-limited { background:rgba(202,162,60,.18); color:var(--amber); }
+/* Provider-side outcomes: the run didn't fail, the provider did — amber, not red, so
+   they read as "not your code" at a glance. Kept in sync with src/status-meta.ts. */
+.pill.rate-limited,
+.pill.provider-down,
+.pill.no-credits,
+.pill.auth,
+.pill.timed-out { background:rgba(202,162,60,.18); color:var(--amber); }
+.pill.other { background:rgba(142,166,164,.15); color:var(--steel); }
+
+/* Diagnostics. A resolved one is good news and a superseded one is not, so they must
+   not look alike — muted-green vs muted-grey with a strikethrough title. */
+.diag { border-left:3px solid var(--amber); padding:.35rem .6rem; margin:.35rem 0; background:rgba(202,162,60,.07); }
+.diag .diag-title { color:var(--amber); font-weight:600; }
+.diag .diag-advice { color:var(--ink); margin-top:.15rem; }
+.diag .diag-detail { color:var(--steel); font-family:var(--mono); font-size:.72rem; margin-top:.25rem; overflow-wrap:anywhere; white-space:pre-wrap; }
+.diag .diag-meta { color:var(--steel); font-size:.7rem; margin-top:.2rem; }
+.diag.suspected { border-left-style:dashed; }
+.diag.resolved { border-left-color:var(--green); background:rgba(43,179,104,.06); opacity:.75; }
+.diag.resolved .diag-title { color:var(--green); }
+.diag.superseded { border-left-color:var(--steel); background:transparent; opacity:.6; }
+.diag.superseded .diag-title { color:var(--steel); text-decoration:line-through; }
+.diag-chip { color:var(--amber); margin-left:.35rem; }
+
+/* Matrix-level aggregate banner. */
+.mx-banner { border:1px solid rgba(202,162,60,.5); background:rgba(202,162,60,.12); color:var(--amber);
+  padding:.5rem .75rem; border-radius:6px; margin:.5rem 0; font-size:.8rem; }
 .pill.test-failed { background:rgba(224,106,85,.16); color:var(--red); }
 .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
 .detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem 1.6rem;
