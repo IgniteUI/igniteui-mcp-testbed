@@ -307,6 +307,9 @@ export interface MatrixEntry {
 export interface MatrixPass {
   prompt: string;
   name?: string | null;
+  /** Multi-stage: if present with >1 element, the agent runs once per stage in the same appDir.
+   *  stages[0] equals prompt; subsequent elements are the follow-on stage prompts. */
+  stages?: string[];
 }
 
 export interface MatrixState {

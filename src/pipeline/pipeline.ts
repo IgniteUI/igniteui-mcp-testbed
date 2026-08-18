@@ -30,6 +30,10 @@ export interface PipelineOpts {
   emit: Emit;
   headless?: boolean;
   prompt?: string | null;
+  /** Multi-stage prompts. If present with >1 element, the agent is invoked once per
+   *  stage in the same appDir/dataDir; filesystem changes from each stage carry forward.
+   *  When set, overrides `prompt` for the agent step. */
+  stages?: string[] | null;
   dataDir?: string | null;
   artifactDir?: string | null;
   onChild?: ((child: ChildProcess) => void) | null;
@@ -55,7 +59,7 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null }: PipelineOpts,
+  { emit, headless = false, prompt = null, stages = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
@@ -384,29 +388,44 @@ export async function runPipeline(
     return { appPort: APP_PORT, opencodePort: OPENCODE_PORT };
   }
 
-  // 6b. Headless: run the agent once with the prompt — with NO dev server running.
-  emit('step', { step: 'agent' });
+  // 6b. Headless: run the agent once per stage prompt — with NO dev server running.
+  // Multi-stage: `stages` overrides `prompt` when it has >1 element. Each stage is a
+  // separate `opencode run` invocation in the same appDir/dataDir, so filesystem changes
+  // from stage N are visible to stage N+1. No extra context is injected — the stage
+  // prompt itself and the modified filesystem are the inter-stage handoff.
+  const stagePrompts = (stages && stages.length > 1) ? stages : [prompt || ''];
+  const isMultiStage = stagePrompts.length > 1;
+
   const ocEnv = providerEnvFor(cfg.model, cfg.apiKey);
   if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
+  // All stages share the same dataDir so cumulative token/cost accrues in one store.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
-  emit('log', `agent (one-shot): ${prompt}`);
-  if (promptImageFiles.length) {
-    emit('log', `with ${promptImageFiles.length} image attachment(s): ${promptImageFiles.map((f) => path.basename(f)).join(', ')}`);
+
+  for (let si = 0; si < stagePrompts.length; si++) {
+    const stagePrompt = stagePrompts[si];
+    const stepLabel = isMultiStage ? `agent-stage-${si + 1}` : 'agent';
+    emit('step', { step: stepLabel });
+    emit('log', isMultiStage
+      ? `agent (stage ${si + 1}/${stagePrompts.length}): ${stagePrompt}`
+      : `agent (one-shot): ${stagePrompt}`);
+    // Prompt images are attached only to the first stage — they describe what to build
+    // (the shared spec); later stages build on the filesystem state stage 1 left behind.
+    if (si === 0 && promptImageFiles.length) {
+      emit('log', `with ${promptImageFiles.length} image attachment(s): ${promptImageFiles.map((f) => path.basename(f)).join(', ')}`);
+    }
+    // stdin is /dev/null (see run()) so opencode can never block on an interactive
+    // prompt (auth / confirmation); heartbeat shows liveness if it streams nothing.
+    // Extra args (e.g. a non-interactive/log flag for your opencode version) via env.
+    // `--file` is a yargs *array* option — must come AFTER the positional message.
+    const agentArgv = [
+      'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), stagePrompt,
+      ...(si === 0 ? promptImageFiles.flatMap((f) => ['--file', f]) : []),
+    ];
+    await runStep('opencode', agentArgv, appDir, emit, {
+      env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
+    });
   }
-  // stdin is /dev/null (see run()) so opencode can never block on an interactive
-  // prompt (auth / confirmation); heartbeat shows liveness if it streams nothing.
-  // Extra args (e.g. a non-interactive/log flag for your opencode version) via env.
-  // `--file` (opencode's prompt attachment flag) is a yargs *array* option, so it must
-  // come AFTER the positional message — placed before it, it would greedily swallow the
-  // prompt as another filename.
-  const agentArgv = [
-    'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
-    ...promptImageFiles.flatMap((f) => ['--file', f]),
-  ];
-  await runStep('opencode', agentArgv, appDir, emit, {
-    env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
-  });
 
   // Parse token/cost usage from `opencode stats` (against this entry's data dir).
   let entryStats: Stats | null = null;

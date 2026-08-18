@@ -47,7 +47,18 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
       const r = body.passes[i] || {};
       const p = String(r.prompt || '').trim();
       if (!p) return { ok: false, error: `passes[${i}].prompt is required` };
-      parsed.push({ prompt: p, name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 80) : null });
+      // Multi-stage: stages[] overrides the single prompt when it has >1 element.
+      let stages: string[] | undefined;
+      if (Array.isArray(r.stages) && r.stages.length > 1) {
+        const parsedStages: string[] = [];
+        for (let j = 0; j < r.stages.length; j++) {
+          const sp = String(r.stages[j] || '').trim();
+          if (!sp) return { ok: false, error: `passes[${i}].stages[${j}] is empty` };
+          parsedStages.push(sp);
+        }
+        stages = parsedStages;
+      }
+      parsed.push({ prompt: stages?.[0] ?? p, name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 80) : null, stages });
     }
     passes = parsed;
   } else {

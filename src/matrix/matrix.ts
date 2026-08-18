@@ -71,7 +71,7 @@ function pushEntryLog(entry: MatrixEntry, line: string): void {
   }
 }
 
-async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { prompt: string; matrixId: string; fixed: Fixed; name: string | null }): Promise<void> {
+async function runMatrix(combos: Combo[], { prompt, stages, matrixId, fixed, name }: { prompt: string; stages?: string[]; matrixId: string; fixed: Fixed; name: string | null }): Promise<void> {
   for (let i = 0; i < combos.length; i++) {
     const c = combos[i];
     const entry = matrixState.entries[i];
@@ -138,7 +138,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       if (matrixCancelled || cancelledEntries.has(runId)) killTree(child, 'SIGTERM');
     };
     try {
-      const result = await runPipeline(cfg, { emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir });
+      const result = await runPipeline(cfg, { emit, headless: true, prompt, stages, dataDir, artifactDir, onChild, appDir });
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);
       // The agent ran fine but the edited app may not compile — flag that distinctly
@@ -200,7 +200,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
 // they appear in History the moment the matrix is submitted.
 async function runAllPasses(combos: Combo[], passes: MatrixPass[], allPassIds: string[][], matrixIds: string[], fixed: Fixed): Promise<void> {
   for (let r = 0; r < passes.length; r++) {
-    const { prompt, name = null } = passes[r];
+    const { prompt, name = null, stages } = passes[r];
     const matrixId = matrixIds[r];
     const isLast = r === passes.length - 1;
 
@@ -231,7 +231,7 @@ async function runAllPasses(combos: Combo[], passes: MatrixPass[], allPassIds: s
         }
       }
     } else {
-      await runMatrix(combos, { prompt, matrixId, fixed, name: name ?? null });
+      await runMatrix(combos, { prompt, stages, matrixId, fixed, name: name ?? null });
     }
 
     // Per-pass report (best-effort: a failure must never surface as a pass error).

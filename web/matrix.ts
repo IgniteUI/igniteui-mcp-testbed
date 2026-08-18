@@ -35,11 +35,14 @@ interface EntryVm {
   status: string; step: string; logs: string[]; open: boolean;
 }
 interface ExtraPass { key: number; sameAsPass1: boolean }
+interface StageRow { key: number }
 
 let variantKey = 0;
 const newRow = (mcps: string[], mode: string): VariantRow => ({ key: ++variantKey, mcps, mode });
 let extraPassKey = 0;
 const newExtraPass = (): ExtraPass => ({ key: ++extraPassKey, sameAsPass1: true });
+let stageKey = 0;
+const newStageRow = (): StageRow => ({ key: ++stageKey });
 
 // Reference images attached to the shared prompt — a fixed set applied to every entry
 // (they describe *what* to build; the axes are how it's built).
@@ -64,6 +67,8 @@ const st = {
   extraPasses: [] as ExtraPass[],
   currentPass: 1,
   totalPasses: 1,
+  multiStage: false,
+  extraStages: [] as StageRow[],
 };
 
 const activePack = (): ProviderPack | undefined =>
@@ -249,6 +254,24 @@ function toggleExtraPassSameAs(pass: ExtraPass, checked: boolean) {
   update();
 }
 
+// ---------- stages ----------
+
+function addStage() {
+  st.extraStages = [...st.extraStages, newStageRow()];
+  update();
+}
+
+function removeStage(key: number) {
+  st.extraStages = st.extraStages.filter((s) => s.key !== key);
+  update();
+}
+
+function setMultiStage(on: boolean) {
+  st.multiStage = on;
+  if (!on) st.extraStages = [];
+  update();
+}
+
 // ---------- run lock / progress ----------
 
 // A matrix run drives the same app/opencode processes and fixed ports as an
@@ -420,8 +443,19 @@ export async function applyServerMatrixConfig() {
   const unshown = platforms.filter((p) => !shown.has(p));
 
   $('#mxModel').value = cfg.model || '';
-  $('#mxPrompt').value = cfg.passes?.[0]?.prompt || cfg.prompt || '';
+  $('#mxPrompt').value = cfg.passes?.[0]?.stages?.[0] || cfg.passes?.[0]?.prompt || cfg.prompt || '';
   if (cfg.customMcp) $('#mxCustomMcp').value = cfg.customMcp;
+  // Prefill multi-stage from the server config (pass 1's stages array).
+  const pass1Stages: string[] | undefined = cfg.passes?.[0]?.stages;
+  if (Array.isArray(pass1Stages) && pass1Stages.length > 1) {
+    st.multiStage = true;
+    st.extraStages = pass1Stages.slice(1).map(() => newStageRow());
+    update();
+    for (let i = 0; i < st.extraStages.length; i++) {
+      const ta = document.getElementById(`mxStage-${st.extraStages[i].key}`) as any;
+      if (ta) ta.value = pass1Stages[i + 1] || '';
+    }
+  }
   // Prefill extra passes from the server config.
   if (Array.isArray(cfg.passes) && cfg.passes.length > 1) {
     const pass1Prompt = cfg.passes[0]?.prompt || cfg.prompt || '';
@@ -466,11 +500,32 @@ async function onSubmit(e: Event) {
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
-  // Build the passes array: pass 1 = the main prompt; extra passes use their own or pass 1's.
-  const extraPassPrompts: Array<{ prompt: string }> | null = (() => {
-    const out: Array<{ prompt: string }> = [];
+
+  // Collect stage prompts when in multi-stage mode.
+  let stagePrompts: string[] | undefined;
+  if (st.multiStage) {
+    const collected: string[] = [prompt];
+    for (let i = 0; i < st.extraStages.length; i++) {
+      const ta = document.getElementById(`mxStage-${st.extraStages[i].key}`) as any;
+      const p = ta?.value?.trim() || '';
+      if (!p) { alert(`Stage ${i + 2}: enter a prompt or remove the stage.`); return; }
+      collected.push(p);
+    }
+    stagePrompts = collected;
+  }
+
+  // Build the passes array: pass 1 = the main prompt (+ stages if multi-stage).
+  // In MS mode extra passes always replicate the full stage sequence — no per-pass
+  // prompt override is allowed so comparisons stay valid across passes.
+  const extraPassPrompts: Array<{ prompt: string; stages?: string[] }> | null = (() => {
+    const out: Array<{ prompt: string; stages?: string[] }> = [];
     for (let i = 0; i < st.extraPasses.length; i++) {
       const r = st.extraPasses[i];
+      if (st.multiStage) {
+        // Propagate the full stages array so every pass runs the same stage sequence.
+        out.push({ prompt, stages: stagePrompts });
+        continue;
+      }
       if (r.sameAsPass1) { out.push({ prompt }); continue; }
       const ta = document.getElementById(`mxExtraPrompt-${r.key}`) as any;
       const p = ta?.value?.trim() || '';
@@ -480,7 +535,10 @@ async function onSubmit(e: Event) {
     return out;
   })();
   if (extraPassPrompts === null) return;
-  const passes = [{ prompt }, ...extraPassPrompts];
+  const passes = [
+    { prompt, ...(stagePrompts ? { stages: stagePrompts } : {}) },
+    ...extraPassPrompts,
+  ];
   const body = {
     platforms, variants, model, passes,
     apiKey: $('#mxKey').value,
@@ -512,12 +570,13 @@ const extraPassSection = () => html`
             <button type="button" class="rm" title="Remove pass ${num}"
               @click=${() => removeExtraPass(pass.key)}>✕</button>
           </div>
-          <igc-checkbox .checked=${pass.sameAsPass1}
+          <igc-checkbox .checked=${pass.sameAsPass1 || st.multiStage}
+            .disabled=${st.multiStage}
             @igcChange=${(e: any) => toggleExtraPassSameAs(pass, !!e.target.checked)}>
-            Same as pass 1 prompt
+            ${st.multiStage ? 'Same as pass 1 stage prompts' : 'Same as pass 1 prompt'}
           </igc-checkbox>
           <igc-textarea outlined id="mxExtraPrompt-${pass.key}" class="ta" rows="3"
-            ?hidden=${pass.sameAsPass1}
+            ?hidden=${pass.sameAsPass1 || st.multiStage}
             placeholder=${`Prompt for pass ${num}…`}></igc-textarea>
         </div>`;
     })}
@@ -594,8 +653,36 @@ function tpl() {
       </fieldset>
 
       <fieldset>
-        <legend>Prompt <small style="color:var(--steel);font-weight:400">(one-shot, shared)</small></legend>
+        <legend>Prompt${st.multiStage ? ' (Stage 1)' : ''} <small style="color:var(--steel);font-weight:400">${st.multiStage ? 'multi-stage, shared' : 'one-shot, shared'}</small>
+          ${st.multiStage ? html`<button type="button" class="viewbtn" disabled
+            title="Automatic prompt splitting — coming soon" style="margin-left:.5rem;opacity:.45">Split into stages</button>` : ''}
+        </legend>
+        <igc-button-group selection="single-required" style="margin-bottom:.5rem"
+          @igcSelect=${(e: any) => setMultiStage((e.detail || '') === 'multistage')}>
+          <igc-toggle-button value="oneshot" .selected=${!st.multiStage}>One-shot</igc-toggle-button>
+          <igc-toggle-button value="multistage" .selected=${st.multiStage}>Multi-stage</igc-toggle-button>
+        </igc-button-group>
         <igc-textarea outlined id="mxPrompt" class="ta" rows="4" placeholder="e.g. Build a dashboard page with a data grid and a chart."></igc-textarea>
+        ${st.multiStage ? html`
+          ${st.extraStages.length ? html`<div class="mx-stages-stack">
+            ${repeat(st.extraStages, (s) => s.key, (stage, i) => {
+              const num = i + 2;
+              return html`
+                <div class="mx-extra-stage">
+                  <div class="mx-stage-head">
+                    <span class="mx-stage-num">Stage ${num}</span>
+                    <button type="button" class="rm" title="Remove stage ${num}"
+                      @click=${() => removeStage(stage.key)}>✕</button>
+                  </div>
+                  <igc-textarea outlined id="mxStage-${stage.key}" class="ta" rows="3"
+                    placeholder=${`Prompt for stage ${num}…`}></igc-textarea>
+                </div>`;
+            })}
+          </div>` : ''}
+          <button type="button" class="viewbtn" style="margin-top:.4rem" @click=${addStage}>+ Add stage</button>
+          <p class="note" style="margin-top:.4rem">Each stage calls the agent once in sequence against the same project.
+            Filesystem changes from stage N are visible to stage N+1 — no extra context is injected.</p>
+        ` : ''}
         <p class="note" style="margin-top:.7rem">Reference images (optional) — attached to the prompt of every entry
         via <code>opencode run --file</code>, so the mockup itself is the spec. Files live in
         <code>./prompt-images/</code> on the host; uploads land there too. Needs a vision-capable
