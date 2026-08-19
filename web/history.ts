@@ -355,8 +355,7 @@ function bindGridTemplates() {
           <div class="shots">
             <h4>${r.stagePrompts && r.stagePrompts.length > 1 ? 'Prompts' : 'Prompt'}</h4>
             ${r.stagePrompts && r.stagePrompts.length > 1
-              ? r.stagePrompts.map((sp: string, i: number) => gridHtml`
-                  <div class="note detail-note"><strong>Stage ${i + 1}:</strong> ${sp}</div>`)
+              ? r.stagePrompts.map((sp: string, i: number) => gridHtml`                  ${i > 0 ? gridHtml`<br>` : gridHtml``}                  <div class="note detail-note"><strong>Stage ${i + 1}:</strong> ${sp}</div>`)
               : gridHtml`<div class="note detail-note">${r.prompt}</div>`}
           </div>` : gridHtml``}
         ${(c.promptImages || []).length ? gridHtml`

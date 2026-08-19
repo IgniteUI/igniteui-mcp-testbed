@@ -88,7 +88,7 @@ export const SIS_MODEL = process.env.SIS_MODEL || 'opencode/big-pickle';
 export const SIS_API_KEY = process.env.SIS_API_KEY || '';
 // Maximum number of stages the SIS decomposition may produce. Raise if a prompt
 // is consistently too heavy even after splitting (each stage is one agent call).
-export const SIS_MAX_STAGES = Math.max(2, Number(process.env.SIS_MAX_STAGES || 8));
+export const SIS_MAX_STAGES = Math.max(2, Number(process.env.SIS_MAX_STAGES || 12));
 
 // Decomposition prompt sent to the SIS model. {MAX} and {PROMPT} are substituted at
 // call time. Kept here alongside the other SIS tunables so all SIS knobs are in one place.
@@ -113,7 +113,7 @@ Decomposition rules:
 - Each stage runs as a separate agent call that reads the current filesystem state, so stage N+1
   should reference specific file paths, component names, or functions that stage N was supposed to create
 - Each stage must be a self-sufficient instruction with no reliance on prior conversation context
-- Target 4\u20136 stages for typical prompts; use up to {MAX} stages for large or complex ones
+- Target 4\u20138 stages for typical prompts; use up to {MAX} stages for large or complex ones
 - Return ONLY a valid JSON array of strings \u2014 no explanation, no markdown, no code fences
 
 Prompt to split:
