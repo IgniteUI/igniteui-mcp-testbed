@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage } from './types.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic } from './types.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -118,6 +118,7 @@ export function createRecord(cfg?: Partial<RunConfig> | null, opts: CreateOpts =
     screenshots: [], // [{ route, file, ok, error }]
     tests: null, // Playwright verification outcome (headless/matrix only)
     tools: null, // MCP tools + skills the agent invoked (src/capture/tool-usage.ts)
+    diagnostics: [], // provider errors / stalls / loops (src/capture/diagnostics.ts)
     logs: [], // streamed pipeline log lines, retained for post-run inspection
   };
   writeAtomic(id, record);
@@ -133,10 +134,14 @@ export interface FinishOpts {
   screenshots?: Screenshot[];
   tests?: TestResult | null;
   tools?: ToolUsage | null;
+  /** Both settle in the one `finish` call a headless run makes, rather than needing a
+   * follow-up updateStats — a failed run has stats/tools too, carried out on the error. */
+  stats?: Stats | null;
+  diagnostics?: Diagnostic[];
   logs?: string[];
 }
 
-export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, tests, tools, logs }: FinishOpts = {}): HistoryRecord | null {
+export function finish(id: string, { status, error, completed, timings, finishedAt, screenshots, tests, tools, stats, diagnostics, logs }: FinishOpts = {}): HistoryRecord | null {
   return update(id, (r) => {
     r.status = status || 'success';
     r.error = error || null;
@@ -147,6 +152,8 @@ export function finish(id: string, { status, error, completed, timings, finished
     if (Array.isArray(screenshots)) r.screenshots = screenshots;
     if (tests !== undefined) r.tests = tests;
     if (tools !== undefined) r.tools = tools;
+    if (stats !== undefined) r.stats = stats;
+    if (Array.isArray(diagnostics)) r.diagnostics = diagnostics.slice();
     if (Array.isArray(logs)) r.logs = logs.slice();
   });
 }
@@ -168,6 +175,15 @@ export function updateStats(id: string | null, snapshot: Stats | null): HistoryR
 export function updateTools(id: string | null, usage: ToolUsage | null): HistoryRecord | null {
   if (!id || !usage) return null;
   return update(id, (r) => { r.tools = usage; });
+}
+
+// Diagnostics accrue while an interactive session runs — a provider 429 can land on the
+// tenth prompt, long after the pipeline's `done` — so (like stats and tools) the record
+// is refreshed repeatedly rather than written once. Headless runs settle in a single
+// `finish` call and never need this.
+export function updateDiagnostics(id: string | null, diagnostics: Diagnostic[] | null): HistoryRecord | null {
+  if (!id || !Array.isArray(diagnostics)) return null;
+  return update(id, (r) => { r.diagnostics = diagnostics.slice(); });
 }
 
 export function addModel(id: string | null, model: string): HistoryRecord | null {

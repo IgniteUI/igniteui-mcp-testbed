@@ -147,7 +147,12 @@ KEY_VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GOOGLE_GENERATIVE_
 # A matrix config may name a custom env var to hold its key via "apiKeyEnv"; forward
 # that var too (else loadMatrixConfig can't resolve it and the run goes out keyless).
 if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
-  CUSTOM_KEY_ENV="$(grep -oE '"apiKeyEnv"[[:space:]]*:[[:space:]]*"[^"]+"' "$MATRIX_CONFIG_FILE" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)".*/\1/')"
+  # `|| true` is load-bearing: apiKeyEnv is OPTIONAL, and under `set -euo pipefail` a
+  # grep that matches nothing exits 1, pipefail propagates it out of the substitution
+  # and the script dies right here with no output at all. Every committed example
+  # config happens to carry the field, which is why this hid — a config that omits it
+  # (entirely legal: apiKey > apiKeyEnv > PROVIDER_ENV) made run.sh exit 1 silently.
+  CUSTOM_KEY_ENV="$(grep -oE '"apiKeyEnv"[[:space:]]*:[[:space:]]*"[^"]+"' "$MATRIX_CONFIG_FILE" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)".*/\1/' || true)"
   if [[ -n "$CUSTOM_KEY_ENV" ]]; then
     if [[ "$CUSTOM_KEY_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       dup=0; for v in "${KEY_VARS[@]}"; do [[ "$v" == "$CUSTOM_KEY_ENV" ]] && dup=1; done
@@ -162,6 +167,11 @@ read_env_keys "$KEY_RE"
 ENVFLAGS=()
 for v in "${KEY_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
+done
+# Non-secret tunables: diagnostics tunables (src/config.ts): forwarded when set so a run can be tuned, and so DIAGNOSTICS_STREAM_DEBUG=1 can be used to answer which stream provider errors actually arrive on. Values are plain numbers/flags, not secrets.
+DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC_AGGREGATE_THRESHOLD AGENT_TIMEOUT_MS)
+for v in "${DIAG_VARS[@]}"; do
+  [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v=${!v}")
 done
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
 [[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
