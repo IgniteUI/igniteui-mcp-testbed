@@ -29,6 +29,10 @@ let matrixRunning = false;
 let matrixCancelled = false;
 let currentChild: ChildProcess | null = null; // the in-flight pipeline child (scaffold/agent/…), for cancellation
 let matrixState: MatrixState = { running: false, matrixId: null, total: 0, done: 0, entries: [], currentPass: 1, totalPasses: 1, pendingPasses: 0 };
+// Entries accumulated across all passes of the current run — used by exitOnDone
+// (matrix-config.ts) to compute an exit code that reflects every pass, not just the last.
+let allPassEntriesLog: MatrixEntry[] = [];
+export const getAllPassEntries = (): MatrixEntry[] => allPassEntriesLog;
 // runIds individually cancelled from the History tab — a per-entry cancel that
 // (unlike the whole-matrix `cancel()`) only aborts that one entry and lets the rest run.
 const cancelledEntries = new Set<string>();
@@ -233,6 +237,9 @@ async function runAllPasses(combos: Combo[], passes: MatrixPass[], allPassIds: s
     } else {
       await runMatrix(combos, { prompt, matrixId, fixed, name: name ?? null });
     }
+    // Snapshot this pass's settled entries into the cross-pass accumulator so
+    // exitOnDone can compute a correct exit code over the whole run.
+    allPassEntriesLog.push(...matrixState.entries);
 
     // Per-pass report (best-effort: a failure must never surface as a pass error).
     let report: string | null = null;
@@ -269,7 +276,7 @@ async function runAllPasses(combos: Combo[], passes: MatrixPass[], allPassIds: s
 // so they appear in History the moment the request is submitted, not one row at a time.
 // Returns { matrixId, total, completion }; the caller responds immediately and the
 // client follows progress via the matrix SSE stream.
-export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]; fixed: Fixed }): { matrixId: string; total: number; completion: Promise<void> } {
+export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]; fixed: Fixed }): { matrixId: string; allMatrixIds: string[]; total: number; completion: Promise<void> } {
   const matrixIds = passes.map(() => newMatrixId());
   // Pre-create ALL history records across ALL passes, all as 'pending'.
   const allPassIds: string[][] = passes.map((pass, r) =>
@@ -283,6 +290,7 @@ export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]
   matrixRunning = true;
   matrixCancelled = false;
   cancelledEntries.clear();
+  allPassEntriesLog = [];
   matrixState = {
     running: true, matrixId: matrixIds[0], name: passes[0].name ?? null,
     total: combos.length, done: 0,
@@ -297,7 +305,7 @@ export function begin(combos: Combo[], { passes, fixed }: { passes: MatrixPass[]
     matrixRunning = false; matrixState.running = false;
     broadcast({ type: 'error', msg: e.message });
   });
-  return { matrixId: matrixIds[0], total: combos.length, completion };
+  return { matrixId: matrixIds[0], allMatrixIds: matrixIds, total: combos.length, completion };
 }
 
 // Abort the in-progress matrix: kill whatever the current entry is running (whole

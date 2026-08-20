@@ -170,14 +170,14 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
     console.log('matrix config: auto-run skipped — a matrix is already running');
     return null;
   }
-  const { matrixId, total, completion } = matrix.begin(loaded.req.combos, {
+  const { matrixId, allMatrixIds, total, completion } = matrix.begin(loaded.req.combos, {
     passes: loaded.req.passes,
     fixed: loaded.req.fixed,
   });
   console.log(`matrix config: auto-run started (${matrixId}, ${total} entries × ${loaded.req.passes.length} pass${loaded.req.passes.length === 1 ? '' : 'es'})`);
   if (loaded.exitOnDone) {
     completion.then(() => {
-      const entries = matrix.getState().entries;
+      const entries = matrix.getAllPassEntries();
       const counts: Record<string, number> = {};
       for (const e of entries) counts[e.status] = (counts[e.status] || 0) + 1;
       const summary = Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(', ');
@@ -188,8 +188,8 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
       const code = statuses.length && statuses.every((s) => s === 'success') ? 0
         : statuses.length && statuses.every((s) => s === 'success' || s === 'test-failed') ? 2
         : 1;
-      console.log(`matrix config: run complete (${summary}) — exiting ${code} ` +
-        `(summary: ./sessions/history/reports/${matrixId}/summary.json)`);
+      const summaryPaths = allMatrixIds.map((id) => `./sessions/history/reports/${id}/summary.json`).join(', ');
+      console.log(`matrix config: run complete (${summary}) — exiting ${code} (summar${allMatrixIds.length === 1 ? 'y' : 'ies'}: ${summaryPaths})`);
       process.exit(code);
     });
   }

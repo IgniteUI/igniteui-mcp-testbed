@@ -343,7 +343,7 @@ function handleMx(m: any) {
     st.done = m.total; st.total = m.total;
     if (m.currentPass) st.currentPass = m.currentPass;
     if (m.totalPasses) st.totalPasses = m.totalPasses;
-    if (m.last === false) {
+    if (m.last === false && !m.cancelled) {
       // Intermediate pass complete — more passes queued; keep stream open + button locked.
       st.overall = `pass ${st.currentPass}/${st.totalPasses} done — next starting…`;
       update();
