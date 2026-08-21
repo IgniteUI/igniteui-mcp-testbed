@@ -297,6 +297,74 @@ check('tool-failure label does not match ordinary output',
     (await c.finish({ exitCode: 1 })).map(sig), []);
 }
 
+// Prose provider errors. Observed live (opencode 1.18 + anthropic, revoked key):
+// `Error: API key is invalid.` — no JSON body, so the JSON anchor cannot see it and the
+// run settled as a bare `error` with no diagnostic and no aggregate banner.
+bothStreams('classify: prose auth (the observed line)', 'Error: API key is invalid.',
+  ['auth', 'fatal', 'confirmed', 'auth:text']);
+bothStreams('classify: prose auth, words reversed', 'Error: Invalid API key provided',
+  ['auth', 'fatal', 'confirmed', 'auth:text']);
+bothStreams('classify: prose unauthorized', 'Error: Unauthorized',
+  ['auth', 'fatal', 'confirmed', 'auth:text']);
+bothStreams('classify: prose rate limit', 'Error: Rate limit exceeded, please retry',
+  ['rate-limited', 'fatal', 'confirmed', 'rate-limited:text']);
+bothStreams('classify: prose credits', 'Error: Your credit balance is too low',
+  ['no-credits', 'fatal', 'confirmed', 'no-credits:text']);
+bothStreams('classify: prose overload', 'Error: Overloaded',
+  ['provider-down', 'fatal', 'confirmed', 'provider-down:text']);
+
+// Order is the precedence, exactly as the status code is on the JSON path: a throttle
+// worded as a quota problem must stay rate-limited, not send the user to top up.
+bothStreams('classify: prose rate limit worded as a quota problem stays rate-limited',
+  'Error: Rate limit reached: quota exceeded for this model',
+  ['rate-limited', 'fatal', 'confirmed', 'rate-limited:text']);
+
+// A coded and an uncoded auth failure must not dedup into each other — different
+// evidence, and the coded one is the stronger record.
+check('prose and coded auth have distinct ids',
+  classifyAgentLine('Error: API key is invalid.', 'stderr').id
+    !== classifyAgentLine('Error: {"code":401,"message":"Invalid API key"}', 'stderr').id, true);
+
+// The prose path is an ALLOWLIST with no catch-all. Everything below is an `Error: `
+// line the agent or its toolchain can legitimately print; each one becoming a fatal
+// provider verdict is precisely the failure the JSON shape check exists to prevent, and
+// prose has no shape check to fall back on.
+for (const [name, line] of [
+  ['ENOENT', 'Error: ENOENT: no such file or directory, open /tmp/x'],
+  ['module not found', "Error: Cannot find module './foo'"],
+  ['build failure', 'Error: Build failed with 3 errors'],
+  ['type error', 'Error: Type string is not assignable to type number'],
+  ['bare prose', 'Error: something went wrong'],
+  ['lowercase label', 'error: api key is invalid'],
+  ['payload that failed the shape check', 'Error: {"code":99,"message":"x"}'],
+  ['non-provider json', 'Error: {"foo":1}'],
+]) {
+  check('classify: prose path rejects ' + name, sig(classifyAgentLine(line, 'stderr')), null);
+}
+
+{
+  // The suppression rule that made prose safe to accept at all. Before this path
+  // existed, a tool's `Error: <prose>` was harmless because it simply never matched;
+  // now it matches, and only the preceding-line label keeps the provider from being
+  // blamed for a tool's failure. Six such pairs sit in the corpus.
+  const c = createDiagnosticsCollector();
+  c.onOutput('stderr', '✗ igniteui-cli_get_doc {"topic":"grid"} failed' + LF);
+  c.onOutput('stderr', 'Error: API key is invalid.' + LF);
+  check('collector: prose tool error is not attributed to the provider',
+    (await c.finish({ exitCode: 1 })).map(sig), []);
+}
+
+{
+  // End to end on the real shape: the agent fails, the provider line is on stderr, and
+  // the entry must derive `auth` rather than the bare `error` the live run produced.
+  const c = createDiagnosticsCollector();
+  c.onOutput('stderr', 'Error: API key is invalid.' + LF);
+  const ds = await c.finish({ exitCode: 1 });
+  check('collector: prose auth is confirmed', ds.map(sig),
+    [['auth', 'fatal', 'confirmed', 'auth:text']]);
+  check('collector: prose auth derives the auth status', deriveStatus(ds, { errored: true }), 'auth');
+}
+
 // ---------------------------------------------------------------------------
 // Transport failures
 // ---------------------------------------------------------------------------
