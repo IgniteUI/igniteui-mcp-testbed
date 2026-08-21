@@ -92,6 +92,44 @@ export function createLineFramer(
 // nothing at all (verified against the corpus — 1 hit stripped, 0 unstripped).
 const ANCHOR = /^\s*Error:\s*(\{.*\})\s*$/;
 
+/**
+ * Not every provider failure carries a JSON body. Observed live (opencode 1.18,
+ * anthropic, revoked key): `Error: API key is invalid.` — plain prose, no `code`, which
+ * the JSON anchor above cannot see at all. The run settled as a bare `error` and the
+ * aggregate banner never fired, i.e. the detector failed the quiet way this module
+ * exists to avoid.
+ *
+ * The JSON path can afford a catch-all rule because the shape check (`code` in 100–599
+ * plus a non-empty `message`) already proves the line was a provider payload. Prose has
+ * no such proof, so this path is an ALLOWLIST and deliberately has no catch-all:
+ * `unknown-provider-error` is unreachable from here. An unrecognized `Error: <prose>`
+ * line stays unclassified — exactly as before this path existed — because the
+ * alternative is every stray `Error:` the agent echoes deciding the run's status.
+ *
+ * Tool errors print in this same shape (`✗ <server>_<tool> … failed` then
+ * `Error: <prose>`); they are suppressed one layer up by the preceding-line check in
+ * `onLine`, which is what made prose safe to accept here at all.
+ */
+const TEXT_ANCHOR = /^\s*Error:\s*(\S.*?)\s*$/;
+
+/** Subject + failure must BOTH appear, so "api key" in passing can't trip auth. */
+const AUTH_SUBJECT = /\b(api[ -]?key|authentication|credentials?|access token|authorization)\b/i;
+const AUTH_FAILURE = /\b(invalid|incorrect|missing|expired|required|rejected|refused|failed|not valid)\b/i;
+
+/**
+ * Ordered — first match wins. Rate limiting is checked before credits for the same
+ * reason the JSON path checks the status code before the message heuristic: providers
+ * routinely word throttling as "quota exceeded", and landing that on `no-credits` tells
+ * the user to top up an account that is fine. Without a status code, order IS the
+ * precedence.
+ */
+const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> = [
+  { kind: 'rate-limited', test: (m) => /\b(rate[ -]?limit(ed|s|ing)?|too many requests)\b/i.test(m) },
+  { kind: 'no-credits', test: (m) => /\b(insufficient (funds|balance|credits?)|out of credits?|credit balance|quota exceeded|billing)\b/i.test(m) },
+  { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
+  { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
+];
+
 const DETAIL_MAX = 400;
 /** Transport failures that never produce a JSON body. */
 const NETWORK_TOKENS = ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'fetch failed', 'socket hang up'];
@@ -150,7 +188,7 @@ export function parseProviderError(raw: string): ProviderErrorInfo | null {
   // detector exists to avoid.
   const line = stripAnsi(raw);
   const m = ANCHOR.exec(line);
-  if (!m) return null;
+  if (!m) return parseProviderErrorText(line);
   let payload: any;
   try { payload = JSON.parse(m[1]); } catch (_) { return null; }
   if (!payload || typeof payload !== 'object') return null;
@@ -178,36 +216,57 @@ export function parseProviderError(raw: string): ProviderErrorInfo | null {
   return { kind, code, message, errorType, detail: truncate(line.trim()) };
 }
 
+/**
+ * The prose fallback. `code: 0` is the sentinel for "no status code was reported" —
+ * `providerDiagnostic` drops the `(code)` from the title and uses a `:text`
+ * discriminator so a coded and an uncoded auth failure don't dedup into one another.
+ */
+function parseProviderErrorText(line: string): ProviderErrorInfo | null {
+  const m = TEXT_ANCHOR.exec(line);
+  if (!m) return null;
+  const message = m[1].trim();
+  // A JSON-looking payload that failed the shape check must not get a second chance
+  // through the prose path — that would defeat the shape check entirely.
+  if (message.startsWith('{')) return null;
+  if (!message) return null;
+  const rule = TEXT_RULES.find((r) => r.test(message));
+  if (!rule) return null;
+  return { kind: rule.kind, code: 0, message, detail: truncate(line.trim()) };
+}
+
 function providerDiagnostic(
   info: ProviderErrorInfo,
   confidence: Diagnostic['confidence'],
   now: string,
 ): Diagnostic {
+  // 0 = the prose path: there is no status code to show, and inventing one ("(0)")
+  // would read as a real provider status.
+  const c = info.code ? ` (${info.code})` : '';
   const label: Record<string, { title: string; advice: string }> = {
     'rate-limited': {
-      title: `Provider rate limit (${info.code})`,
+      title: `Provider rate limit${c}`,
       advice: 'Wait a few minutes and re-run, or switch to a different model.',
     },
     auth: {
-      title: `Provider rejected the API key (${info.code})`,
+      title: `Provider rejected the API key${c}`,
       advice: 'Check the API key for this provider — it was refused, not throttled.',
     },
     'no-credits': {
-      title: `Provider balance exhausted (${info.code})`,
+      title: `Provider balance exhausted${c}`,
       advice: 'Top up the provider account, or switch to a model on a funded provider.',
     },
     'provider-down': {
-      title: `Provider unavailable (${info.code}${info.errorType ? ` · ${info.errorType}` : ''})`,
+      title: `Provider unavailable${info.code || info.errorType ? ` (${[info.code || null, info.errorType || null].filter(Boolean).join(' · ')})` : ''}`,
       advice: 'The provider failed, not this run. Re-run the entry once it recovers.',
     },
     'unknown-provider-error': {
-      title: `Provider error (${info.code})`,
+      title: `Provider error${c}`,
       advice: 'Unrecognized provider status — see the evidence line for what it said.',
     },
   };
   const meta = label[info.kind] || label['unknown-provider-error'];
   return {
-    id: `${info.kind}:${info.code}`,
+    id: `${info.kind}:${info.code || 'text'}`,
     kind: info.kind,
     severity: 'fatal',
     confidence,

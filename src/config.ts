@@ -54,6 +54,10 @@ export const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS || 5 * 60 * 10
 // pre-loads — and by default auto-runs — a matrix without going through the UI.
 export const MATRIX_CONFIG = process.env.MATRIX_CONFIG || '';
 export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
+// Cap on the number of passes per matrix submission. Each pass pre-creates
+// combos × History records and queues a full sequential matrix run, so an
+// unbounded passes array is an easy DoS vector. Override with MATRIX_MAX_PASSES.
+export const MATRIX_MAX_PASSES = Number(process.env.MATRIX_MAX_PASSES || 10);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
 // How long to wait for the (headless) post-edit dev-server build before giving up
 // and screenshotting anyway. Generous because the first build of an agent-edited

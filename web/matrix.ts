@@ -38,12 +38,15 @@ interface EntryVm {
   /** Retained so the warning chip survives an SSE reconnect (see MatrixEntry). */
   diagnostics?: Diagnostic[];
 }
+interface ExtraPass { key: number; sameAsPass1: boolean }
 
 const activeDiags = (e: EntryVm): Diagnostic[] =>
   (e.diagnostics || []).filter((d) => !d.resolvedAt && !d.supersededAt);
 
 let variantKey = 0;
 const newRow = (mcps: string[], mode: string): VariantRow => ({ key: ++variantKey, mcps, mode });
+let extraPassKey = 0;
+const newExtraPass = (): ExtraPass => ({ key: ++extraPassKey, sameAsPass1: true });
 
 // Reference images attached to the shared prompt — a fixed set applied to every entry
 // (they describe *what* to build; the axes are how it's built).
@@ -66,6 +69,9 @@ const st = {
   goDisabled: false,
   total: 0,
   done: 0,
+  extraPasses: [] as ExtraPass[],
+  currentPass: 1,
+  totalPasses: 1,
 };
 
 const activePack = (): ProviderPack | undefined =>
@@ -115,8 +121,11 @@ function mxVariants() {
 }
 
 export function updateMxCount() {
-  const p = mxPlatforms().length, v = mxVariants().length;
-  st.countText = `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
+  const p = mxPlatforms().length, v = mxVariants().length, r = st.extraPasses.length + 1;
+  const total = p * v * r;
+  st.countText = r > 1
+    ? `${total} total (${p} platform${p===1?'':'s'} × ${v} variant${v===1?'':'s'} × ${r} pass${r===1?'':'es'})`
+    : `${p * v} run${p * v === 1 ? '' : 's'} (${p} platform${p === 1 ? '' : 's'} × ${v} variant${v === 1 ? '' : 's'})`;
   refreshMxLocalSkills();
   refreshMxTestFiles();
   refreshMxCustomMcpErr();
@@ -226,6 +235,28 @@ function addVariant(row?: VariantRow) {
   updateMxCount();
 }
 
+// ---------- extra runs ----------
+
+function addExtraPass() {
+  st.extraPasses = [...st.extraPasses, newExtraPass()];
+  updateMxCount();
+}
+
+function removeExtraPass(key: number) {
+  st.extraPasses = st.extraPasses.filter((r) => r.key !== key);
+  updateMxCount();
+}
+
+function toggleExtraPassSameAs(pass: ExtraPass, checked: boolean) {
+  pass.sameAsPass1 = checked;
+  if (checked) {
+    // Clear the uncontrolled textarea so a stale value doesn't linger.
+    const ta = document.getElementById(`mxExtraPrompt-${pass.key}`) as any;
+    if (ta) ta.value = '';
+  }
+  update();
+}
+
 // ---------- run lock / progress ----------
 
 // A matrix run drives the same app/opencode processes and fixed ports as an
@@ -281,12 +312,18 @@ export function ensureMatrixStream() {
   if (!mxES) startMatrixStream();
 }
 
-const overallText = () => (st.total ? `${st.done}/${st.total}` : '');
+const overallText = () => {
+  const base = st.total ? `${st.done}/${st.total}` : '';
+  return st.totalPasses > 1 ? `pass ${st.currentPass}/${st.totalPasses} · ${base}` : base;
+};
 
 function handleMx(m: any) {
   if (m.type === 'state') {
     const s = m.state || {};
-    st.total = s.total || 0; st.done = s.done || 0; st.overall = overallText();
+    st.total = s.total || 0; st.done = s.done || 0;
+    if (s.currentPass) st.currentPass = s.currentPass;
+    if (s.totalPasses) st.totalPasses = s.totalPasses;
+    st.overall = overallText();
     st.banner = s.banner || null;
     (s.entries || []).forEach((e: any) => {
       const entry = ensureEntry(e);
@@ -303,7 +340,9 @@ function handleMx(m: any) {
     return;
   }
   if (m.type === 'matrix-start') {
-    st.total = m.total; st.done = 0; st.overall = overallText();
+    if (m.currentPass) st.currentPass = m.currentPass;
+    if (m.totalPasses) st.totalPasses = m.totalPasses;
+    st.total = m.total; st.done = 0; st.entries = []; st.overall = overallText();
     st.banner = null;
     (m.entries || []).forEach((e: any) => ensureEntry(e));
     setMatrixActive(true);
@@ -312,7 +351,18 @@ function handleMx(m: any) {
   }
   if (m.type === 'entry-start') { ensureEntry(m).status = 'running'; update(); return; }
   if (m.type === 'matrix-done') {
-    st.done = m.total; st.total = m.total; st.overall = overallText();
+    st.done = m.total; st.total = m.total;
+    if (m.currentPass) st.currentPass = m.currentPass;
+    if (m.totalPasses) st.totalPasses = m.totalPasses;
+    if (m.last === false && !m.cancelled) {
+      // Intermediate pass complete — more passes queued; keep stream open + button locked.
+      st.overall = `pass ${st.currentPass}/${st.totalPasses} done — next starting…`;
+      update();
+      return;
+    }
+    // Final (or single-pass) completion.
+    st.currentPass = 1; st.totalPasses = 1;
+    st.overall = overallText();
     st.goDisabled = false;
     setMatrixActive(false);
     if (mxES) { mxES.close(); mxES = null; }
@@ -390,8 +440,22 @@ export async function applyServerMatrixConfig() {
   const unshown = platforms.filter((p) => !shown.has(p));
 
   $('#mxModel').value = cfg.model || '';
-  $('#mxPrompt').value = cfg.prompt || '';
+  $('#mxPrompt').value = cfg.passes?.[0]?.prompt || cfg.prompt || '';
   if (cfg.customMcp) $('#mxCustomMcp').value = cfg.customMcp;
+  // Prefill extra passes from the server config.
+  if (Array.isArray(cfg.passes) && cfg.passes.length > 1) {
+    const pass1Prompt = cfg.passes[0]?.prompt || cfg.prompt || '';
+    st.extraPasses = cfg.passes.slice(1).map((r: any) => ({
+      key: ++extraPassKey, sameAsPass1: (r.prompt || '') === pass1Prompt,
+    }));
+    update();
+    for (let i = 0; i < st.extraPasses.length; i++) {
+      if (!st.extraPasses[i].sameAsPass1) {
+        const ta = document.getElementById(`mxExtraPrompt-${st.extraPasses[i].key}`) as any;
+        if (ta) ta.value = cfg.passes[i + 1].prompt || '';
+      }
+    }
+  }
   updateMxCount();
   // Prompt images: the picker must know what exists before a selection can be applied
   // (selected() intersects with the loaded listing), so await the shared refresh first.
@@ -422,8 +486,23 @@ async function onSubmit(e: Event) {
   if (!platforms.length || !variants.length) { alert('Pick at least one platform and one variant.'); return; }
   if (!model) { alert('Enter a model id.'); return; }
   if (!prompt) { alert('Enter a prompt.'); return; }
+  // Build the passes array: pass 1 = the main prompt; extra passes use their own or pass 1's.
+  const extraPassPrompts: Array<{ prompt: string }> | null = (() => {
+    const out: Array<{ prompt: string }> = [];
+    for (let i = 0; i < st.extraPasses.length; i++) {
+      const r = st.extraPasses[i];
+      if (r.sameAsPass1) { out.push({ prompt }); continue; }
+      const ta = document.getElementById(`mxExtraPrompt-${r.key}`) as any;
+      const p = ta?.value?.trim() || '';
+      if (!p) { alert(`Pass ${i + 2}: enter a prompt or check "Same as pass 1 prompt".`); return null; }
+      out.push({ prompt: p });
+    }
+    return out;
+  })();
+  if (extraPassPrompts === null) return;
+  const passes = [{ prompt }, ...extraPassPrompts];
   const body = {
-    platforms, variants, model, prompt,
+    platforms, variants, model, passes,
     apiKey: $('#mxKey').value,
     customMcp: $('#mxCustomMcp').value.trim() || undefined,
     selectedTests: ($('#mxTestsCombo').value || []) as string[],
@@ -441,6 +520,37 @@ async function onSubmit(e: Event) {
 }
 
 // ---------- templates ----------
+
+const extraPassSection = () => html`
+  ${st.extraPasses.length ? html`<div class="mx-passes-stack">
+    ${repeat(st.extraPasses, (p) => p.key, (pass, i) => {
+      const num = i + 2;
+      return html`
+        <div class="mx-extra-pass">
+          <div class="mx-pass-head">
+            <span class="mx-pass-num">Pass ${num}</span>
+            <button type="button" class="rm" title="Remove pass ${num}"
+              @click=${() => removeExtraPass(pass.key)}>✕</button>
+          </div>
+          <igc-checkbox .checked=${pass.sameAsPass1}
+            @igcChange=${(e: any) => toggleExtraPassSameAs(pass, !!e.target.checked)}>
+            Same as pass 1 prompt
+          </igc-checkbox>
+          <igc-textarea outlined id="mxExtraPrompt-${pass.key}" class="ta" rows="3"
+            ?hidden=${pass.sameAsPass1}
+            placeholder=${`Prompt for pass ${num}…`}></igc-textarea>
+        </div>`;
+    })}
+  </div>` : ''}
+  <button type="button" class="viewbtn" style="margin-top:.4rem"
+    title="Repeat the full platform × variant matrix with a different prompt. Passes execute sequentially; each gets its own History group."
+    @click=${addExtraPass}>+ Add pass</button>
+  ${st.extraPasses.length ? html`<p class="note" style="margin-top:.4rem">
+    Each additional pass repeats all platform × variant combos sequentially.
+    All passes' entries appear in History immediately with status <em>pending</em>.
+  </p>` : html`<p class="note" style="margin-top:.4rem">
+    Add extra passes to repeat the matrix with different prompts. Results land in separate History groups.
+  </p>`}`;
 
 const variantRow = (row: VariantRow) => html`
   <div class="mx-variant">
@@ -573,6 +683,7 @@ function tpl() {
         <p class="note" id="mxTestsNote">${st.testsNote}</p>
       </fieldset>
 
+      ${extraPassSection()}
       <p class="mx-count" id="mxCount">${st.countText}</p>
       <igc-button type="submit" id="mxGo" variant="contained" .disabled=${st.goDisabled}>Run matrix</igc-button>
     </form>

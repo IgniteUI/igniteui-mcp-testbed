@@ -469,3 +469,12 @@ igc-carousel.shot-carousel { display:block; width:100%; height:82vh; --ig-carous
                   max-height:0; max-width:100%; overflow:hidden; transition:max-height .2s; white-space:pre-wrap;
                   overflow-wrap:anywhere; }
 .mx-entry.open .mini { max-height:200px; overflow:auto; }
+
+/* extra runs (multi-run queue in the matrix setup form) */
+.mx-passes-stack { margin-bottom:.4rem; }
+.mx-extra-pass { border:1px solid var(--line); border-radius:8px; padding:.6rem .8rem; margin-bottom:.5rem; }
+.mx-pass-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.35rem; }
+.mx-pass-num { font-family:var(--mono); font-size:.8rem; font-weight:600; color:var(--teal); }
+.mx-pass-head .rm { margin-left:auto; font-family:var(--mono); color:var(--steel); background:none;
+  border:none; cursor:pointer; font-size:1rem; padding:.1rem .3rem; border-radius:4px; }
+.mx-pass-head .rm:hover { color:var(--red); background:rgba(224,106,85,.12); }

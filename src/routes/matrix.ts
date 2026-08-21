@@ -30,8 +30,8 @@ export default function registerMatrixRoutes(app: Express): void {
     }
     const r = normalizeMatrixRequest(body);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
-    const { matrixId, total } = matrix.begin(r.req.combos, { prompt: r.req.prompt, fixed: r.req.fixed, name: r.req.name });
-    res.json({ ok: true, matrixId, total, dropped: r.req.dropped });
+    const { matrixId, total } = matrix.begin(r.req.combos, { passes: r.req.passes, fixed: r.req.fixed });
+    res.json({ ok: true, matrixId, total, dropped: r.req.dropped, totalPasses: r.req.passes.length });
   });
 
   // The server-side matrix config (MATRIX_CONFIG file), if any — for UI prefill.
@@ -48,6 +48,7 @@ export default function registerMatrixRoutes(app: Express): void {
         model: fixed.model,
         prompt: c.req.prompt,
         name: c.req.name,
+        passes: c.req.passes,
         customMcp: fixed.customMcp || '',
         customBaseUrl: fixed.customBaseUrl || null,
         selectedTests: fixed.selectedTests ?? null, // null = field omitted = "all"

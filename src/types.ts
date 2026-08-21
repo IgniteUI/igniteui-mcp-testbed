@@ -361,6 +361,11 @@ export interface MatrixEntry {
   diagnostics?: Diagnostic[];
 }
 
+export interface MatrixPass {
+  prompt: string;
+  name?: string | null;
+}
+
 export interface MatrixState {
   running: boolean;
   matrixId: string | null;
@@ -368,6 +373,10 @@ export interface MatrixState {
   total: number;
   done: number;
   entries: MatrixEntry[];
+  /** Multi-pass support: which pass (1-based) is currently executing and how many total. */
+  currentPass: number;
+  totalPasses: number;
+  pendingPasses: number;
   /** Aggregate warning ("3 entries hit a 429; the rest will likely follow"). State
    * rather than a fire-and-forget event, so a reconnecting client still sees it. */
   banner?: MatrixBanner | null;
