@@ -64,6 +64,29 @@ export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 *
 // app (esp. Blazor) is slow across the bind mount.
 export const APP_READY_TIMEOUT_MS = Number(process.env.APP_READY_TIMEOUT_MS || 6 * 60 * 1000);
 
+// Diagnostics (src/capture/diagnostics.ts).
+// Cap on the post-agent `opencode stats` call. It runs on the FAILURE path too, so a
+// hung stats command would hang the entry during failure recovery — the worst possible
+// place for an unbounded wait.
+export const STATS_TIMEOUT_MS = Number(process.env.STATS_TIMEOUT_MS || 60 * 1000);
+// Detector B: how long the agent may produce NO output before a `stalled` warning is
+// raised. Nothing is killed — this is the honest early signal that replaces inferring a
+// rate limit from the 25-minute timeout: it fires at 5 minutes of silence and says the
+// provider may be unresponsive, which is true, rather than asserting a 429 nobody saw.
+export const AGENT_STALL_MS = Number(process.env.AGENT_STALL_MS || 5 * 60 * 1000);
+// Detector C: identical consecutive tool calls (same tool, same canonicalized input)
+// before the agent is reported as looping. A warning only — plenty of legitimate work
+// is repetitive, so this must never fail a run on its own.
+export const AGENT_LOOP_REPEATS = Number(process.env.AGENT_LOOP_REPEATS || 5);
+// Temporary scaffolding, not an operational knob: logs per-stream line counters and any
+// anchor-matching line WITH its stream tag, so the "which stream do provider errors
+// arrive on" question can be answered by a deliberate probe rather than by waiting for
+// a real outage. Never logs the agent's output wholesale (it can contain file contents).
+export const DIAGNOSTICS_STREAM_DEBUG = process.env.DIAGNOSTICS_STREAM_DEBUG === '1';
+// How many consecutive entries must hit the same fatal diagnostic kind before the
+// matrix raises an aggregate banner. The matrix is never cancelled automatically.
+export const DIAGNOSTIC_AGGREGATE_THRESHOLD = Number(process.env.DIAGNOSTIC_AGGREGATE_THRESHOLD || 2);
+
 // Put opencode's storage (SQLite + logs) under /work so `opencode stats` and the
 // running `opencode web` share one data dir and the usage data survives the
 // ephemeral container. opencode honours XDG_DATA_HOME for its storage location.

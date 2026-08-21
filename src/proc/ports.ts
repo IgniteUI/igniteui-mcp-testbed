@@ -6,6 +6,7 @@ import * as path from 'path';
 import type { ChildProcess } from 'child_process';
 import { LOG_DIR } from '../config.ts';
 import type { Emit } from '../types.ts';
+import { stripAnsi } from '../ansi.ts';
 
 export interface AppReady {
   ready: boolean;
@@ -51,7 +52,6 @@ export function waitForPort(port: number, timeoutMs: number, emit?: Emit): Promi
   });
 }
 
-const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '');
 function tailLines(s: string, n: number): string {
   const lines = stripAnsi(s).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
   return lines.slice(-n).join('\n');

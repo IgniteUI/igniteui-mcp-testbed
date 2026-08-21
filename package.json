@@ -7,6 +7,9 @@
   "scripts": {
     "start": "node src/server.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
+    "diagnostics:test": "node scripts/diagnostics-fixtures.mjs && node scripts/loop-store-check.mjs",
+    "diagnostics:replay": "node scripts/replay-diagnostics.mjs",
+    "exec:smoke": "node scripts/exec-smoke.mjs",
     "build:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js",
     "dev:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js --watch"
   },
