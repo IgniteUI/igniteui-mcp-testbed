@@ -126,6 +126,17 @@ function skillSummary(c: any): string {
   return gen || 'off';
 }
 
+// The MCPs cell. Normally just the enabled classes, but a class whose launch command was
+// overridden (MCP_CMD_<CLASS>) is marked `(local)` — without it the two arms of a
+// local-vs-released A/B render identically, since both servers carry the same name and
+// report the same version. No `mcpCommands` key means the default binary, which covers
+// every ordinary run and every record predating the field.
+function mcpSummary(c: any): string {
+  const overrides = c.mcpCommands || {};
+  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${m} (local)` : m));
+  return list.join(', ') || '—';
+}
+
 // One-word summary of a run's injected-test verification outcome for the grid.
 function testSummary(t: any): { display: string; sort: number; state: string } {
   if (!t) return { display: '—', sort: -1, state: 'none' };
@@ -272,7 +283,7 @@ function rowVals(r: any): HistoryGridRow {
     framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
-    mcps: (r.config.enabledMcps || []).join(', ') || '—',
+    mcps: mcpSummary(r.config),
     status: r.status || '—',
     rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
     testsSort: ts.sort,
@@ -349,6 +360,8 @@ function bindGridTemplates() {
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
+            gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>

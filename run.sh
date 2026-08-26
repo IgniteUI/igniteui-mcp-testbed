@@ -36,6 +36,17 @@ Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app 
   - provider API keys forwarded into the container: ANTHROPIC_API_KEY,
     OPENAI_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, CUSTOM_API_KEY
   - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
+  - MCP_CMD_<CLASS> (any class) / IGNITEUI_MCP_DOCS_BACKEND_URL / IGNITEUI_MCP_DEBUG
+    (an already-exported value wins)
+
+MCP_CMD_<CLASS> swaps that class's MCP server for a locally-built one packed into
+./local-mcp/ and installed at build time, e.g.
+  MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp ./run.sh --matrix-config ./m.json
+  MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp ./run.sh
+Any class works (igniteui, theming, angular, custom, or one a provider pack declares);
+a hyphen in a class name becomes an underscore (mui-docs -> MCP_CMD_MUI_DOCS). Unset,
+runs use the released server. One image serves every arm. IGNITEUI_MCP_CMD is still
+accepted as an alias for MCP_CMD_IGNITEUI.
 
 Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
 screenshots persist in ./sessions/history/ across containers.
@@ -88,6 +99,9 @@ if [[ "${1:-}" == "build" ]]; then
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
   read_env_keys 'IG_NPM_TOKEN|IG_NPM_USERNAME|IG_NPM_EMAIL'
+  # The Containerfile COPYs ./local-mcp (an optional locally-built MCP server tarball to
+  # A/B against the released one), so the dir must exist even when it holds nothing.
+  mkdir -p "$PWD/local-mcp"
   NPMRC="$PWD/.npmrc"
   : > "$NPMRC"                       # always present (empty = trial) so the bind mount resolves
   trap 'rm -f "$NPMRC"' EXIT
@@ -173,6 +187,40 @@ DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC
 for v in "${DIAG_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v=${!v}")
 done
+
+# MCP server tuning, forwarded the same way. MCP_CMD_<CLASS> swaps that class's server
+# for a locally-built one installed in the image (e.g.
+# MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp); unset means the released server.
+# Unlike the keys, an already-exported value wins over .env — an A/B sweep sets it per
+# arm around the ./run.sh call, and .env must not clobber that.
+#
+# The MCP_CMD_ set is a PREFIX SCAN, not a fixed list: the class space is open-ended
+# (a provider pack declares whatever class name it likes), so any new class has to work
+# without editing this script. `${!MCP_CMD_@}` expands to the names of the already-set
+# ones; the .env pass uses the matching regex so a class set only there is picked up too.
+MCP_FIXED=(IGNITEUI_MCP_CMD IGNITEUI_MCP_DOCS_BACKEND_URL IGNITEUI_MCP_DEBUG)
+# Snapshot what is already exported, then restore it after the .env pass. The pattern has
+# to stay a wildcard (a class may be named ONLY in .env), and read_env_keys exports
+# unconditionally — so filtering the pattern cannot protect an exported value, and an
+# unprotected one would be silently replaced by .env, quietly running both sweep arms on
+# the same binary. Snapshot/restore is what actually makes "exported wins" true.
+# `${!v+set}` (declared) rather than `-n` (non-empty) is load-bearing: an explicitly
+# EMPTY value means "no override for this class", and it has to survive the .env pass too.
+# Otherwise a caller that cleared the var gets it handed straight back by .env — which is
+# exactly how run-ab-sweep.sh's released arm silently became a second local arm, since
+# putting MCP_CMD_* in .env is a documented workflow. An unset var is still fair game for
+# .env; only an explicit empty pins the class to its released command.
+MCP_PRESET=()
+for v in "${MCP_FIXED[@]}" ${!MCP_CMD_@}; do
+  [[ -n "${!v+set}" ]] && MCP_PRESET+=("$v=${!v}")
+done
+read_env_keys "MCP_CMD_[A-Za-z0-9_]+|IGNITEUI_MCP_CMD|IGNITEUI_MCP_DOCS_BACKEND_URL|IGNITEUI_MCP_DEBUG"
+for kv in ${MCP_PRESET[@]+"${MCP_PRESET[@]}"}; do export "$kv"; done
+# Re-scan after .env: it may have introduced MCP_CMD_ classes that were not set before.
+for v in "${MCP_FIXED[@]}" ${!MCP_CMD_@}; do
+  [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
+done
+
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
 [[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
 
@@ -206,6 +254,22 @@ if [[ "$VALIDATE" == 1 ]]; then
   echo "Validating matrix config: $MATRIX_CONFIG_FILE"
 else
   echo "Session artifacts -> $OUT"
+  # Report every overridden class, not just igniteui: this line is what a user reads to
+  # confirm which arm is running, so a class it cannot see reads as "released" and would
+  # misreport the arm outright.
+  MCP_SHOWN=0
+  for v in "${MCP_FIXED[@]}" ${!MCP_CMD_@}; do
+    case "$v" in IGNITEUI_MCP_DOCS_BACKEND_URL|IGNITEUI_MCP_DEBUG) continue ;; esac
+    [[ -n "${!v:-}" ]] || continue
+    cls="${v#MCP_CMD_}"; [[ "$v" == IGNITEUI_MCP_CMD ]] && cls=IGNITEUI
+    printf 'MCP server override:        %s -> %s\n' "$(printf '%s' "$cls" | tr '[:upper:]' '[:lower:]')" "${!v}"
+    MCP_SHOWN=1
+  done
+  # `if`, not `[[ ]] && echo`: under `set -e` that compound returns 1 whenever an
+  # override WAS printed, which would abort the script right before it starts podman.
+  if [[ "$MCP_SHOWN" == 0 ]]; then
+    echo "MCP servers:                released (no MCP_CMD_* override)"
+  fi
   echo "Ignite UI MCP Testbed UI:   http://localhost:8080"
   echo "opencode:                   http://localhost:4096  (after launch in interactive mode)"
   echo "App:                        http://localhost:5000  (after launch in interactive mode)"

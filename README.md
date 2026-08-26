@@ -438,6 +438,53 @@ setup, so they're the most likely to need tuning:
    heuristics are version-dependent — adjust these if a newer opencode changes its
    `run` / `stats` output.
 
+## Testing an unreleased MCP server
+
+To compare a locally-built MCP server against the released one, pack it (`npm pack`) and
+drop the tarball into `local-mcp/`:
+
+```bash
+cp ../igniteui-cli/packages/.../igniteui-mcp-server-15.5.1.tgz local-mcp/
+./run.sh build          #  .\run.ps1 build
+```
+
+The build installs **every** `*.tgz` it finds under one shared prefix — each package's
+bins land side by side in `/opt/local-mcp/bin/` — and leaves the released servers in
+place, so **one image serves every arm**. An empty `local-mcp/` just skips the install,
+so the folder is optional.
+
+Pick which binary a class uses with `MCP_CMD_<CLASS>`:
+
+```bash
+MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp ./run.sh --matrix-config ./matrix.json
+MCP_CMD_THEMING="/opt/local-mcp/bin/my-theming-mcp --stdio" ./run.sh
+./run.sh --matrix-config ./matrix.json     # unset => the released servers
+```
+
+Any class works — `igniteui`, `theming`, `angular`, `custom`, or whatever `class` a
+provider pack declares. The suffix is matched case-insensitively with non-alphanumerics
+folded to `_`, so a pack class `mui-docs` is set with `MCP_CMD_MUI_DOCS`. The value is a
+whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains an alias for
+`MCP_CMD_IGNITEUI`.
+
+This replaces the *command* of the existing server rather than adding a second one, so the
+server name — and therefore every tool name the model sees — is identical in both arms,
+leaving the binary as the only variable. (The vars can live in `.env` too, but an
+already-exported value wins, so a sweep script can set them per arm.)
+
+Each run records the binary two ways: structured, as `config.mcpCommands` on the history
+record — the History grid's **MCPs** column renders it as `igniteui (local)` and the detail
+panel shows the full command line — and in the log (`mcp "igniteui-cli" command → …`).
+Both are kept in the run's history record, so arms stay identifiable afterwards. Pair it
+with the [Tool & skill usage](#tool--skill-usage) report to see which tools each server
+actually got called for.
+
+`./run-ab-sweep.sh [rounds] [base-config]` drives the whole comparison: both arms from one
+matrix config (only the `name` differs), arm order alternating each round, and a preflight
+that refuses to start against a stale image. Point it at another class with
+`MCP_CLASS=theming MCP_BIN=/opt/local-mcp/bin/my-theming-mcp ./run-ab-sweep.sh 3`.
+See `local-mcp/README.md` for the details.
+
 ## Caveats & limitations
 
 - **Fixed ports.** Podman can't add published ports after a container is created, so the
