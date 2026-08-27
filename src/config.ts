@@ -1,6 +1,7 @@
 'use strict';
 
 import * as path from 'path';
+import { normMcpClass } from './mcp-class.ts';
 
 export const WIZARD_PORT = Number(process.env.WIZARD_PORT || 8080);
 export const OPENCODE_PORT = Number(process.env.OPENCODE_PORT || 4096);
@@ -120,8 +121,9 @@ const MCP_CMD_PREFIX = 'MCP_CMD_';
 
 // Class names may carry characters an env var name cannot (a pack is free to use
 // `mui-docs`), so both sides are folded to [a-z0-9_] before matching. Lookups therefore
-// go through mcpCommandFor(), never a bare index into the map.
-const normClass = (s: string): string => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+// go through mcpCommandFor(), never a bare index into the map. The fold itself lives in
+// src/mcp-class.ts because the History re-run check needs the identical rule.
+const normClass = normMcpClass;
 const splitCmd = (v: string | undefined): string[] => (v || '').trim().split(/\s+/).filter(Boolean);
 
 function collectOverrides(): Record<string, string[]> {

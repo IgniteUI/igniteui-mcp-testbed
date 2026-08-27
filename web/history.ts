@@ -7,6 +7,7 @@ import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
 import { pillClass } from '../src/status-meta.ts';
+import { normMcpClass } from '../src/mcp-class.ts';
 import type { Diagnostic } from '../src/types.ts';
 
 interface HistoryGridRow {
@@ -52,6 +53,7 @@ const st = {
   gridVisible: false,
   shownCount: 0,
   rerunSummary: '',
+  rerunWarn: '',   // set when this container's MCP binaries differ from the stored run's
   lb: {
     gen: 0, // bumped per open — keyed() then builds a FRESH carousel (see openLightbox)
     shots: [] as Array<{ file: string; route: string }>,
@@ -696,7 +698,30 @@ async function deleteRun(id: string) {
 // single-entry matrix submission, prompting for the (never-stored) API key first.
 let pendingRerun: any = null;
 
-function rerunRun(id: string) {
+// A re-run POSTs into the ALREADY-RUNNING container, so it inherits that container's
+// MCP_CMD_* environment — those are read once at module load and nothing in the request
+// can change them. A run recorded against a locally-built server therefore re-runs
+// against the released one unless this container was started with the same override.
+// The record stays honest either way (redact() stamps the live env), but that is only
+// visible afterwards, so compare up-front and say so.
+function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string {
+  if (!live) return '';
+  const recorded: Record<string, string> = cfg.mcpCommands || {};
+  const diffs: string[] = [];
+  for (const cls of cfg.enabledMcps || []) {
+    const was = recorded[cls];
+    const now = live[normMcpClass(cls)];
+    if (was === now || (!was && !now)) continue;
+    if (was && !now) diffs.push(`${cls}: recorded run used ${was}, this container uses the released server`);
+    else if (!was && now) diffs.push(`${cls}: recorded run used the released server, this container uses ${now}`);
+    else diffs.push(`${cls}: recorded run used ${was}, this container uses ${now}`);
+  }
+  return diffs.length
+    ? `Different MCP binary — ${diffs.join('; ')}. Restart the container with the matching MCP_CMD_* to reproduce this run.`
+    : '';
+}
+
+async function rerunRun(id: string) {
   const r = runById.get(id);
   if (!r || !r.matrixId) return;
   pendingRerun = r;
@@ -704,6 +729,14 @@ function rerunRun(id: string) {
   const prompt = (r.prompt || '').trim();
   const snippet = prompt.length > 80 ? prompt.slice(0, 80) + '…' : prompt;
   st.rerunSummary = `${c.framework || '—'} · ${(c.models || [])[0] || '—'}${snippet ? ` · "${snippet}"` : ''}`;
+  // Absent/failed status ⇒ no warning rather than a wrong one: an older container has no
+  // `mcpOverrides` field, and "{}" (every class released) must stay distinguishable from
+  // "unknown". Never block the dialog on this.
+  st.rerunWarn = '';
+  try {
+    const s = await getJSON('/api/status');
+    st.rerunWarn = rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null);
+  } catch { /* leave the warning empty */ }
   update();
   ($('#rerunKey') as any).value = '';
   ($('#rerunDialog') as any).show();
@@ -731,6 +764,7 @@ async function confirmRerun() {
     if (!j.ok) { alert(j.error || 'failed to start re-run'); return; }
     ($('#rerunDialog') as any).hide();
     pendingRerun = null;
+    st.rerunWarn = '';
     loadHistory();
   } catch (err: any) { alert(err.message); }
 }
@@ -853,9 +887,10 @@ function tpl() {
   <!-- API-key prompt for re-running a matrix configuration from the History tab. -->
   <igc-dialog id="rerunDialog" title="Re-run configuration">
     <p class="note" id="rerunSummary">${st.rerunSummary}</p>
+    ${st.rerunWarn ? html`<p class="note tool-warn" id="rerunWarn">${st.rerunWarn}</p>` : ''}
     <igc-input outlined id="rerunKey" label="API key" type="password" autocomplete="off"></igc-input>
     <igc-button slot="footer" id="rerunCancel" variant="flat"
-      @click=${() => { pendingRerun = null; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
+      @click=${() => { pendingRerun = null; st.rerunWarn = ''; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
     <igc-button slot="footer" id="rerunConfirm" variant="contained" @click=${confirmRerun}>Re-run</igc-button>
   </igc-dialog>
 
