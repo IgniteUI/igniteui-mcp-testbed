@@ -199,6 +199,10 @@ function pad(n){return String(n).padStart(2,'0')}
 function fmtDur(ms){if(ms==null)return'\u2014';if(ms<1000)return ms+'ms';if(ms<60000)return(ms/1000).toFixed(1)+'s';return Math.floor(ms/60000)+'m '+Math.floor((ms%60000)/1000)+'s'}
 function fmt(n){return n==null?'\u2014':Number(n).toLocaleString()}
 function stars(n){if(!n)return'\u2014';return'\u2605'.repeat(n)+'\u2606'.repeat(5-n)}
+/* Mirrors mcpSummary() in web/history.ts: a class whose launch command was overridden
+   (MCP_CMD_<CLASS>) is marked, else the two arms of a local-vs-released A/B export
+   identically. Keep the two in step. */
+function mcpSummary(c){const o=c.mcpCommands||{};return (c.enabledMcps||[]).map(m=>o[m]?m+' (local)':m).join(', ')||'\u2014'}
 function skillSummary(c){const xs=(c.excludedSkills||[]).length;const gen=c.skills?(xs?'default (-'+xs+')':'default'):null;if(c.overrideSkills){if(c.localSkillsOnly||!c.skills)return'local';return gen+' + local'}return gen||'off'}
 /* The token split is recorded for every run; the grid has room only for the total, so
    the breakdown goes in the cell tooltip and the detail panel. */
@@ -273,7 +277,7 @@ const COLS=[
   {field:'startedAt',     label:'When',     val:r=>r.startedAt||'',           cell:r=>'<span style="font-weight:600">'+esc(fmtWhen(r.startedAt))+'</span>'},
   {field:'_fw',           label:'Framework',val:r=>r.config.framework||'',    cell:r=>esc(r.config.framework||'\u2014')},
   {field:'_model',        label:'Model',    val:r=>(r.config.models||[])[0]||'',cell:r=>esc((r.config.models||[]).join(', ')||'\u2014')},
-  {field:'_mcps',         label:'MCPs',     val:r=>(r.config.enabledMcps||[]).join(','),cell:r=>esc((r.config.enabledMcps||[]).join(', ')||'\u2014')},
+  {field:'_mcps',         label:'MCPs',     val:r=>(r.config.enabledMcps||[]).join(','),cell:r=>esc(mcpSummary(r.config))},
   {field:'status',        label:'Status',   val:r=>r.status||'',              cell:r=>'<span class="pill '+esc(PILL_SET.has(r.status)?r.status:'other')+'">'+esc(r.status)+'</span>'},
   {field:'durationMs',    label:'Duration', val:r=>r.durationMs??-1,          cell:r=>'<span class="num-r">'+esc(fmtDur(r.durationMs))+'</span>'},
   {field:'rating',        label:'Rating',   val:r=>r.rating??-1,              cell:r=>'<span class="stars">'+esc(stars(r.rating))+'</span>'},
@@ -282,7 +286,7 @@ const COLS=[
   {field:'_cost',         label:'Cost (USD)',val:r=>r.stats?.cost?.available?r.stats.cost.amount:-1, cell:r=>'<span class="num-r">'+(r.stats?.cost?.available?'$'+r.stats.cost.amount.toFixed(4):'n/a')+'</span>'},
 ];
 
-function getFilter(r){return[r.config?.framework,r.config?.models?.join(' '),r.status,r.matrixId,r.id,r.prompt,(r.config?.enabledMcps||[]).join(' '),(r.tools?.tools||[]).map(t=>t.name).join(' ')].join(' ').toLowerCase()}
+function getFilter(r){return[r.config?.framework,r.config?.models?.join(' '),r.status,r.matrixId,r.id,r.prompt,(r.config?.enabledMcps||[]).join(' '),Object.values(r.config?.mcpCommands||{}).join(' '),(r.tools?.tools||[]).map(t=>t.name).join(' ')].join(' ').toLowerCase()}
 
 function renderDetail(r){
   const c=r.config,st=r.stats,stg=r.stages||{};
@@ -312,7 +316,7 @@ function renderDetail(r){
     '<dt>Theme</dt><dd>'+esc(c.theme||'\u2014')+'</dd>'+
     '<dt>Skills</dt><dd>'+esc(skillSummary(c))+'</dd>'+
     (c.excludedSkills?.length?'<dt>Excl. skills</dt><dd>'+esc(c.excludedSkills.join(', '))+'</dd>':'')+
-    '<dt>MCPs</dt><dd>'+esc((c.enabledMcps||[]).join(', ')||'\u2014')+'</dd>'+
+    '<dt>MCPs</dt><dd>'+esc(mcpSummary(c))+'</dd>'+
     '<dt>Run id</dt><dd style="font-size:.68rem">'+esc(r.id)+'</dd>'+
     '</dl></div>'+
     '<div><h4>Stages</h4><dl>'+

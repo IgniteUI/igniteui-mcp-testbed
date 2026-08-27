@@ -142,6 +142,13 @@ export interface StoredConfig {
   promptImages: string[];
   models: string[];
   customBaseUrl: string | null;
+  /**
+   * Class → command line, for servers whose launch command came from an env override
+   * (MCP_CMD_<CLASS>) rather than the built-in default. Absent both on records that
+   * predate the field and on every run using the defaults, so readers must guard —
+   * "no key" means "released", not "unknown".
+   */
+  mcpCommands?: Record<string, string>;
 }
 
 // One reference image available under PROMPT_IMAGES_DIR. `name` is the path relative

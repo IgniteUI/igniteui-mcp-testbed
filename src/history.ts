@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic } from './types.ts';
+import { mcpOverrideFor } from './config.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -55,6 +56,20 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     promptImages: Array.isArray(c.promptImages) ? c.promptImages.slice() : [],
     models: c.model ? [c.model] : [],
     customBaseUrl: c.customBaseUrl || null,
+    // Container-level, not part of the request: the overrides resolve from the env at
+    // module load and the pipeline resolves through the same helper, so stamping here
+    // records exactly what the run will launch. Keyed by the run's OWN class spellings
+    // (not the normalized env ones) so the UI can index it with `enabledMcps` directly.
+    // Only enabled classes are recorded — a disabled server's binary never ran. Omitted
+    // entirely when nothing is overridden, so the field's presence is itself the signal.
+    ...(() => {
+      const cmds: Record<string, string> = {};
+      for (const cls of Array.isArray(c.enabledMcps) ? c.enabledMcps : []) {
+        const cmd = mcpOverrideFor(cls);
+        if (cmd) cmds[cls] = cmd;
+      }
+      return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
+    })(),
   };
 }
 

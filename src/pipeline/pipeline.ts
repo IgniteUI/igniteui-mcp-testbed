@@ -10,7 +10,7 @@ import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import {
-  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, MCP_COMMAND_BY_CLASS,
+  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor,
   LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
@@ -199,7 +199,14 @@ export async function runPipeline(
       const safeClass = s.class.replace(/[\r\n]/g, ' ');
       emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
       if (on && s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
-        mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+        // A pack's own command is already runnable, so unlike the igniteui branch there is
+        // nothing to repair here — but MCP_CMD_<CLASS> must still win, or the override is
+        // advertised for pack classes and silently inert for exactly them, while
+        // history.redact stamps it anyway and the History MCPs column reports a released
+        // run as `(local)`. Same resolver as the translate stage, same log line.
+        const override = mcpCommandFor(s.class);
+        mcpBlock[s.name] = { type: 'local', command: override ?? [s.command, ...(s.args || [])] };
+        if (override) emit('log', `mcp "${safeName}" command → ${override.join(' ')}`);
       }
     }
     // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
@@ -224,11 +231,21 @@ export async function runPipeline(
           enabled: new Set(Object.keys(tempMcpDoc.servers)),
           workspaceFolder: appDir,
         });
+        // MCP_CMD_CUSTOM applies here too. The igniteui branch already rewrites custom
+        // servers (they are classed 'custom' and go through the same fixup loop), so
+        // skipping it here would make the override work or not depending purely on which
+        // framework the entry used — and redact() would stamp it either way.
+        const customOverride = mcpCommandFor('custom');
         for (const [name, def] of Object.entries(customMcp)) {
           if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
-            mcpBlock[name] = def;
+            mcpBlock[name] = customOverride && (def as any).type === 'local'
+              ? { ...(def as any), command: customOverride.slice() }
+              : def;
           }
           emit('log', `mcp "${name}" → custom → enabled`);
+          if (customOverride && (def as any).type === 'local') {
+            emit('log', `mcp "${name}" command → ${customOverride.join(' ')}`);
+          }
         }
       } catch (e: any) {
         emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
@@ -311,7 +328,7 @@ export async function runPipeline(
     // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
     // (ig mcp, igniteui-theming-mcp).
     for (const [name, def] of Object.entries(mcp)) {
-      const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
+      const fix = mcpCommandFor(classByName[name]);
       if (fix && def.type === 'local') {
         def.command = fix.slice();
         emit('log', `mcp "${name}" command → ${fix.join(' ')}`);

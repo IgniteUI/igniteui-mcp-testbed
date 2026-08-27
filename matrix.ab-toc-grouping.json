@@ -1,0 +1,14 @@
+{
+  "name": "toc-grouping A/B",
+  "platforms": ["angular", "react", "webcomponents", "blazor"],
+  "variants": [
+    { "mcps": ["igniteui"], "skills": true, "localSkills": false }
+  ],
+  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "apiKeyEnv": "OPENROUTER_API_KEY",
+  "prompt": "Create a simple two-page authentication UI using Ignite UI components. Page one is a rich, full-featured login form; page two is a rich, full-featured register form. Make the forms intentionally complete, with multiple fields and options, so the usage of many Ignite UI form components is clearly demonstrated. Use Ignite UI components: inputs, checkboxes, radio buttons, switches, select, multi combo, links, buttons, and icons. Include validation states, helper text, social login buttons, password visibility toggle, remember-me option, terms/privacy agreement, and a clean responsive layout. Apply a dark application theme with the ignite ui dark blue (#27265F) as background, ignite ui orange (#F05A2B) as accent and ignite ui blue (#0099FF) as primary.",
+  "selectedTests": [
+  ],
+  "autoRun": true,
+  "exitOnDone": true
+}

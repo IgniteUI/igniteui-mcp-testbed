@@ -26,6 +26,15 @@ Reads the gitignored .env for provider API keys forwarded into the container
 CUSTOM_API_KEY) and, at build time only, IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL
 for the licensed History grid.
 
+MCP_CMD_<CLASS> (also read from .env, but an already-set value wins) swaps that class's
+MCP server for a locally-built one packed into .\local-mcp\ and installed at build time,
+e.g. MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp or
+MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp. Any class works (igniteui, theming,
+angular, custom, or one a provider pack declares); a hyphen in a class name becomes an
+underscore (mui-docs -> MCP_CMD_MUI_DOCS). Unset, runs use the released server, so one
+image serves every arm. IGNITEUI_MCP_CMD is still accepted as an alias for
+MCP_CMD_IGNITEUI.
+
 Session artifacts land in .\sessions\<timestamp>\; run history, matrix reports, and
 screenshots persist in .\sessions\history\ across containers.
 
@@ -102,6 +111,9 @@ if ($Command -eq 'build') {
   # than `podman build --secret` because podman's build-secret temp file has a broken
   # path on Windows (containers/podman#23815), which fails the build.
   Read-EnvKeys IG_NPM_TOKEN, IG_NPM_USERNAME, IG_NPM_EMAIL
+  # The Containerfile COPYs .\local-mcp (an optional locally-built MCP server tarball to
+  # A/B against the released one), so the dir must exist even when it holds nothing.
+  New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'local-mcp') | Out-Null
   $lines = @()
   if ($env:IG_NPM_TOKEN) {
     $feed = '//packages.infragistics.com/npm/js-licensed/'
@@ -172,6 +184,38 @@ $diagVars = @('DIAGNOSTICS_STREAM_DEBUG', 'AGENT_STALL_MS', 'AGENT_LOOP_REPEATS'
 foreach ($v in $diagVars) {
   if (Test-Path "env:$v") { $envFlags += @('-e', "$v=$((Get-Item "env:$v").Value)") }
 }
+
+# MCP server tuning, forwarded the same way. MCP_CMD_<CLASS> swaps that class's server
+# for a locally-built one installed in the image (e.g.
+# MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp); unset means the released server.
+# Unlike the keys, an already-set value wins over .env — an A/B sweep sets it per arm
+# around the .\run.ps1 call, and .env must not clobber that.
+#
+# The MCP_CMD_ set is a PREFIX SCAN, not a fixed list: the class space is open-ended (a
+# provider pack declares whatever class name it likes), so a new class must work without
+# editing this script. Snapshot-then-restore is what makes "already-set wins" true — the
+# pattern has to stay a wildcard (a class may be named ONLY in .env) and Read-EnvKeys
+# sets unconditionally, so an unprotected value would be silently replaced by .env,
+# quietly running both sweep arms on the same binary.
+$mcpFixed = @('IGNITEUI_MCP_CMD', 'IGNITEUI_MCP_DOCS_BACKEND_URL', 'IGNITEUI_MCP_DEBUG')
+$mcpNames = { @($mcpFixed) + @(Get-ChildItem env: | Where-Object { $_.Name -like 'MCP_CMD_*' } | ForEach-Object Name) | Select-Object -Unique }
+$mcpPreset = @{}
+# Test-Path is true for a declared-but-EMPTY var, and that is load-bearing: an explicit
+# empty means "no override for this class" and has to survive the .env pass. Otherwise a
+# caller that cleared the var gets it handed back by .env — exactly how run-ab-sweep.sh's
+# released arm silently became a second local arm. Only an explicit empty pins a class to
+# its released command; a genuinely unset var is still fair game for .env.
+foreach ($v in (& $mcpNames)) { if (Test-Path "env:$v") { $mcpPreset[$v] = (Get-Item "env:$v").Value } }
+Read-EnvKeys @('MCP_CMD_[A-Za-z0-9_]+', 'IGNITEUI_MCP_CMD', 'IGNITEUI_MCP_DOCS_BACKEND_URL', 'IGNITEUI_MCP_DEBUG')
+foreach ($k in $mcpPreset.Keys) { Set-Item -Path "env:$k" -Value $mcpPreset[$k] }
+# Re-scan after .env: it may have introduced MCP_CMD_ classes that were not set before.
+foreach ($v in (& $mcpNames)) {
+  # Non-empty only, matching run.sh: an explicit empty means "no override", so it must not
+  # be forwarded — src/config.ts would treat it as unset anyway, but the container env
+  # stays clean and the two scripts agree.
+  if ((Get-Item "env:$v" -ErrorAction SilentlyContinue).Value) { $envFlags += @('-e', $v) }
+}
+
 if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
 if ($Validate) { $envFlags += @('-e', 'MATRIX_VALIDATE=1') }
 
@@ -203,6 +247,18 @@ if ($Validate) {
   Write-Host "Validating matrix config: $mcAbs"
 } else {
   Write-Host "Session artifacts -> $Out"
+  # Report every overridden class, not just igniteui: this line is what a user reads to
+  # confirm which arm is running, so a class it cannot see reads as "released" and would
+  # misreport the arm outright.
+  $mcpShown = $false
+  foreach ($v in (& $mcpNames)) {
+    if ($v -in @('IGNITEUI_MCP_DOCS_BACKEND_URL', 'IGNITEUI_MCP_DEBUG')) { continue }
+    if (-not (Get-Item "env:$v" -ErrorAction SilentlyContinue).Value) { continue }
+    $cls = if ($v -eq 'IGNITEUI_MCP_CMD') { 'igniteui' } else { ($v -replace '^MCP_CMD_', '').ToLower() }
+    Write-Host ("MCP server override:        {0} -> {1}" -f $cls, (Get-Item "env:$v").Value)
+    $mcpShown = $true
+  }
+  if (-not $mcpShown) { Write-Host 'MCP servers:                released (no MCP_CMD_* override)' }
   Write-Host 'Ignite UI MCP Testbed UI:   http://localhost:8080'
   Write-Host 'opencode:                   http://localhost:4096  (after launch in interactive mode)'
   Write-Host 'App:                        http://localhost:5000  (after launch in interactive mode)'

@@ -1,6 +1,7 @@
 'use strict';
 
 import * as path from 'path';
+import { normMcpClass } from './mcp-class.ts';
 
 export const WIZARD_PORT = Number(process.env.WIZARD_PORT || 8080);
 export const OPENCODE_PORT = Number(process.env.OPENCODE_PORT || 4096);
@@ -99,10 +100,83 @@ export const OPENCODE_DATA_DIR = process.env.XDG_DATA_HOME as string;
 // Reliable launch commands for the known MCP servers, run from globally-installed
 // packages (see Containerfile) instead of the `npx` invocations that cold-fetch
 // from npm on each run. Keyed by the wizard's server class.
-export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = {
+const DEFAULT_MCP_COMMANDS: Record<string, string[]> = {
   igniteui: ['ig', 'mcp'],
   theming: ['igniteui-theming-mcp'],
 };
+
+// Swap ANY class's server for a locally-built one (see the ./local-mcp tarball install in
+// the Containerfile) — the A/B knob for testing an unreleased MCP server. One var per
+// class, the whole command line whitespace-separated:
+//   MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp
+//   MCP_CMD_THEMING="/opt/local-mcp/bin/my-theming-mcp --stdio"
+// It is a prefix scan rather than an allowlist because the class space is open-ended:
+// classify() yields theming/angular/igniteui/other, the pipeline adds `custom`, and a
+// provider pack declares whatever `class` string it likes — an allowlist would silently
+// ignore an override for a pack-supplied server.
+// Overriding the *command* rather than injecting a second server keeps the server name
+// (and so every tool name the model sees) identical across arms, so the binary is the
+// only thing that varies. Unset ⇒ that class's default command.
+const MCP_CMD_PREFIX = 'MCP_CMD_';
+
+// Class names may carry characters an env var name cannot (a pack is free to use
+// `mui-docs`), so both sides are folded to [a-z0-9_] before matching. Lookups therefore
+// go through mcpCommandFor(), never a bare index into the map. The fold itself lives in
+// src/mcp-class.ts because the History re-run check needs the identical rule.
+const normClass = normMcpClass;
+const splitCmd = (v: string | undefined): string[] => (v || '').trim().split(/\s+/).filter(Boolean);
+
+function collectOverrides(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  // Back-compat alias, applied first so an explicit MCP_CMD_IGNITEUI wins over it.
+  const legacy = splitCmd(process.env.IGNITEUI_MCP_CMD);
+  if (legacy.length) out.igniteui = legacy;
+  for (const [key, raw] of Object.entries(process.env)) {
+    if (!key.startsWith(MCP_CMD_PREFIX)) continue;
+    const cls = normClass(key.slice(MCP_CMD_PREFIX.length));
+    const argv = splitCmd(raw);
+    // An empty or whitespace-only value is "not set", not "run nothing" — otherwise a
+    // stray `MCP_CMD_IGNITEUI=` in a .env would blank the command and fail the launch.
+    if (cls && argv.length) out[cls] = argv;
+  }
+  return out;
+}
+
+/** Normalized class key → argv, for every class whose command came from the env. */
+export const MCP_COMMAND_OVERRIDES: Record<string, string[]> = collectOverrides();
+
+/** Defaults with overrides applied. Exported for inspection; resolve via mcpCommandFor. */
+export const MCP_COMMAND_BY_CLASS: Record<string, string[]> = (() => {
+  const merged: Record<string, string[]> = { ...DEFAULT_MCP_COMMANDS };
+  for (const [cls, argv] of Object.entries(MCP_COMMAND_OVERRIDES)) merged[cls] = argv;
+  return merged;
+})();
+
+const BY_NORM_CLASS: Record<string, string[]> = (() => {
+  const m: Record<string, string[]> = {};
+  for (const [cls, argv] of Object.entries(MCP_COMMAND_BY_CLASS)) m[normClass(cls)] = argv;
+  return m;
+})();
+
+/** The command a class's server should launch with, or undefined to leave it as generated. */
+export function mcpCommandFor(cls: string | undefined): string[] | undefined {
+  if (!cls) return undefined;
+  const hit = BY_NORM_CLASS[normClass(cls)];
+  return hit ? hit.slice() : undefined;
+}
+
+/**
+ * The override for a class as a command line, or undefined when it runs its default.
+ * Stamped onto every history record (history.redact) because the A/B arms are otherwise
+ * indistinguishable after the fact: the server keeps its name, exposes identically-named
+ * tools, and a locally-packed build can report the SAME `--version` as the released one,
+ * so the command line is the only thing that says which binary answered.
+ */
+export function mcpOverrideFor(cls: string | undefined): string | undefined {
+  if (!cls) return undefined;
+  const hit = MCP_COMMAND_OVERRIDES[normClass(cls)];
+  return hit ? hit.join(' ') : undefined;
+}
 
 // Which env var carries the API key, keyed by the provider prefix of the model id.
 export const PROVIDER_ENV: Record<string, string> = {
