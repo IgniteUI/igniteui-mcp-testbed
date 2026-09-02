@@ -5,6 +5,7 @@
 #
 #   .\run.ps1 build                      build the image
 #   .\run.ps1 build -Prune               build, then remove dangling (<none>) images left behind
+#   .\run.ps1 build -BuildArg N=V,M=W    build, overriding Containerfile ARGs
 #   .\run.ps1                            run a fresh container
 #   .\run.ps1 -MatrixConfig <file>       run with a matrix JSON config (auto-runs the
 #                                        matrix headlessly unless the file sets
@@ -48,6 +49,17 @@ image uploads land here).
 .PARAMETER Prune
 With build: remove dangling <none> images after a successful build.
 
+.PARAMETER BuildArg
+With build: NAME=VALUE pairs passed through to podman as --build-arg. Comma-separate for
+several (PowerShell array syntax): -BuildArg A=1,B=2 — do not quote the whole list, or it
+binds as one malformed argument.
+
+Package versions are PINNED in the Containerfile (IGNITEUI_CLI_VERSION,
+IGNITEUI_THEMING_VERSION, OPENCODE_VERSION) rather than tracking "latest", because the
+install layer is cached by instruction text: "latest" would resolve once and every later
+rebuild would silently reuse it. Bump the pin to upgrade, or override for one build here.
+Passing "=latest" does NOT force a refetch (same value, same cache key).
+
 .PARAMETER MatrixConfig
 Path to a matrix JSON config. Bind-mounted into the container; the matrix auto-runs
 headlessly unless the file sets "autoRun": false (the UI prefills from it either way).
@@ -63,6 +75,9 @@ Show this help and exit.
 .\run.ps1 build -Prune
 
 .EXAMPLE
+.\run.ps1 build -BuildArg IGNITEUI_CLI_VERSION=15.6.0,OPENCODE_VERSION=1.18.25
+
+.EXAMPLE
 .\run.ps1
 
 .EXAMPLE
@@ -72,7 +87,7 @@ Show this help and exit.
 .\run.ps1 -MatrixConfig .\matrix.json -Validate
 #>
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune, [string]$MatrixConfig, [switch]$Validate, [switch]$Help)
+param([string]$Command, [switch]$Prune, [string[]]$BuildArg, [string]$MatrixConfig, [switch]$Validate, [switch]$Help)
 
 $ErrorActionPreference = 'Stop'
 
@@ -128,8 +143,17 @@ if ($Command -eq 'build') {
   # Always (re)create .npmrc so the Containerfile bind mount resolves; empty => trial.
   $npmrc = Join-Path $PSScriptRoot '.npmrc'
   Set-Content -Path $npmrc -Value ($lines -join "`n") -NoNewline -Encoding ascii
+  # Mirrors run.sh: NAME=VALUE pairs passed straight through to podman --build-arg.
+  $buildArgs = @()
+  foreach ($ba in $BuildArg) {
+    if ($ba -notmatch '=') {
+      Write-Host "--BuildArg expects NAME=VALUE, got '$ba'"
+      exit 2
+    }
+    $buildArgs += @('--build-arg', $ba)
+  }
   try {
-    podman build -t $Image $PSScriptRoot
+    podman build @buildArgs -t $Image $PSScriptRoot
     $buildExit = $LASTEXITCODE
   } finally {
     Remove-Item -Path $npmrc -Force -ErrorAction SilentlyContinue

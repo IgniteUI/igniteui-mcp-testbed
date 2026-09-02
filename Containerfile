@@ -11,12 +11,29 @@ RUN apt-get update \
 # --- Agent + Ignite UI CLI + Theming MCP (adjust versions/names to your packages) ---
 # These are installed globally so the MCP servers launch from local bins (`ig mcp`,
 # `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
-ARG IGNITEUI_CLI_VERSION=latest
-ARG IGNITEUI_THEMING_VERSION=latest
-RUN npm install -g opencode-ai igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
+# PINNED, deliberately not `latest`. Podman caches this layer by instruction text, and
+# that text never changes — so `latest` resolves once, on the first build, and every later
+# rebuild silently reuses whatever it resolved to back then. The tag reads "latest" while
+# the image drifts arbitrarily far behind (it had reached cli 15.5.0 vs 15.6.0 published,
+# theming 27.4.0 vs 28.1.1, opencode 1.18.8 vs 1.18.25). A pinned version makes the bump
+# explicit and busts exactly this layer when it changes, leaving apt / dotnet templates /
+# Playwright cached. Override for one build without editing the file:
+#   ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.7.0
+# Note `--build-arg IGNITEUI_CLI_VERSION=latest` would NOT force a refetch on a second
+# run: same value, same cache key. Bump the pin, or use --no-cache.
+# opencode is pinned for a stronger reason than tidiness: the SQLite `part` schema
+# (src/capture/tool-usage.ts), the `opencode stats` label regexes (src/capture/usage.ts)
+# and the `Error: {json}` diagnostics anchor (src/capture/diagnostics.ts) are all
+# version-dependent, so an unannounced bump breaks parsers silently. After changing it,
+# run `npm run diagnostics:replay`.
+ARG IGNITEUI_CLI_VERSION=15.6.0
+ARG IGNITEUI_THEMING_VERSION=28.1.1
+ARG OPENCODE_VERSION=1.18.25
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
 
-# Print the versions of the globally installed igniteui-cli for debugging.
-RUN ig --version
+# Bake the resolved versions into the build log — "which versions is this image?" is
+# otherwise only answerable by running the image.
+RUN ig --version && npm ls -g --depth=0
 
 # --- Locally-built MCP servers (optional, for A/B against the released ones) ---
 # Drop one or more packed tarballs (`npm pack`) into ./local-mcp/. EVERY tarball is
