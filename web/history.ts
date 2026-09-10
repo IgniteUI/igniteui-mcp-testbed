@@ -6,6 +6,9 @@ import { html, render, keyed } from './lit.ts';
 import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
+import { pillClass } from '../src/status-meta.ts';
+import { normMcpClass } from '../src/mcp-class.ts';
+import type { Diagnostic } from '../src/types.ts';
 
 interface HistoryGridRow {
   id: string;
@@ -50,6 +53,7 @@ const st = {
   gridVisible: false,
   shownCount: 0,
   rerunSummary: '',
+  rerunWarn: '',   // set when this container's MCP binaries differ from the stored run's
   lb: {
     gen: 0, // bumped per open — keyed() then builds a FRESH carousel (see openLightbox)
     shots: [] as Array<{ file: string; route: string }>,
@@ -124,6 +128,17 @@ function skillSummary(c: any): string {
   return gen || 'off';
 }
 
+// The MCPs cell. Normally just the enabled classes, but a class whose launch command was
+// overridden (MCP_CMD_<CLASS>) is marked `(local)` — without it the two arms of a
+// local-vs-released A/B render identically, since both servers carry the same name and
+// report the same version. No `mcpCommands` key means the default binary, which covers
+// every ordinary run and every record predating the field.
+function mcpSummary(c: any): string {
+  const overrides = c.mcpCommands || {};
+  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${m} (local)` : m));
+  return list.join(', ') || '—';
+}
+
 // One-word summary of a run's injected-test verification outcome for the grid.
 function testSummary(t: any): { display: string; sort: number; state: string } {
   if (!t) return { display: '—', sort: -1, state: 'none' };
@@ -177,6 +192,28 @@ function toolNames(tools: any[], kind: string): string {
   const of = tools.filter((t) => t.kind === kind);
   if (!of.length) return 'none';
   return of.map((t) => `${t.name}${t.calls > 1 ? ` ×${t.calls}` : ''}`).join(', ');
+}
+
+// The detail-panel "Diagnostics" block. Records written before this feature (and any
+// run that produced none) have no diagnostics at all, so absence is normal and is not
+// worth a "not recorded" note the way missing tool usage is.
+function diagsDetailTpl(r: any) {
+  const ds: Diagnostic[] = r.diagnostics || [];
+  if (!ds.length) return gridHtml``;
+  return gridHtml`
+    <div class="shots"><h4>Diagnostics</h4>
+      ${ds.map((d) => gridHtml`
+        <div class="diag ${d.resolvedAt ? 'resolved' : d.supersededAt ? 'superseded' : ''} ${d.confidence === 'suspected' ? 'suspected' : ''}">
+          <div class="diag-title">
+            ${d.title}${d.count > 1 ? ` ×${d.count}` : ''}
+            ${d.confidence === 'suspected' ? ' (possible cause)' : ''}
+            ${d.resolvedAt ? ' · recovered' : d.supersededAt ? ' · overtaken' : ''}
+          </div>
+          <div class="diag-advice">${d.advice}</div>
+          <div class="diag-detail">${d.detail}</div>
+          <div class="diag-meta">${d.at}${d.count > 1 ? ` → ${d.lastAt}` : ''}</div>
+        </div>`)}
+    </div>`;
 }
 
 // The detail-panel "Tool usage" block: what the agent called, and — the part that
@@ -248,7 +285,7 @@ function rowVals(r: any): HistoryGridRow {
     framework: fmtFramework(r.config.framework),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
-    mcps: (r.config.enabledMcps || []).join(', ') || '—',
+    mcps: mcpSummary(r.config),
     status: r.status || '—',
     rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 0,
     testsSort: ts.sort,
@@ -325,6 +362,8 @@ function bindGridTemplates() {
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
+            gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
@@ -378,6 +417,7 @@ function bindGridTemplates() {
               </div>
             </details>
           </div>` : gridHtml``}
+        ${diagsDetailTpl(r)}
         ${toolsDetailTpl(r)}
         ${r.tests ? gridHtml`
           <div class="shots"><h4>Tests</h4>
@@ -431,7 +471,11 @@ function bindGridTemplates() {
           renderRuns();
         }}>#${tag.label}</span>`;
   };
-  $('#historyStatus').bodyTemplate = (ctx: any) => gridHtml`<span class="pill ${getCellRow(ctx).status}">${getCellRow(ctx).status}</span>`;
+  // Just the pill. A diagnostics chip used to sit beside it, but for the provider
+  // statuses it simply restated the pill ('timed-out' + '⚠ timeout'), and the column is
+  // narrow. The diagnostics themselves live in the row's detail panel.
+  $('#historyStatus').bodyTemplate = (ctx: any) =>
+    gridHtml`<span class="pill ${pillClass(getCellRow(ctx).status)}">${getCellRow(ctx).status}</span>`;
   $('#historyTests').bodyTemplate = (ctx: any) => {
     const row = getCellRow(ctx);
     return gridHtml`<span class="tests-cell ${row.testsState}" title="Playwright verification">${row.testsDisplay}</span>`;
@@ -654,7 +698,30 @@ async function deleteRun(id: string) {
 // single-entry matrix submission, prompting for the (never-stored) API key first.
 let pendingRerun: any = null;
 
-function rerunRun(id: string) {
+// A re-run POSTs into the ALREADY-RUNNING container, so it inherits that container's
+// MCP_CMD_* environment — those are read once at module load and nothing in the request
+// can change them. A run recorded against a locally-built server therefore re-runs
+// against the released one unless this container was started with the same override.
+// The record stays honest either way (redact() stamps the live env), but that is only
+// visible afterwards, so compare up-front and say so.
+function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string {
+  if (!live) return '';
+  const recorded: Record<string, string> = cfg.mcpCommands || {};
+  const diffs: string[] = [];
+  for (const cls of cfg.enabledMcps || []) {
+    const was = recorded[cls];
+    const now = live[normMcpClass(cls)];
+    if (was === now || (!was && !now)) continue;
+    if (was && !now) diffs.push(`${cls}: recorded run used ${was}, this container uses the released server`);
+    else if (!was && now) diffs.push(`${cls}: recorded run used the released server, this container uses ${now}`);
+    else diffs.push(`${cls}: recorded run used ${was}, this container uses ${now}`);
+  }
+  return diffs.length
+    ? `Different MCP binary — ${diffs.join('; ')}. Restart the container with the matching MCP_CMD_* to reproduce this run.`
+    : '';
+}
+
+async function rerunRun(id: string) {
   const r = runById.get(id);
   if (!r || !r.matrixId) return;
   pendingRerun = r;
@@ -662,6 +729,14 @@ function rerunRun(id: string) {
   const prompt = (r.prompt || '').trim();
   const snippet = prompt.length > 80 ? prompt.slice(0, 80) + '…' : prompt;
   st.rerunSummary = `${c.framework || '—'} · ${(c.models || [])[0] || '—'}${snippet ? ` · "${snippet}"` : ''}`;
+  // Absent/failed status ⇒ no warning rather than a wrong one: an older container has no
+  // `mcpOverrides` field, and "{}" (every class released) must stay distinguishable from
+  // "unknown". Never block the dialog on this.
+  st.rerunWarn = '';
+  try {
+    const s = await getJSON('/api/status');
+    st.rerunWarn = rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null);
+  } catch { /* leave the warning empty */ }
   update();
   ($('#rerunKey') as any).value = '';
   ($('#rerunDialog') as any).show();
@@ -689,6 +764,7 @@ async function confirmRerun() {
     if (!j.ok) { alert(j.error || 'failed to start re-run'); return; }
     ($('#rerunDialog') as any).hide();
     pendingRerun = null;
+    st.rerunWarn = '';
     loadHistory();
   } catch (err: any) { alert(err.message); }
 }
@@ -811,9 +887,10 @@ function tpl() {
   <!-- API-key prompt for re-running a matrix configuration from the History tab. -->
   <igc-dialog id="rerunDialog" title="Re-run configuration">
     <p class="note" id="rerunSummary">${st.rerunSummary}</p>
+    ${st.rerunWarn ? html`<p class="note tool-warn" id="rerunWarn">${st.rerunWarn}</p>` : ''}
     <igc-input outlined id="rerunKey" label="API key" type="password" autocomplete="off"></igc-input>
     <igc-button slot="footer" id="rerunCancel" variant="flat"
-      @click=${() => { pendingRerun = null; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
+      @click=${() => { pendingRerun = null; st.rerunWarn = ''; ($('#rerunDialog') as any).hide(); }}>Cancel</igc-button>
     <igc-button slot="footer" id="rerunConfirm" variant="contained" @click=${confirmRerun}>Re-run</igc-button>
   </igc-dialog>
 

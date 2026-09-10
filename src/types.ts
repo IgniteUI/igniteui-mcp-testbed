@@ -142,6 +142,13 @@ export interface StoredConfig {
   promptImages: string[];
   models: string[];
   customBaseUrl: string | null;
+  /**
+   * Class → command line, for servers whose launch command came from an env override
+   * (MCP_CMD_<CLASS>) rather than the built-in default. Absent both on records that
+   * predate the field and on every run using the defaults, so readers must guard —
+   * "no key" means "released", not "unknown".
+   */
+  mcpCommands?: Record<string, string>;
 }
 
 // One reference image available under PROMPT_IMAGES_DIR. `name` is the path relative
@@ -241,6 +248,59 @@ export interface ToolUsage {
   warning?: string;
 }
 
+/**
+ * Something unexpected that happened to a run — a provider 429, an exhausted balance,
+ * a rejected key, a hung request, an agent stuck repeating itself. Produced by the
+ * detectors in src/capture/diagnostics.ts; the logic lives there, the type lives here
+ * because HeadlessResult, HistoryRecord and MatrixEntry all reference it.
+ *
+ * `severity` decouples *warn* from *fail*: a warning rides along on a run that still
+ * succeeds, which is what "tell me if something odd is going on" actually needs.
+ * `confidence` is the second guard alongside stream isolation — a parsed `Error: {json}`
+ * payload off stderr is `confirmed`; a keyword match in the tail of an already-failed
+ * run is `suspected`, and the UI words it as a possible cause rather than asserting it.
+ */
+export interface Diagnostic {
+  /** Stable dedup key: `${kind}:${discriminator}`. Also the live-reconcile identity. */
+  id: string;
+  kind: DiagnosticKind;
+  severity: 'warning' | 'fatal';
+  confidence: 'confirmed' | 'suspected';
+  title: string;
+  /** Verbatim evidence line, ANSI-stripped and truncated. Display material only. */
+  detail: string;
+  advice: string;
+  /** ISO, first occurrence. */
+  at: string;
+  /** Occurrences collapsed into this entry (>= 1). */
+  count: number;
+  /** ISO, most recent occurrence. */
+  lastAt: string;
+  /** The condition RECOVERED. Distinct from supersededAt, and never a substitute for it. */
+  resolvedAt?: string;
+  /** The condition ENDED BY BEING OVERTAKEN (e.g. a stall that ran into the timeout). */
+  supersededAt?: string;
+  /** `id` of the diagnostic that overtook it. Always stamped together with supersededAt. */
+  supersededBy?: string;
+}
+
+export type DiagnosticKind =
+  | 'rate-limited' | 'no-credits' | 'auth' | 'provider-down'
+  | 'network' | 'stalled' | 'looping' | 'timed-out' | 'unknown-provider-error';
+
+/**
+ * What a failed agent run carries out with it. A failed pipeline returns no
+ * HeadlessResult at all, so without this the run's token/cost and MCP-call evidence is
+ * discarded exactly when it is most interesting — "429 at minute 2 with 0 tokens" and
+ * "429 at minute 24 with 180k tokens" are different stories.
+ */
+export interface AgentRunError extends Error {
+  timedOut?: boolean;
+  diagnostics?: Diagnostic[];
+  stats?: Stats | null;
+  tools?: ToolUsage | null;
+}
+
 export interface HistoryRecord {
   id: string;
   startedAt: string;
@@ -260,6 +320,8 @@ export interface HistoryRecord {
   tests: TestResult | null;
   /** MCP tools + skills the agent invoked. null until collected (or if unavailable). */
   tools: ToolUsage | null;
+  /** Optional because ~80 records on disk predate the field. Readers must guard. */
+  diagnostics?: Diagnostic[];
   logs: string[];
 }
 
@@ -302,6 +364,13 @@ export interface MatrixEntry {
   /** MCP tool / skill invocation counts, retained so a reload keeps showing them. */
   mcpCalls?: number;
   skillCalls?: number;
+  /** Retained so the warning chip and step-cell title survive an SSE reconnect/reload. */
+  diagnostics?: Diagnostic[];
+}
+
+export interface MatrixPass {
+  prompt: string;
+  name?: string | null;
 }
 
 export interface MatrixState {
@@ -311,6 +380,19 @@ export interface MatrixState {
   total: number;
   done: number;
   entries: MatrixEntry[];
+  /** Multi-pass support: which pass (1-based) is currently executing and how many total. */
+  currentPass: number;
+  totalPasses: number;
+  pendingPasses: number;
+  /** Aggregate warning ("3 entries hit a 429; the rest will likely follow"). State
+   * rather than a fire-and-forget event, so a reconnecting client still sees it. */
+  banner?: MatrixBanner | null;
+}
+
+export interface MatrixBanner {
+  kind: DiagnosticKind;
+  count: number;
+  message: string;
 }
 
 export interface SkippedRoute {
@@ -354,4 +436,6 @@ export interface HeadlessResult {
   appError?: string;
   tests?: TestResult | null;
   tools?: ToolUsage | null;
+  /** Required on purpose: produced fresh on every return path, initialized to []. */
+  diagnostics: Diagnostic[];
 }

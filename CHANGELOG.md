@@ -5,6 +5,55 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-10
+
+### Added
+
+- **Structured run diagnostics** — provider failures now carry a diagnostic kind,
+  severity, confidence and deduplicated details instead of collapsing into a generic
+  error. Rate limits, missing credits, authentication failures, provider outages,
+  network failures and timeouts are reflected in run status, matrix progress, history,
+  reports and exports.
+  - Detects both structured provider payloads and a conservative allowlist of prose
+    errors, while suppressing MCP tool errors and cancellation-generated transport
+    noise.
+  - Tracks stalled agents as recoverable warnings and detects repeated tool-call loops
+    from opencode's SQLite store without recording tool inputs. Diagnostics update live
+    for interactive sessions and matrix entries, including recovery and supersession
+    when a timeout follows a stall.
+- **Multi-pass matrix submissions** — repeat a complete platform and variant combination
+  with one submission to measure variance across independent runs. Each pass gets its
+  own matrix id, history records, project directories, reports and summary; progress,
+  cancellation, cleanup and `exitOnDone` account for all passes.
+- **Local MCP server A/B testing** — install local MCP tarballs alongside released
+  servers and override commands by normalized server class with `MCP_CMD_<CLASS>`.
+  `run-ab-sweep.sh` drives released-versus-local comparisons while preserving the same
+  server names and tool names. The selected command and local provenance are recorded
+  in history, exports and status, and stale-image/package mismatches fail preflight.
+- **Diagnostics validation tooling** — fixture coverage for ANSI-stripped provider
+  errors, stream attribution, lifecycle transitions and status derivation; an executable
+  smoke test for process settlement and stall behavior; SQLite loop fixtures; and a
+  replay command for stored history and opencode sessions.
+
+### Changed
+
+- Matrix status and console output now distinguish rate-limited runs, preserve the
+  aggregate diagnostic banner across a submission, and reset it correctly between
+  passes. The console mirror only announces completion when the final pass finishes.
+- History re-runs now compare the recorded MCP command overrides with the current
+  container and warn when the selected local or released binary cannot be reproduced.
+- MCP command resolution is applied consistently to built-in and provider-pack servers,
+  including classes whose names need normalization for environment variables.
+
+### Fixed
+
+- Matrix cancellation and aggregate failure counts no longer leak across passes.
+- Long-running child processes are terminated as process groups and timeout settlement
+  waits for descendants to exit, preventing stale app or agent processes from affecting
+  subsequent matrix entries.
+- Provider errors written to stderr are classified with confirmed confidence, while
+  stdout-only evidence is downgraded to suspected unless the agent exits unsuccessfully.
+
 ## [0.2.0] - 2026-08-04
 
 ### Added
@@ -176,4 +225,5 @@ Initial release: a single-container appliance for exercising the Ignite UI AI to
 - MIT license.
 
 [0.2.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.1.0...0.2.0
+[0.3.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.2.0...0.3.0
 [0.1.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/releases/tag/0.1.0

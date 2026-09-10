@@ -4,6 +4,7 @@ import { html, render, nothing, repeat, classMap } from './lit.ts';
 import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
+import type { Diagnostic } from '../src/types.ts';
 import { createImagePicker } from './prompt-images.ts';
 
 const STEPS: Array<[string, string]> = [
@@ -38,6 +39,7 @@ interface WizardState {
   stats: any | null;
   tools: any | null;
   statsLive: boolean;
+  diagnostics: Diagnostic[];
   usageText: string;
 }
 
@@ -61,6 +63,7 @@ const st: WizardState = {
   stats: null,
   tools: null,
   statsLive: false,
+  diagnostics: [] as Diagnostic[],
   usageText: 'No stats yet — run the agent, then Refresh.',
 };
 
@@ -408,14 +411,17 @@ let statsES: EventSource | null = null;
 function startStatsStream() {
   if (statsES) statsES.close();
   statsES = new EventSource('/api/stats/stream');
-  // Two payload shapes share this channel: the StatsCollector's snapshot (messages /
-  // tokens / cost, untagged) and the tool-usage read it does on the same tick
-  // (`type:'tools'`). Discriminate — assigning a tools payload to `st.stats` blanks the
-  // whole panel until the next snapshot arrives.
+  // Three payload shapes share this channel: the StatsCollector's snapshot (messages /
+  // tokens / cost, untagged), the tool-usage read it does on the same tick
+  // (`type:'tools'`), and the session's diagnostics (`type:'diagnostics'`). Discriminate —
+  // assigning a tagged payload to `st.stats` blanks the whole panel until the next
+  // snapshot arrives.
   statsES.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
       if (msg && msg.type === 'tools') st.tools = msg.tools;
+      // Always the full set, so replacing wholesale is correct.
+      else if (msg && msg.type === 'diagnostics') st.diagnostics = msg.diagnostics || [];
       else st.stats = msg;
       st.statsLive = true;
       update();
@@ -448,6 +454,29 @@ function statsRows() {
     <tr><th>Tool calls</th><td>${u
       ? `${fmt(u.calls)} (${fmt(u.mcpCalls)} MCP · ${fmt(u.skillCalls)} skill)`
       : '—'}</td></tr>`;
+}
+
+// Live provider warnings for the interactive session. Rendered above the pipeline rail
+// rather than tucked into the stats details, because the whole point is that the user
+// notices a 429 or a rejected key while they are still working.
+function diagnosticsPanel() {
+  const active = st.diagnostics.filter((d) => !d.resolvedAt && !d.supersededAt);
+  if (!st.diagnostics.length) return nothing;
+  return html`
+    <p class="eyebrow">Diagnostics</p>
+    ${st.diagnostics.map((d) => html`
+      <div class="diag ${classMap({
+        resolved: !!d.resolvedAt, superseded: !!d.supersededAt, suspected: d.confidence === 'suspected',
+      })}">
+        <div class="diag-title">
+          ${d.title}${d.count > 1 ? ` ×${d.count}` : ''}
+          ${d.confidence === 'suspected' ? ' (possible cause)' : ''}
+          ${d.resolvedAt ? ' · recovered' : d.supersededAt ? ' · overtaken' : ''}
+        </div>
+        <div class="diag-advice">${d.advice}</div>
+        <div class="diag-detail">${d.detail}</div>
+      </div>`)}
+    ${active.length ? nothing : html`<p class="note">No active issues — the entries above already recovered.</p>`}`;
 }
 
 const statsUpdated = () => st.stats?.updatedAt
@@ -624,6 +653,7 @@ function tpl() {
 
   <!-- right: pipeline + console -->
   <section class="panel">
+    ${diagnosticsPanel()}
     <p class="eyebrow">Pipeline</p>
     <ul class="rail" id="rail">
       ${STEPS.map(([step, label], i) => html`

@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import type { Express } from 'express';
 import { APP_PORT } from '../frameworks.ts';
-import { OPENCODE_PORT, WORK, APP_DIR } from '../config.ts';
+import { OPENCODE_PORT, WORK, APP_DIR, MCP_COMMAND_OVERRIDES } from '../config.ts';
 import { capture } from '../proc/exec.ts';
 import { procs } from '../proc/watcher.ts';
 import * as session from '../session.ts';
@@ -23,6 +23,10 @@ export default function registerStatsRoutes(app: Express): void {
     // Tool usage rides the same channel as a `type:'tools'` frame, so replay the last
     // read too — otherwise a reconnecting client shows no tools until the next tick.
     if (stats?.tools) res.write(`data: ${JSON.stringify({ type: 'tools', tools: stats.tools })}\n\n`);
+    // Same for diagnostics: they live on the session collector, not the stats snapshot,
+    // so without this replay a reload silently drops a live provider warning.
+    const diagnostics = session.getDiagnostics();
+    if (diagnostics.length) res.write(`data: ${JSON.stringify({ type: 'diagnostics', diagnostics })}\n\n`);
   });
 
   // Token usage + cost for this session, straight from `opencode stats`.
@@ -46,6 +50,14 @@ export default function registerStatsRoutes(app: Express): void {
       opencodePort: OPENCODE_PORT,
       model: lastConfig && lastConfig.model,
       phase: session.getRunState().phase,
+      // Which MCP classes THIS container will launch from a local binary, keyed by the
+      // normalized class (src/mcp-class.ts). Fixed for the container's lifetime — the
+      // vars are read once at module load. The History re-run check compares it against
+      // the stored run's config.mcpCommands: a re-run is a POST into the already-running
+      // container, so it inherits this and cannot reproduce a different arm.
+      mcpOverrides: Object.fromEntries(
+        Object.entries(MCP_COMMAND_OVERRIDES).map(([cls, argv]) => [cls, argv.join(' ')]),
+      ),
     });
   });
 }

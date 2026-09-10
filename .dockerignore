@@ -1,0 +1,14 @@
+# Keep the build context small — sessions/ alone runs to gigabytes and is tar'd and
+# shipped to the podman machine on every build.
+#
+# Do NOT add: package.json, src/, web/, public/, vendor/, tsconfig*.json (COPY'd),
+# .npmrc (read by the licensed-grid RUN --mount=type=bind, which respects this file),
+# or local-mcp/ (the local MCP A/B tarball, COPY'd and installed to /opt/local-mcp).
+sessions/
+node_modules/
+.git/
+providers-data/
+test-results/
+playwright-report/
+docs/
+*.log

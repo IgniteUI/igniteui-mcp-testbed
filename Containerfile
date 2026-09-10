@@ -18,6 +18,34 @@ RUN npm install -g opencode-ai igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-the
 # Print the versions of the globally installed igniteui-cli for debugging.
 RUN ig --version
 
+# --- Locally-built MCP servers (optional, for A/B against the released ones) ---
+# Drop one or more packed tarballs (`npm pack`) into ./local-mcp/. EVERY tarball is
+# installed under one shared prefix so they coexist with the released servers rather than
+# replacing them, and each package's bins land side by side in /opt/local-mcp/bin/. A run
+# then points a class at one with MCP_CMD_<CLASS> (see src/config.ts), e.g.
+#   MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp
+#   MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp
+# With the vars unset the released servers are used, so one image serves every arm. The
+# dir is COPY'd unconditionally (run.sh/run.ps1 create it) and the install is skipped when
+# it holds no tarball, so a clone without one still builds.
+#
+# PACKAGES is a manifest of the installed tarball basenames, one per line. It exists
+# because a locally-packed build and the released one can report the SAME --version, so
+# nothing else inside the image identifies which tarball is installed — run-ab-sweep.sh
+# preflights it against ./local-mcp/*.tgz to catch a stale image.
+COPY local-mcp/ /tmp/local-mcp/
+RUN set -e; \
+    set -- /tmp/local-mcp/*.tgz; \
+    if [ -e "$1" ]; then \
+      echo "Local MCP servers: installing $# tarball(s)"; \
+      npm install -g --prefix /opt/local-mcp "$@"; \
+      for t in "$@"; do basename "$t"; done | sort > /opt/local-mcp/PACKAGES; \
+      echo "Local MCP bins:"; ls -1 /opt/local-mcp/bin; \
+    else \
+      echo "Local MCP servers: none in ./local-mcp — released servers only"; \
+    fi; \
+    rm -rf /tmp/local-mcp
+
 # --- 3rd-party provider dependencies ---
 # If a provider pack (loaded via the Configuration tab) lists containerDeps.npmGlobal
 # packages, add them to the RUN line below and rebuild the image:

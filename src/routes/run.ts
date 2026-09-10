@@ -8,7 +8,7 @@ import * as history from '../history.ts';
 import * as session from '../session.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
-import { waitForPort } from '../proc/ports.ts';
+import { waitForPort, waitForPortFree } from '../proc/ports.ts';
 import { writeOpencodeConfig, providerEnvFor } from '../pipeline/opencode-config.ts';
 
 export default function registerRunRoutes(app: Express): void {
@@ -38,9 +38,17 @@ export default function registerRunRoutes(app: Express): void {
 
     const cfg = req.body || {};
     const runId = session.beginRun(cfg);
+    // Bound to the collector beginRun just installed, so a previous watcher still dying
+    // in the background cannot feed its output into this run.
+    const agent = session.agentSink();
 
     try {
-      const result = await runPipeline(cfg, { emit, onToolContext: session.setToolContext });
+      const result = await runPipeline(cfg, {
+        emit,
+        onToolContext: session.setToolContext,
+        onAgentOutput: agent.onOutput,
+        onAgentClose: agent.onClose,
+      });
       // Begin gathering live stats (messages / tokens / cost) into /work/stats.json,
       // plus the MCP-tool / skill usage the tool context above scopes to this run.
       session.startStats(cfg);
@@ -71,11 +79,31 @@ export default function registerRunRoutes(app: Express): void {
     if (fs.existsSync(p)) mcp = JSON.parse(fs.readFileSync(p, 'utf8')).mcp || {};
     writeOpencodeConfig(lastConfig, mcp, APP_DIR);
 
-    killWatcher('opencode');
+    // AWAIT it: killWatcher resolves only once the old process has actually exited, and
+    // the replacement binds the same fixed port. Firing and forgetting lets the new
+    // opencode hit EADDRINUSE while waitForPort() below happily succeeds against the OLD
+    // one that is still listening — so the switch reports success and the user keeps
+    // talking to the previous model.
+    await killWatcher('opencode');
+    // killWatcher resolves on the LAUNCHER's close, which does not prove its descendants
+    // are gone — and a survivor still holding 4096 would make the replacement fail to
+    // bind while waitForPort() below succeeds against the old process, reporting a
+    // switch that never happened. Assert the invariant that actually matters instead of
+    // trying to prove tree death: the port is free.
+    if (!(await waitForPortFree(OPENCODE_PORT, 15000))) {
+      return res.status(503).json({
+        error: `port ${OPENCODE_PORT} is still in use by the previous opencode; model not switched`,
+      });
+    }
     const ocEnv = providerEnvFor(lastConfig.model, lastConfig.apiKey);
     if (lastConfig.customBaseUrl && lastConfig.apiKey) ocEnv.CUSTOM_API_KEY = lastConfig.apiKey;
+    // Same tee as the initial spawn in runPipeline. Without it the session's diagnostics
+    // collector goes deaf the moment the user switches model — which is precisely when a
+    // provider error (a bad key for the new provider, a rate limit on the new model) is
+    // most likely, and the collector itself keeps running so the silence looks like health.
     spawnWatcher('opencode', 'opencode',
-      ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], APP_DIR, ocEnv);
+      ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], APP_DIR, ocEnv,
+      session.agentSink());
     try { await waitForPort(OPENCODE_PORT, 60000); } catch (_) {}
     // Collector keeps its accumulated totals; just point it at the new model. Its
     // SSE dropped when opencode was killed and reconnects to the new process.

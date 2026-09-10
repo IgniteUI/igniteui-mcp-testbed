@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as history from '../history.ts';
 import { REPORTS_DIR } from '../config.ts';
-import type { HistoryRecord, MatrixEntry, Tokens } from '../types.ts';
+import type { HistoryRecord, MatrixEntry, Tokens, Diagnostic } from '../types.ts';
+import { pillClass } from '../status-meta.ts';
 
 // Render a static, self-contained HTML report for a settled matrix from its history
 // records. Written to REPORTS_DIR/<matrixId>/report.html (i.e. sessions/history/
@@ -61,11 +62,27 @@ const fmtCost = (r: HistoryRecord): string => {
   return c?.available ? `${c.amount.toFixed(4)} ${c.currency || 'USD'}` : '—';
 };
 
-// Statuses with a dedicated .pill class in the UI; anything else renders as .pill.other.
-const PILL_STATUSES = new Set(['success', 'error', 'build-error', 'test-failed', 'running', 'pending', 'cancelled', 'interrupted']);
 const pill = (status: string | undefined): string => {
   const s = status || 'missing';
-  return `<span class="pill ${PILL_STATUSES.has(s) ? esc(s) : 'other'}">${esc(s)}</span>`;
+  return `<span class="pill ${esc(pillClass(s))}">${esc(s)}</span>`;
+};
+
+// Diagnostics for one entry, rendered into report.html. Resolved and superseded are
+// visually distinct on purpose: one is good news, the other is not.
+const diagBlock = (diags: Diagnostic[] | undefined): string => {
+  if (!diags || !diags.length) return '';
+  const rows = diags.map((d) => {
+    const state = d.resolvedAt ? ' resolved' : d.supersededAt ? ' superseded' : '';
+    const hedge = d.confidence === 'suspected' ? ' suspected' : '';
+    const note = d.resolvedAt ? ' · recovered' : d.supersededAt ? ' · overtaken' : '';
+    return `<div class="diag${state}${hedge}">` +
+      `<div class="diag-title">${esc(d.title)}${d.count > 1 ? ` ×${d.count}` : ''}` +
+      `${d.confidence === 'suspected' ? ' (possible cause)' : ''}${esc(note)}</div>` +
+      `<div class="diag-advice">${esc(d.advice)}</div>` +
+      `<div class="diag-detail">${esc(d.detail)}</div>` +
+      `<div class="diag-meta">${esc(d.at)}</div></div>`;
+  }).join('');
+  return `<h4 class="diag-h">Diagnostics</h4>${rows}`;
 };
 
 const variantOf = (e: MatrixEntry): string => e.variantLabel || '—';
@@ -127,6 +144,7 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
   </h2>
   <p class="muted">tokens: ${tokenSplit(r.stats?.tokens)}</p>
   ${r.error ? `<p class="error">${esc(r.error)}</p>` : ''}
+  ${diagBlock(r.diagnostics)}
   ${stages ? `<p class="stages">${stages}</p>` : ''}
   <p class="muted">tests: ${tests}</p>
   ${toolsSection(r)}
@@ -207,7 +225,19 @@ export function writeMatrixReport(
   .pill { display:inline-block; padding:.05rem .5rem; border-radius:10px; font-size:.7rem; font-family:var(--sans); }
   .pill.success { background:rgba(43,179,104,.15); color:var(--green); }
   .pill.error, .pill.test-failed { background:rgba(224,106,85,.16); color:var(--red); }
-  .pill.build-error { background:rgba(202,162,60,.18); color:var(--amber); }
+  .pill.build-error, .pill.rate-limited, .pill.provider-down,
+  .pill.no-credits, .pill.auth, .pill.timed-out { background:rgba(202,162,60,.18); color:var(--amber); }
+  .diag-h { margin:.6rem 0 .2rem; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--steel); }
+  .diag .diag-advice { color:var(--ink); margin-top:.15rem; }
+  .diag { border-left:3px solid var(--amber); padding:.35rem .6rem; margin:.35rem 0; background:rgba(202,162,60,.07); }
+  .diag .diag-title { color:var(--amber); font-weight:600; }
+  .diag .diag-detail { color:var(--steel); font-family:var(--mono); font-size:.72rem; margin-top:.25rem; overflow-wrap:anywhere; }
+  .diag .diag-meta { color:var(--steel); font-size:.7rem; margin-top:.2rem; }
+  .diag.suspected { border-left-style:dashed; }
+  .diag.resolved { border-left-color:var(--green); background:rgba(43,179,104,.06); opacity:.75; }
+  .diag.resolved .diag-title { color:var(--green); }
+  .diag.superseded { border-left-color:var(--steel); background:transparent; opacity:.6; }
+  .diag.superseded .diag-title { color:var(--steel); text-decoration:line-through; }
   .pill.running { background:rgba(202,162,60,.16); color:var(--amber); }
   .pill.pending, .pill.cancelled, .pill.interrupted, .pill.other { background:rgba(142,166,164,.15); color:var(--steel); }
   .prompt { background:#07211f; color:#bfe6df; font-family:var(--mono); font-size:.8rem; line-height:1.45;
@@ -341,6 +371,13 @@ ${entries.map((e, i) => entrySection(e, records[i])).join('\n')}
             skillsUnused: r.tools.skills.unused,
           }
           : null,
+        // Optional on the record (~80 predate the field), so normalize to [] here —
+        // a machine consumer should not have to tell "none" from "not recorded".
+        diagnostics: (r?.diagnostics || []).map((d) => ({
+          kind: d.kind, severity: d.severity, confidence: d.confidence,
+          title: d.title, detail: d.detail, count: d.count, at: d.at, lastAt: d.lastAt,
+          resolvedAt: d.resolvedAt || null, supersededAt: d.supersededAt || null,
+        })),
         screenshots: {
           ok: (r?.screenshots || []).filter((s) => s.ok).length,
           failed: (r?.screenshots || []).filter((s) => !s.ok).length,

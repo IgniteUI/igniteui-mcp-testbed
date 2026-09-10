@@ -24,8 +24,21 @@ if (process.env.MATRIX_VALIDATE === '1') {
   try {
     const c = loadMatrixConfig(MATRIX_CONFIG);
     const { req } = c;
-    console.log(`matrix config OK: ${req.combos.length} entries (${req.platforms.join(', ')} × ${req.variants.length} variant(s))`);
-    if (req.name) console.log(`  name       : ${req.name}`);
+    // Report the REAL work: combos × passes. `req.combos.length` and `req.name` are the
+    // single-pass back-compat aliases (both derived from passes[0]), so printing them
+    // alone under-reports a multi-pass config by a factor of passes.length and labels
+    // the whole run with pass 1's name.
+    const nPasses = req.passes.length;
+    const scale = `${req.combos.length} entries (${req.platforms.join(', ')} × ${req.variants.length} variant(s))`;
+    console.log(nPasses > 1
+      ? `matrix config OK: ${req.combos.length * nPasses} runs — ${scale} × ${nPasses} passes`
+      : `matrix config OK: ${scale}`);
+    if (nPasses > 1) {
+      req.passes.forEach((p, i) => console.log(
+        `  pass ${i + 1}    : ${p.name ? `"${p.name}" — ` : ''}${p.prompt.length > 60 ? p.prompt.slice(0, 59) + '…' : p.prompt}`));
+    } else if (req.name) {
+      console.log(`  name       : ${req.name}`);
+    }
     console.log(`  model      : ${req.fixed.model}`);
     console.log(`  api key    : ${req.fixed.apiKey ? 'resolved' : 'none (fine for keyless providers)'}`);
     console.log(`  tests      : ${req.fixed.selectedTests ? `${req.fixed.selectedTests.length} selected` : 'all discovered'}`);

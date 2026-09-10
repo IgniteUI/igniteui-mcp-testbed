@@ -10,8 +10,8 @@ import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import {
-  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, MCP_COMMAND_BY_CLASS,
-  LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR,
+  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor,
+  LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
@@ -24,7 +24,8 @@ import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
-import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext } from '../types.ts';
+import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage } from '../types.ts';
+import { createDiagnosticsCollector, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
   emit: Emit;
@@ -39,6 +40,24 @@ export interface PipelineOpts {
   // one-shot); an interactive session hands this to the StatsCollector, which keeps
   // polling for as long as `opencode web` is up. See src/capture/tool-usage.ts.
   onToolContext?: ((ctx: ToolContext) => void) | null;
+  /**
+   * Observe `opencode web`'s output during an interactive session. The watcher is
+   * spawned in here but the collector that consumes this lives in src/session.ts, since
+   * an interactive session outlives runPipeline() — this is the seam between them.
+   * Headless runs never use it (their agent output comes through run()'s onOutput).
+   */
+  onAgentOutput?: ((stream: OutputStream, chunk: string) => void) | null;
+  /** Paired with onAgentOutput: the watcher closed, so flush any buffered partial line. */
+  onAgentClose?: (() => void) | null;
+  /**
+   * Whether the user has cancelled this entry (or the whole matrix). The diagnostics
+   * collector needs it because killing opencode's process group is itself a reliable
+   * way to produce torn-connection stderr — without this, a user pressing Cancel would
+   * manufacture a `network` diagnostic blaming the provider for their own button.
+   * matrixCancelled / cancelledEntries are module-scoped in matrix.ts, so the matrix
+   * passes the same closure `onChild` already evaluates. Interactive runs pass nothing.
+   */
+  isCancelled?: (() => boolean) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
@@ -55,7 +74,7 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null }: PipelineOpts,
+  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
@@ -180,7 +199,14 @@ export async function runPipeline(
       const safeClass = s.class.replace(/[\r\n]/g, ' ');
       emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
       if (on && s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
-        mcpBlock[s.name] = { type: 'local', command: [s.command, ...(s.args || [])] };
+        // A pack's own command is already runnable, so unlike the igniteui branch there is
+        // nothing to repair here — but MCP_CMD_<CLASS> must still win, or the override is
+        // advertised for pack classes and silently inert for exactly them, while
+        // history.redact stamps it anyway and the History MCPs column reports a released
+        // run as `(local)`. Same resolver as the translate stage, same log line.
+        const override = mcpCommandFor(s.class);
+        mcpBlock[s.name] = { type: 'local', command: override ?? [s.command, ...(s.args || [])] };
+        if (override) emit('log', `mcp "${safeName}" command → ${override.join(' ')}`);
       }
     }
     // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
@@ -205,11 +231,21 @@ export async function runPipeline(
           enabled: new Set(Object.keys(tempMcpDoc.servers)),
           workspaceFolder: appDir,
         });
+        // MCP_CMD_CUSTOM applies here too. The igniteui branch already rewrites custom
+        // servers (they are classed 'custom' and go through the same fixup loop), so
+        // skipping it here would make the override work or not depending purely on which
+        // framework the entry used — and redact() would stamp it either way.
+        const customOverride = mcpCommandFor('custom');
         for (const [name, def] of Object.entries(customMcp)) {
           if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
-            mcpBlock[name] = def;
+            mcpBlock[name] = customOverride && (def as any).type === 'local'
+              ? { ...(def as any), command: customOverride.slice() }
+              : def;
           }
           emit('log', `mcp "${name}" → custom → enabled`);
+          if (customOverride && (def as any).type === 'local') {
+            emit('log', `mcp "${name}" command → ${customOverride.join(' ')}`);
+          }
         }
       } catch (e: any) {
         emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
@@ -292,7 +328,7 @@ export async function runPipeline(
     // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
     // (ig mcp, igniteui-theming-mcp).
     for (const [name, def] of Object.entries(mcp)) {
-      const fix = MCP_COMMAND_BY_CLASS[classByName[name]];
+      const fix = mcpCommandFor(classByName[name]);
       if (fix && def.type === 'local') {
         def.command = fix.slice();
         emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
@@ -375,7 +411,11 @@ export async function runPipeline(
     const ocEnv = providerEnvFor(cfg.model, cfg.apiKey);
     if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
     spawnWatcher('opencode', 'opencode',
-      ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], appDir, ocEnv);
+      ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], appDir, ocEnv,
+      // Teeing (rather than redirecting) opencode's output is what makes provider errors
+      // observable in an interactive session at all; logs/opencode.log still gets
+      // everything. Omit the callback and the watcher keeps the plain fd redirect.
+      { onOutput: onAgentOutput || null, onClose: onAgentClose || null });
     await waitForPort(OPENCODE_PORT, 60000, emit);
     // An interactive session has no end the pipeline can observe — `opencode web` keeps
     // running and the user keeps prompting — so hand the collection context off to the
@@ -404,37 +444,96 @@ export async function runPipeline(
     'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
     ...promptImageFiles.flatMap((f) => ['--file', f]),
   ];
-  await runStep('opencode', agentArgv, appDir, emit, {
-    env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
-  });
-
-  // Parse token/cost usage from `opencode stats` (against this entry's data dir).
-  let entryStats: Stats | null = null;
-  try {
-    const text = await capture('opencode', ['stats'], appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null);
-    entryStats = parseOpencodeStats(text);
-    entryStats.model = cfg.model;
-    entryStats.updatedAt = new Date().toISOString();
-    if (!entryStats.parsed) emit('log', 'warning: could not parse `opencode stats`; tokens/cost may be incomplete');
-  } catch (e: any) {
-    emit('log', `warning: opencode stats failed (${e.message})`);
-  }
-
-  // Which MCP tools and skills the agent actually reached for. The one-shot agent has
-  // exited, so its store is complete and quiescent — read it once, right here, before
-  // the dev server and screenshot stages can fail and skip past it.
-  let entryTools: HeadlessResult['tools'] = null;
-  try {
-    entryTools = await collectToolUsage({ dataDir: toolDataDir, since: agentSince, mcpServers, skillNames });
-    if (entryTools) {
-      emit('log', `tools: ${summarizeToolUsage(entryTools)}`);
-      if (entryTools.warning) emit('log', `warning: ${entryTools.warning}`);
-    } else {
-      emit('log', 'warning: no opencode store found; tool/skill usage not recorded');
+  // Token/cost and MCP-call evidence, collected the same way on the success and the
+  // failure path. Extracted because every failed run in the corpus lost all of it —
+  // and with diagnostics in play that matters more, since "429 at minute 2 with 0
+  // tokens" and "429 at minute 24 with 180k tokens" are different stories.
+  const collectRunEvidence = async (): Promise<{ stats: Stats | null; tools: ToolUsage | null }> => {
+    let stats: Stats | null = null;
+    try {
+      const text = await capture('opencode', ['stats'], appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
+      stats = parseOpencodeStats(text);
+      stats.model = cfg.model;
+      stats.updatedAt = new Date().toISOString();
+      if (!stats.parsed) emit('log', 'warning: could not parse `opencode stats`; tokens/cost may be incomplete');
+    } catch (e: any) {
+      emit('log', `warning: opencode stats failed (${e.message})`);
     }
-  } catch (e: any) {
-    emit('log', `warning: tool usage collection failed (${e.message})`);
+
+    // Which MCP tools and skills the agent actually reached for. The one-shot agent has
+    // exited, so its store is complete and quiescent — read it once, right here, before
+    // the dev server and screenshot stages can fail and skip past it.
+    let tools: ToolUsage | null = null;
+    try {
+      tools = await collectToolUsage({ dataDir: toolDataDir, since: agentSince, mcpServers, skillNames });
+      if (tools) {
+        emit('log', `tools: ${summarizeToolUsage(tools)}`);
+        if (tools.warning) emit('log', `warning: ${tools.warning}`);
+      } else {
+        emit('log', 'warning: no opencode store found; tool/skill usage not recorded');
+      }
+    } catch (e: any) {
+      emit('log', `warning: tool usage collection failed (${e.message})`);
+    }
+    return { stats, tools };
+  };
+
+  // Observe the agent's output for provider failures. Purely observational with respect
+  // to *execution* — a detector that throws is caught in run() and degrades to "no
+  // diagnostics", never to "no run" — but a valid diagnostic absolutely does decide the
+  // recorded verdict, which is the whole point.
+  const diag = createDiagnosticsCollector({
+    isCancelled,
+    onDebug: DIAGNOSTICS_STREAM_DEBUG ? (msg: string) => emit('log', `diag: ${msg}`) : null,
+    // Mid-run channel: a stall reported only in the final record is reported too late to
+    // be acted on. Always the full set, so the far side can replace wholesale.
+    onChange: (ds) => emit('diagnostics', { diagnostics: ds }),
+    // Detector C polls opencode's own store while the agent works. `since` scopes the
+    // read to this run — a store can be shared across runs in one container.
+    loop: { dataDir: toolDataDir, since: agentSince, repeats: AGENT_LOOP_REPEATS },
+  });
+  let diagnostics: Diagnostic[] = [];
+  try {
+    await runStep('opencode', agentArgv, appDir, emit, {
+      env: ocEnv, timeoutMs: AGENT_TIMEOUT_MS, heartbeatMs: 20000,
+      onOutput: (stream, chunk) => diag.onOutput(stream, chunk),
+      // Nothing is killed on a stall — AGENT_TIMEOUT_MS is still the only deadline.
+      stallMs: AGENT_STALL_MS,
+      onStall: (silentMs) => {
+        emit('log', `warning: no output for ${Math.round(silentMs / 1000)}s — the provider may be unresponsive (the run continues)`);
+        diag.noteStall(silentMs);
+      },
+      onResume: (silentMs) => {
+        emit('log', `output resumed after ${Math.round(silentMs / 1000)}s of silence`);
+        diag.noteResume(silentMs);
+      },
+    });
+    diagnostics = await diag.finish({ exitCode: 0 });
+  } catch (err: any) {
+    diagnostics = await diag.finish({ exitCode: err.timedOut ? null : 1, timedOut: !!err.timedOut, timeoutMs: AGENT_TIMEOUT_MS });
+    for (const d of diagnostics) {
+      emit('log', `${d.severity === 'fatal' ? 'error' : 'warning'}: ${d.title} — ${d.advice}`);
+      emit('log', `  evidence: ${d.detail}`);
+    }
+    // A failed pipeline returns no HeadlessResult, so the evidence has to ride out on
+    // the error or it is lost exactly when it is most wanted.
+    const agentErr: AgentRunError = err;
+    agentErr.diagnostics = diagnostics;
+    // A cancelled entry's stats are of little interest and the user is waiting for the
+    // matrix to stop, so skip the collection rather than make Cancel feel slow.
+    if (!(isCancelled && isCancelled())) {
+      const evidence = await collectRunEvidence();
+      agentErr.stats = evidence.stats;
+      agentErr.tools = evidence.tools;
+    }
+    throw agentErr;
   }
+  if (diagnostics.length) {
+    const summary = summarizeDiagnostics(diagnostics);
+    if (summary) emit('log', `warning: ${summary}`);
+  }
+
+  const { stats: entryStats, tools: entryTools } = await collectRunEvidence();
 
   // 7. Now that edits are done, build the app once and screenshot every route.
   // Bail as soon as the build is known to have failed (the agent's edits often don't
@@ -458,7 +557,7 @@ export async function runPipeline(
     await killWatcher('app'); await killWatcher('opencode');
     emit('step', { step: 'cleanup' });
     await cleanupAppDir(appDir, emit);
-    return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason };
+    return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason, diagnostics };
   }
   await sleep(Number(process.env.SCREENSHOT_SETTLE_MS || 5000));
   const disc = discoverRoutes(appDir, cfg.framework);
@@ -494,5 +593,5 @@ export async function runPipeline(
   // Prune heavy regenerable dirs from the kept entry (screenshots already saved).
   emit('step', { step: 'cleanup' });
   await cleanupAppDir(appDir, emit);
-  return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true, tests };
+  return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots, routes: disc.routes, skipped: disc.skipped, appReady: true, tests, diagnostics };
 }

@@ -99,6 +99,7 @@ export class StatsCollector {
   _onUpdate?: (snap: Stats) => void;
   _onTools?: (usage: ToolUsage) => void;
   _onWarn?: (msg: string) => void;
+  _onTick?: () => void;
 
   constructor({ port, dir, model, costAvailable }: StatsOpts) {
     this.port = port;
@@ -129,7 +130,13 @@ export class StatsCollector {
     if (this.stopped) this.stopped = false;
     this._connect();
     if (!this.reconcileTimer) {
-      this.reconcileTimer = setInterval(() => { this._backfill(); this._collectTools(); }, 30000);
+      this.reconcileTimer = setInterval(() => {
+        this._backfill();
+        this._collectTools();
+        // Anything else that wants this cadence (the diagnostics loop detector) rides
+        // here rather than opening a second timer against the same store.
+        if (this._onTick) { try { this._onTick(); } catch (_) {} }
+      }, 30000);
       this.reconcileTimer.unref && this.reconcileTimer.unref();
     }
     return this;
@@ -160,6 +167,7 @@ export class StatsCollector {
   onUpdate(cb: (snap: Stats) => void): void { this._onUpdate = cb; }
   onTools(cb: (usage: ToolUsage) => void): void { this._onTools = cb; }
   onWarn(cb: (msg: string) => void): void { this._onWarn = cb; }
+  onTick(cb: () => void): void { this._onTick = cb; }
 
   // Re-read tool/skill usage from the store. Overlapping reads are skipped rather than
   // queued — the next tick catches up, and a slow read must not stack up behind itself.
