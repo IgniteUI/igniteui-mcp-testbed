@@ -46,17 +46,19 @@ RUN ig --version && npm ls -g --depth=0
 # dir is COPY'd unconditionally (run.sh/run.ps1 create it) and the install is skipped when
 # it holds no tarball, so a clone without one still builds.
 #
-# PACKAGES is a manifest of the installed tarball basenames, one per line. It exists
-# because a locally-packed build and the released one can report the SAME --version, so
-# nothing else inside the image identifies which tarball is installed — run-ab-sweep.sh
-# preflights it against ./local-mcp/*.tgz to catch a stale image.
+# PACKAGES is a manifest of the installed tarballs, `<sha256>  <basename>` per line. It
+# exists because a locally-packed build and the released one can report the SAME
+# --version, so nothing else inside the image identifies which tarball is installed —
+# run-ab-sweep.sh preflights it against ./local-mcp/*.tgz to catch a stale image. The
+# hash is there because a re-packed tarball usually keeps its filename (`npm pack` names
+# it by version), and a basename-only check waved exactly that through.
 COPY local-mcp/ /tmp/local-mcp/
 RUN set -e; \
     set -- /tmp/local-mcp/*.tgz; \
     if [ -e "$1" ]; then \
       echo "Local MCP servers: installing $# tarball(s)"; \
       npm install -g --prefix /opt/local-mcp "$@"; \
-      for t in "$@"; do basename "$t"; done | sort > /opt/local-mcp/PACKAGES; \
+      (cd /tmp/local-mcp && sha256sum *.tgz | sort -k2) > /opt/local-mcp/PACKAGES; \
       echo "Local MCP bins:"; ls -1 /opt/local-mcp/bin; \
     else \
       echo "Local MCP servers: none in ./local-mcp — released servers only"; \

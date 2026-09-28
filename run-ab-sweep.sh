@@ -40,9 +40,13 @@ export IGNITEUI_MCP_DEBUG=1
 
 # Preflight. A sweep is hours long; failing now beats discovering at round 1 that arm A
 # silently ran the released server because the image predates the tarball.
-mapfile -t TGZ < <(ls local-mcp/*.tgz 2>/dev/null | xargs -n1 basename 2>/dev/null | sort || true)
+# `<sha256>  <basename>` lines, the same shape the Containerfile writes into PACKAGES —
+# hashed, because a re-packed tarball keeps its filename and a name-only check would
+# happily A/B a stale image against itself. The sed folds Git Bash's binary-mode `*name`
+# marker into the two-space form Linux coreutils prints, so the two sides compare equal.
+mapfile -t TGZ < <(cd local-mcp 2>/dev/null && ls *.tgz 2>/dev/null | xargs -r sha256sum | sed 's/ \*/  /' | sort -k2 || true)
 [[ ${#TGZ[@]} -gt 0 ]] || { echo "no *.tgz in ./local-mcp — nothing to compare against" >&2; exit 2; }
-echo "local tarball(s): ${TGZ[*]}"
+echo "local tarball(s):"; printf '  %s\n' "${TGZ[@]}"
 
 podman image exists "$IMAGE" || { echo "image $IMAGE not built — run ./run.sh build" >&2; exit 2; }
 
@@ -56,14 +60,19 @@ probe="$(MSYS_NO_PATHCONV=1 podman run --rm --entrypoint /bin/sh "$IMAGE" -c \
 probe="${probe//$'\r'/}"
 # awk, not `sed -n '1,/^---$/p'`: sed's range cannot terminate on line 1, so an empty
 # manifest (marker first) ran to EOF and put the marker itself into the list.
-baked="$(printf '%s\n' "$probe" | awk '/^---$/{exit} {print}' | sort)"
+baked="$(printf '%s\n' "$probe" | awk '/^---$/{exit} {print}' | sort -k2)"
 if [[ -z "$baked" ]]; then
   echo "$IMAGE has no local MCP packages baked in (or predates the PACKAGES manifest)." >&2
   echo "Rebuild with the tarball(s) in ./local-mcp: ./run.sh build" >&2
   exit 2
 fi
+if ! grep -qE '^[0-9a-f]{64}  ' <<<"$baked"; then
+  echo "$IMAGE's PACKAGES manifest has no content hashes (built before the hashed format)." >&2
+  echo "Rebuild so a re-packed tarball with the same name can be told apart: ./run.sh build" >&2
+  exit 2
+fi
 if [[ "$baked" != "$(printf '%s\n' "${TGZ[@]}")" ]]; then
-  echo "image is stale — baked vs ./local-mcp differ:" >&2
+  echo "image is stale — baked vs ./local-mcp differ (sha256  name):" >&2
   diff <(printf '%s\n' "$baked") <(printf '%s\n' "${TGZ[@]}") >&2 || true
   echo "Versions alone cannot tell these apart, so this would compare the wrong build." >&2
   echo "Rebuild: ./run.sh build" >&2
@@ -94,16 +103,33 @@ arm_config() {  # $1 = out path, $2 = name suffix
 CFG_A="$TMP/arm-a-local.json";    arm_config "$CFG_A" "arm A ($MCP_CLASS: local $(basename "$MCP_BIN"))"
 CFG_B="$TMP/arm-b-released.json"; arm_config "$CFG_B" "arm B ($MCP_CLASS: released)"
 
+# With `exitOnDone` the container exits non-zero unless EVERY entry succeeded, and run.sh
+# forwards that code. Under `set -e` that aborted the whole sweep the first time one arm
+# produced a build-error — which is a legitimate data point, not a sweep failure. So each
+# arm's exit code is recorded and tallied, never allowed to end the loop.
+# The env export happens in a subshell so it can't leak into the other arm; the tally has
+# to happen OUTSIDE it, or the increment dies with the subshell.
+ARM_FAILURES=0
+note_rc() {  # $1 = label, $2 = exit code
+  if (( $2 != 0 )); then
+    ARM_FAILURES=$((ARM_FAILURES + 1))
+    echo "=== $1 exited $2 (at least one entry did not succeed — see History)"
+  fi
+}
 run_arm_a() {
   echo "=== round $1/$N — arm A: local $MCP_CLASS MCP ($MCP_BIN)"
-  ( export "$CMD_VAR=$MCP_BIN"; ./run.sh --matrix-config "$CFG_A" )
+  local rc=0
+  ( export "$CMD_VAR=$MCP_BIN"; ./run.sh --matrix-config "$CFG_A" ) || rc=$?
+  note_rc "round $1 arm A" "$rc"
 }
 run_arm_b() {
   echo "=== round $1/$N — arm B: released $MCP_CLASS MCP"
   # Export EMPTY, do not `unset`: run.sh reads MCP_CMD_* out of .env with a wildcard, so
   # an unset var is re-imported from there and this arm would quietly run the local binary
   # too — an A/A sweep that still reports as A/B. An explicit empty pins it to released.
-  ( export "$CMD_VAR=" IGNITEUI_MCP_CMD=; ./run.sh --matrix-config "$CFG_B" )
+  local rc=0
+  ( export "$CMD_VAR=" IGNITEUI_MCP_CMD=; ./run.sh --matrix-config "$CFG_B" ) || rc=$?
+  note_rc "round $1 arm B" "$rc"
 }
 
 for ((i = 1; i <= N; i++)); do
@@ -114,5 +140,5 @@ for ((i = 1; i <= N; i++)); do
   fi
 done
 
-echo "=== sweep done: $N round(s), $((N * 2)) submissions"
+echo "=== sweep done: $N round(s), $((N * 2)) submissions, $ARM_FAILURES with a non-success entry"
 echo "compare in the History tab (MCPs column shows '$MCP_CLASS (local)' for arm A)"
