@@ -1,0 +1,24 @@
+{
+  "name": "Anthropic model",
+  "platforms": [
+    "react"
+  ],
+  "variants": [
+    {
+      "mcps": [
+        "igniteui",
+        "theming"
+      ],
+      "skills": true,
+      "localSkills": false
+    }
+  ],
+  "model": "anthropic/claude-sonnet-5",
+  "prompt": "Create a simple two-page authentication UI using Ignite UI components. Page one is a rich, full-featured login form; page two is a rich, full-featured register form. Make the forms intentionally complete, with multiple fields and options, so the usage of many Ignite UI form components is clearly demonstrated. Use Ignite UI components: inputs, checkboxes, radio buttons, switches, select, multi combo, links, buttons, and icons. Include validation states, helper text, social login buttons, password visibility toggle, remember-me option, terms/privacy agreement, and a clean responsive layout. Apply a dark application theme with the ignite ui dark blue (#27265F) as background, ignite ui orange (#F05A2B) as accent and ignite ui blue (#0099FF) as primary. Do not start a dev server, open a browser, or run screenshot/verification scripts — the harness builds, serves, screenshots and tests the app after you exit. Write the code and finish.",
+  "apiKeyEnv": "ANTHROPIC_API_KEY",
+  "selectedTests": [
+    "react::shared/smoke.spec.ts"
+  ],
+  "autoRun": true,
+  "exitOnDone": true
+}

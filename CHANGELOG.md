@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model or A/B sweep spanning several matrix submissions can be compared screenshot by
   screenshot. Filter with `--name`, `--since`, `--matrix` or `--status`; `--inline`
   embeds the screenshots.
+- **Model sweeps** — `matrix-models/run-model-sweep.sh` runs one matrix config per model,
+  sequentially. `openrouter.example.json` and `anthropic.example.json` are the templates;
+  per-model copies are gitignored, since model ids change too often to track.
 - **Pinned toolchain versions** — `igniteui-cli`, `igniteui-theming` and `opencode-ai` are
   pinned through `Containerfile` build args instead of resolving `latest` once and
   reusing the cached layer. Override for one build with `./run.sh build --build-arg …` /
