@@ -114,7 +114,8 @@ const outFile = path.resolve(opt.out || path.join(historyDir, 'compare.html'));
 const outDir = path.dirname(outFile);
 
 const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const fmtMs = (ms) => {
   if (ms == null) return '—';
