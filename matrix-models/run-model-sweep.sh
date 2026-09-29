@@ -54,7 +54,7 @@ fi
 
 # The configs resolve their key via apiKeyEnv; run.sh forwards it from the environment
 # or .env. Warn rather than fail — .env is read by run.sh, not here.
-for keyvar in $(grep -hoE '"apiKeyEnv"[[:space:]]*:[[:space:]]*"[A-Z0-9_]+"' "${CONFIGS[@]}" | sed -E 's/.*"([A-Z0-9_]+)"$/\1/' | sort -u); do
+for keyvar in $(grep -hoE '"apiKeyEnv"[[:space:]]*:[[:space:]]*"[A-Za-z_][A-Za-z0-9_]*"' "${CONFIGS[@]}" | sed -E 's/.*"([A-Za-z_][A-Za-z0-9_]*)"$/\1/' | sort -u); do
   if [[ -z "${!keyvar:-}" ]] && ! grep -qE "^[[:space:]]*$keyvar[[:space:]]*=" "$ROOT/.env" 2>/dev/null; then
     echo "warning: $keyvar is not set and not in .env — runs that use it will go out keyless" >&2
   fi

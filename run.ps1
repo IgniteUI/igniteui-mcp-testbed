@@ -148,6 +148,7 @@ if ($Command -eq 'build') {
   foreach ($ba in $BuildArg) {
     if ($ba -notmatch '=') {
       Write-Host "--BuildArg expects NAME=VALUE, got '$ba'"
+      Remove-Item -Path $npmrc -Force -ErrorAction SilentlyContinue
       exit 2
     }
     $buildArgs += @('--build-arg', $ba)
