@@ -29,7 +29,7 @@ export const STATUS_META: Record<string, StatusMeta> = {
   // Provider-side outcomes: the run didn't fail, the provider did. Amber, not red.
   'rate-limited': { label: 'rate limited by the provider', tone: 'warn' },
   'provider-down': { label: 'provider unavailable', tone: 'warn' },
-  'no-credits': { label: 'provider balance exhausted', tone: 'warn' },
+  'no-credits': { label: 'provider balance or budget exhausted', tone: 'warn' },
   auth: { label: 'provider rejected the API key', tone: 'warn' },
   'timed-out': { label: 'agent timed out', tone: 'warn' },
   running: { label: 'running', tone: 'warn' },

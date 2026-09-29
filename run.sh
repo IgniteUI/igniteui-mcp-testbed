@@ -5,6 +5,7 @@
 #
 #   ./run.sh build                      build the image
 #   ./run.sh build --prune              build, then remove dangling (<none>) images left behind
+#   ./run.sh build --build-arg N=V      build, overriding a Containerfile ARG (repeatable)
 #   ./run.sh                            run a fresh container
 #   ./run.sh --matrix-config <file>     run with a matrix JSON config (auto-runs the
 #                                       matrix headlessly unless the file sets
@@ -19,8 +20,10 @@ usage() {
 Ignite UI MCP Testbed — build and run the containerized testbed.
 
 Usage:
-  ./run.sh build [--prune]         build the image
+  ./run.sh build [--prune] [--build-arg NAME=VALUE ...]
+                                   build the image
                                    (--prune: then remove dangling <none> images)
+                                   (--build-arg: passed through to podman; repeatable)
   ./run.sh                         run a fresh ephemeral session container
   ./run.sh --matrix-config <file>  run + execute a matrix from a JSON config
                                    (auto-runs headlessly unless the file sets
@@ -55,8 +58,17 @@ Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./providers
 ./prompt-images (read-write — reference images attached to the agent's prompt; the UI's
 image uploads land here).
 
+Package versions are PINNED in the Containerfile (IGNITEUI_CLI_VERSION,
+IGNITEUI_THEMING_VERSION, OPENCODE_VERSION) rather than tracking "latest", because the
+install layer is cached by instruction text: "latest" would resolve once and every later
+rebuild would silently reuse it. Bump the pin to upgrade, or override for a single build
+with --build-arg. Passing "=latest" does NOT force a refetch (same value, same cache key)
+— bump the pin or use --no-cache.
+
 Examples:
   ./run.sh build --prune
+  ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0
+  ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0 --build-arg OPENCODE_VERSION=1.18.25
   ./run.sh
   ./run.sh --matrix-config ./matrix.example.json
   ./run.sh --matrix-config ./matrix.json --validate
@@ -92,6 +104,24 @@ SESSION="$(date +%Y%m%dT%H%M%S)"
 OUT="$PWD/sessions/$SESSION"
 
 if [[ "${1:-}" == "build" ]]; then
+  shift
+  # Real option parsing: --prune used to be read positionally as $2, so it only worked as
+  # the immediately-following word. With --build-arg also accepted the two must compose in
+  # any order.
+  BUILD_ARGS=()
+  PRUNE=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --prune) PRUNE=1; shift ;;
+      --build-arg|--build-arg=*)
+        if [[ "$1" == --build-arg=* ]]; then BA="${1#--build-arg=}"; shift
+        else BA="${2:-}"; shift 2 || true; fi
+        [[ "$BA" == *=* ]] || { echo "--build-arg expects NAME=VALUE, got '${BA:-<missing>}'" >&2; exit 2; }
+        BUILD_ARGS+=(--build-arg "$BA") ;;
+      -h|--help|help) usage; exit 0 ;;
+      *) echo "unknown build option: $1 (try: ./run.sh build --help)" >&2; exit 2 ;;
+    esac
+  done
   # Optional licensed Ignite UI build: write a .npmrc into the build context from the
   # private-feed credentials in .env (an empty file when there are none) so the grid
   # bundles without a watermark. The Containerfile bind-mounts it (never into an image
@@ -117,9 +147,9 @@ if [[ "${1:-}" == "build" ]]; then
   else
     echo "Ignite UI: trial build (no IG_NPM_TOKEN)."
   fi
-  podman build -t "$IMAGE" .
+  podman build ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} -t "$IMAGE" .
   # Each rebuild orphans the previous image (untagged <none>). Reclaim that space.
-  if [[ "${2:-}" == "--prune" ]]; then
+  if [[ "$PRUNE" == 1 ]]; then
     echo "Pruning dangling images …"
     podman image prune -f
   fi

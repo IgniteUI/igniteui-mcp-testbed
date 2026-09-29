@@ -11,12 +11,29 @@ RUN apt-get update \
 # --- Agent + Ignite UI CLI + Theming MCP (adjust versions/names to your packages) ---
 # These are installed globally so the MCP servers launch from local bins (`ig mcp`,
 # `igniteui-theming-mcp`) with no per-session npx network fetch in the --rm container.
-ARG IGNITEUI_CLI_VERSION=latest
-ARG IGNITEUI_THEMING_VERSION=latest
-RUN npm install -g opencode-ai igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
+# PINNED, deliberately not `latest`. Podman caches this layer by instruction text, and
+# that text never changes — so `latest` resolves once, on the first build, and every later
+# rebuild silently reuses whatever it resolved to back then. The tag reads "latest" while
+# the image drifts arbitrarily far behind (it had reached cli 15.5.0 vs 15.6.0 published,
+# theming 27.4.0 vs 28.1.1, opencode 1.18.8 vs 1.18.25). A pinned version makes the bump
+# explicit and busts exactly this layer when it changes, leaving apt / dotnet templates /
+# Playwright cached. Override for one build without editing the file:
+#   ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.7.0
+# Note `--build-arg IGNITEUI_CLI_VERSION=latest` would NOT force a refetch on a second
+# run: same value, same cache key. Bump the pin, or use --no-cache.
+# opencode is pinned for a stronger reason than tidiness: the SQLite `part` schema
+# (src/capture/tool-usage.ts), the `opencode stats` label regexes (src/capture/usage.ts)
+# and the `Error: {json}` diagnostics anchor (src/capture/diagnostics.ts) are all
+# version-dependent, so an unannounced bump breaks parsers silently. After changing it,
+# run `npm run diagnostics:replay`.
+ARG IGNITEUI_CLI_VERSION=15.6.1
+ARG IGNITEUI_THEMING_VERSION=28.1.1
+ARG OPENCODE_VERSION=1.18.25
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
 
-# Print the versions of the globally installed igniteui-cli for debugging.
-RUN ig --version
+# Bake the resolved versions into the build log — "which versions is this image?" is
+# otherwise only answerable by running the image.
+RUN ig --version && npm ls -g --depth=0
 
 # --- Locally-built MCP servers (optional, for A/B against the released ones) ---
 # Drop one or more packed tarballs (`npm pack`) into ./local-mcp/. EVERY tarball is
@@ -29,17 +46,19 @@ RUN ig --version
 # dir is COPY'd unconditionally (run.sh/run.ps1 create it) and the install is skipped when
 # it holds no tarball, so a clone without one still builds.
 #
-# PACKAGES is a manifest of the installed tarball basenames, one per line. It exists
-# because a locally-packed build and the released one can report the SAME --version, so
-# nothing else inside the image identifies which tarball is installed — run-ab-sweep.sh
-# preflights it against ./local-mcp/*.tgz to catch a stale image.
+# PACKAGES is a manifest of the installed tarballs, `<sha256>  <basename>` per line. It
+# exists because a locally-packed build and the released one can report the SAME
+# --version, so nothing else inside the image identifies which tarball is installed —
+# run-ab-sweep.sh preflights it against ./local-mcp/*.tgz to catch a stale image. The
+# hash is there because a re-packed tarball usually keeps its filename (`npm pack` names
+# it by version), and a basename-only check waved exactly that through.
 COPY local-mcp/ /tmp/local-mcp/
 RUN set -e; \
     set -- /tmp/local-mcp/*.tgz; \
     if [ -e "$1" ]; then \
       echo "Local MCP servers: installing $# tarball(s)"; \
       npm install -g --prefix /opt/local-mcp "$@"; \
-      for t in "$@"; do basename "$t"; done | sort > /opt/local-mcp/PACKAGES; \
+      (cd /tmp/local-mcp && sha256sum *.tgz | sort -k2) > /opt/local-mcp/PACKAGES; \
       echo "Local MCP bins:"; ls -1 /opt/local-mcp/bin; \
     else \
       echo "Local MCP servers: none in ./local-mcp — released servers only"; \

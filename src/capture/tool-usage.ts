@@ -33,6 +33,9 @@ const BUILTIN_TOOLS = new Set([
   'read', 'write', 'edit', 'multiedit', 'patch', 'bash', 'glob', 'grep', 'list', 'ls',
   'todowrite', 'todoread', 'task', 'webfetch', 'websearch', 'skill', 'question',
   'invalid', 'think', 'lsp_diagnostics', 'lsp_hover',
+  // OpenAI-family models edit through opencode's `apply_patch` built-in instead of
+  // `edit`/`patch`; unlisted, the underscore split filed it as MCP server `apply`.
+  'apply_patch',
 ]);
 
 // Permission names that are evaluated *around* a tool call rather than being one

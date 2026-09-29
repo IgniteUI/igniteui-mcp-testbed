@@ -572,6 +572,12 @@ export async function runPipeline(
   try {
     screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '', { stateNav: disc.stateNav });
     emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
+    // The count alone hides WHY a capture failed — the reason sat only in the history
+    // record's screenshots array, so a run that captured nothing looked identical to
+    // one with no routes. First line only; the full error stays on the record.
+    for (const s of screenshots.filter((s) => !s.ok)) {
+      emit('log', `  ${s.route}: ${String(s.error || 'failed').split('\n')[0]}`);
+    }
   } catch (e: any) {
     emit('log', `warning: screenshots failed (${e.message})`);
   }

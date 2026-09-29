@@ -5,6 +5,43 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-29
+
+### Added
+
+- **Run comparison page** — `npm run compare` (`scripts/compare-runs.mjs`) builds a static
+  side-by-side page over `sessions/history`, with routes as rows and runs as columns, so a
+  model or A/B sweep spanning several matrix submissions can be compared screenshot by
+  screenshot. Filter with `--name`, `--since`, `--matrix` or `--status`; `--inline`
+  embeds the screenshots.
+- **Model sweeps** — `matrix-models/run-model-sweep.sh` runs one matrix config per model,
+  sequentially. `openrouter.example.json` and `anthropic.example.json` are the templates;
+  per-model copies are gitignored, since model ids change too often to track.
+- **Pinned toolchain versions** — `igniteui-cli`, `igniteui-theming` and `opencode-ai` are
+  pinned through `Containerfile` build args instead of resolving `latest` once and
+  reusing the cached layer. Override for one build with `./run.sh build --build-arg …` /
+  `.\run.ps1 build -BuildArg …`.
+
+### Changed
+
+- The local MCP `PACKAGES` manifest records a sha256 per tarball, and `run-ab-sweep.sh`
+  compares hashes, so a re-packed tarball that keeps its filename is detected as a stale
+  image instead of being A/B-tested against the previous build.
+- `run-ab-sweep.sh` tallies submissions that finish with a non-success entry and reports
+  them at the end rather than aborting the sweep.
+- Provider spend caps (e.g. OpenRouter's `Budget limit exceeded`) classify as
+  `no-credits`, with advice that covers both an empty balance and a spend limit.
+
+### Fixed
+
+- Screenshot capture no longer waits on `networkidle`, which never fires against a dev
+  server's open HMR connection. Navigation waits for `domcontentloaded` (default 120s cap,
+  one retry, to cover Vite's first-request dependency prebundle) followed by a bounded
+  best-effort quiet-network wait. New tunables `SCREENSHOT_NAV_TIMEOUT_MS` and
+  `SCREENSHOT_NETIDLE_MS`; the entry log now names why each failed route failed.
+- opencode's `apply_patch` tool is counted as a built-in instead of being reported as an
+  MCP server named `apply`.
+
 ## [0.3.0] - 2026-09-10
 
 ### Added
