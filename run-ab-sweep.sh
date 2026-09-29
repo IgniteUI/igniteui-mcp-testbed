@@ -44,7 +44,14 @@ export IGNITEUI_MCP_DEBUG=1
 # hashed, because a re-packed tarball keeps its filename and a name-only check would
 # happily A/B a stale image against itself. The sed folds Git Bash's binary-mode `*name`
 # marker into the two-space form Linux coreutils prints, so the two sides compare equal.
-mapfile -t TGZ < <(cd local-mcp 2>/dev/null && ls *.tgz 2>/dev/null | xargs -r sha256sum | sed 's/ \*/  /' | sort -k2 || true)
+TGZ=()
+while IFS= read -r line; do TGZ+=("$line"); done < <(
+  cd local-mcp 2>/dev/null || exit
+  for t in *.tgz; do
+    [[ -e "$t" ]] || continue
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$t"; else shasum -a 256 "$t"; fi
+  done | sed 's/ \*/  /' | sort -k2
+)
 [[ ${#TGZ[@]} -gt 0 ]] || { echo "no *.tgz in ./local-mcp — nothing to compare against" >&2; exit 2; }
 echo "local tarball(s):"; printf '  %s\n' "${TGZ[@]}"
 
