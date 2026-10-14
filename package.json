@@ -10,6 +10,7 @@
     "diagnostics:test": "node scripts/diagnostics-fixtures.mjs && node scripts/loop-store-check.mjs",
     "diagnostics:replay": "node scripts/replay-diagnostics.mjs",
     "exec:smoke": "node scripts/exec-smoke.mjs",
+    "compare": "node scripts/compare-runs.mjs",
     "build:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js",
     "dev:web": "esbuild web/main.ts --bundle --format=esm --outfile=public/vendor/app.js --watch"
   },

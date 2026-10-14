@@ -7,6 +7,8 @@ import type { Screenshot } from '../types.ts';
 export interface ShootOpts {
   settle?: number;
   navTimeout?: number;
+  /** Cap on the best-effort quiet-network wait after navigation. */
+  netIdleTimeout?: number;
   /** When true, routes are logical page names (state-based nav). Navigate to root
    * once, then click the matching sidebar/nav item for each page. */
   stateNav?: boolean;
@@ -23,13 +25,49 @@ export function joinUrl(base: string, route: string): string {
   return route === '/' ? b + '/' : b + route;
 }
 
+// Navigate, then wait for the network to go quiet — but only as a BEST EFFORT.
+//
+// This used to be `goto(..., { waitUntil: 'networkidle' })`, which never returns
+// against a dev server: Vite/Angular hold an HMR channel open for the life of the
+// page, so the idle event the navigation was waiting on cannot fire, and every route
+// failed with "Timeout 30000ms exceeded" while the app was serving perfectly (the
+// Playwright verification stage passed against the same URL seconds later).
+// tests/shared/smoke.spec.ts already avoids networkidle for exactly this reason.
+//
+// `domcontentloaded` always fires; the quiet-network wait then rides along inside a
+// bounded catch, so a page that DOES settle is still given its moment, and one that
+// never can costs the timeout instead of the whole capture.
+//
+// The timeout is minutes, not seconds, because THE FIRST navigation is not a page
+// load — it is a build. Vite binds the port in ~2s (so the port-based readiness check
+// passes at once) and only prebundles dependencies when the first module is requested;
+// `<script type="module">` is deferred, so DOMContentLoaded waits out that prebundle.
+// With Ignite UI's grid/chart packages that ran past the old 30s cap, and every route
+// failed while the app was serving — the failed attempt warmed the optimizer, which is
+// why the verification tests passed seconds later. One retry covers the related case
+// where Vite optimizes new deps and forces a page reload mid-navigation.
+export async function navigate(page: any, url: string, opts: ShootOpts): Promise<void> {
+  const navTimeout = opts.navTimeout != null
+    ? opts.navTimeout
+    : Number(process.env.SCREENSHOT_NAV_TIMEOUT_MS || 120000);
+  const idle = opts.netIdleTimeout != null
+    ? opts.netIdleTimeout
+    : Number(process.env.SCREENSHOT_NETIDLE_MS || 5000);
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: navTimeout });
+  } catch (err) {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: navTimeout });
+  }
+  if (idle > 0) await page.waitForLoadState('networkidle', { timeout: idle }).catch(() => {});
+}
+
 // Screenshot every route of a running app. Playwright is required lazily so the
 // wizard backend still loads on hosts without Chromium installed (it's only present
 // in the container). Per-route try/catch — one broken route never aborts the set.
 export async function shoot(baseUrl: string, routes: string[], outDir: string, opts: ShootOpts = {}): Promise<Screenshot[]> {
   const { chromium } = await import('playwright');
   fs.mkdirSync(outDir, { recursive: true });
-  // Wait after navigation before capturing: `networkidle` fires before custom
+  // Wait after navigation before capturing: the load events fire before custom
   // elements upgrade / charts paint, so a short page can screenshot blank-white.
   const settle = opts.settle != null ? opts.settle : Number(process.env.SCREENSHOT_PAGE_SETTLE_MS || 5000);
 
@@ -43,7 +81,7 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
       // State-based navigation (React useState): the app has no URL routes.
       // Navigate to the root once, then click sidebar/nav items by text to switch pages.
       try {
-        await page.goto(joinUrl(baseUrl, '/'), { waitUntil: 'networkidle', timeout: opts.navTimeout || 30000 });
+        await navigate(page, joinUrl(baseUrl, '/'), opts);
         await page.waitForTimeout(settle);
       } catch (err: any) {
         // If root fails, every entry will fail — record and bail.
@@ -83,7 +121,7 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
         const file = sanitize(route) + '.png';
         const dest = path.join(outDir, file);
         try {
-          await page.goto(joinUrl(baseUrl, route), { waitUntil: 'networkidle', timeout: opts.navTimeout || 30000 });
+          await navigate(page, joinUrl(baseUrl, route), opts);
           // Let custom elements upgrade and charts paint before capturing.
           await page.waitForTimeout(settle);
           await page.screenshot({ path: dest, fullPage: true });

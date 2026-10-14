@@ -19,11 +19,13 @@ released servers in place. Each package's bins land side by side:
 
 An empty folder is fine — the build just skips the install.
 
-The build also writes a manifest of the installed tarball basenames to
-`/opt/local-mcp/PACKAGES`. This matters because a locally-packed build and the released
-one can report the **same** `--version` (both `@igniteui/mcp-server@15.5.1`), so the
-manifest is the only thing inside the image that says *which* tarballs are installed —
-without it a stale image A/Bs a build against itself and looks like a null result.
+The build also writes a manifest of the installed tarballs (`<sha256>  <basename>` per
+line) to `/opt/local-mcp/PACKAGES`. This matters because a locally-packed build and the
+released one can report the **same** `--version` (both `@igniteui/mcp-server@15.5.1`), so
+the manifest is the only thing inside the image that says *which* tarballs are installed —
+without it a stale image A/Bs a build against itself and looks like a null result. It is
+hashed, not just named, because `npm pack` names the tarball by version: a re-packed build
+with fixes lands under the **same filename**, and a name-only check waved that through.
 
 ## Selecting one per run
 
@@ -86,7 +88,9 @@ MCP_CLASS=theming MCP_BIN=/opt/local-mcp/bin/my-theming-mcp ./run-ab-sweep.sh 3
 Both arms run the **same** matrix config — the script derives two copies into `.ab-tmp/`
 that differ only in `name`, so the arms are identical by construction rather than by
 hand-maintained duplicate files. The arm order flips each round so drift over a long
-sweep hits both equally.
+sweep hits both equally. A submission whose container exits non-zero (with `exitOnDone`,
+any entry that isn't `success` — a build-error, say) is tallied and reported at the end,
+not treated as a sweep failure: it is a data point the comparison exists to collect.
 
 It preflights before starting: tarballs are present, the image exists, its `PACKAGES`
 manifest matches the tarballs on disk, and `MCP_BIN` is actually executable in the image
