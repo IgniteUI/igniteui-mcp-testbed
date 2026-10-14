@@ -26,8 +26,8 @@ RUN apt-get update \
 # and the `Error: {json}` diagnostics anchor (src/capture/diagnostics.ts) are all
 # version-dependent, so an unannounced bump breaks parsers silently. After changing it,
 # run `npm run diagnostics:replay`.
-ARG IGNITEUI_CLI_VERSION=15.6.1
-ARG IGNITEUI_THEMING_VERSION=28.1.1
+ARG IGNITEUI_CLI_VERSION=15.8.2
+ARG IGNITEUI_THEMING_VERSION=29.0.0
 ARG OPENCODE_VERSION=1.18.25
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
 

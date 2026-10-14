@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-14
+
+### Changed
+
+- Updated the pinned `igniteui-cli` to 15.8.2 (from 15.6.1) and `igniteui-theming` to
+  29.0.0 (from 28.1.1) in the `Containerfile`.
+
 ## [0.4.0] - 2026-10-14
 
 ### Added
@@ -264,4 +271,6 @@ Initial release: a single-container appliance for exercising the Ignite UI AI to
 
 [0.2.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.1.0...0.2.0
 [0.3.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.2.0...0.3.0
+[0.4.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.3.0...0.4.0
+[0.4.1]: https://github.com/IgniteUI/igniteui-mcp-testbed/compare/0.4.0...0.4.1
 [0.1.0]: https://github.com/IgniteUI/igniteui-mcp-testbed/releases/tag/0.1.0
