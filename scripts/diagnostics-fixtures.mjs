@@ -313,6 +313,16 @@ bothStreams('classify: prose credits', 'Error: Your credit balance is too low',
 bothStreams('classify: prose overload', 'Error: Overloaded',
   ['provider-down', 'fatal', 'confirmed', 'provider-down:text']);
 
+// Observed live (2026-09-03, openrouter): the account's weekly spend cap refuses the
+// request before the model sees it. Both entries settled as a bare `error` with no
+// diagnostic, which is what sent the user digging through the record by hand.
+bothStreams('classify: prose budget cap (the observed line)',
+  'Error: Budget limit exceeded (weekly limit). Contact your org admin.',
+  ['no-credits', 'fatal', 'confirmed', 'no-credits:text']);
+bothStreams('classify: prose spending limit',
+  'Error: Spending limit reached for this key',
+  ['no-credits', 'fatal', 'confirmed', 'no-credits:text']);
+
 // Order is the precedence, exactly as the status code is on the JSON path: a throttle
 // worded as a quota problem must stay rate-limited, not send the user to top up.
 bothStreams('classify: prose rate limit worded as a quota problem stays rate-limited',
@@ -335,6 +345,7 @@ for (const [name, line] of [
   ['build failure', 'Error: Build failed with 3 errors'],
   ['type error', 'Error: Type string is not assignable to type number'],
   ['bare prose', 'Error: something went wrong'],
+  ['budget without a cap', 'Error: Budget file missing'],
   ['lowercase label', 'error: api key is invalid'],
   ['payload that failed the shape check', 'Error: {"code":99,"message":"x"}'],
   ['non-provider json', 'Error: {"foo":1}'],

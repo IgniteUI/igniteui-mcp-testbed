@@ -125,7 +125,13 @@ const AUTH_FAILURE = /\b(invalid|incorrect|missing|expired|required|rejected|ref
  */
 const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> = [
   { kind: 'rate-limited', test: (m) => /\b(rate[ -]?limit(ed|s|ing)?|too many requests)\b/i.test(m) },
-  { kind: 'no-credits', test: (m) => /\b(insufficient (funds|balance|credits?)|out of credits?|credit balance|quota exceeded|billing)\b/i.test(m) },
+  // `budget` / `spend limit` is a SPEND CAP rather than an empty balance — OpenRouter
+  // answers a run past its weekly limit with `Error: Budget limit exceeded (weekly
+  // limit). Contact your org admin.` (observed 2026-09-03: two entries settled as a bare
+  // `error`, 0 tokens, a 14s agent stage). It belongs to `no-credits` because the user's
+  // decision is the same one — raise the ceiling or move to another provider.
+  { kind: 'no-credits', test: (m) => /\b(insufficient (funds|balance|credits?)|out of credits?|credit balance|quota exceeded|billing)\b/i.test(m)
+    || /\bbudget\b[^.]*\b(limit|exceeded)\b/i.test(m) || /\bspend(ing)? limit\b/i.test(m) },
   { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
   { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
 ];
@@ -252,8 +258,8 @@ function providerDiagnostic(
       advice: 'Check the API key for this provider — it was refused, not throttled.',
     },
     'no-credits': {
-      title: `Provider balance exhausted${c}`,
-      advice: 'Top up the provider account, or switch to a model on a funded provider.',
+      title: `Provider balance or budget exhausted${c}`,
+      advice: 'Top up the provider account or raise its spend limit, then re-run — or switch to a model on a funded provider.',
     },
     'provider-down': {
       title: `Provider unavailable${info.code || info.errorType ? ` (${[info.code || null, info.errorType || null].filter(Boolean).join(' · ')})` : ''}`,
