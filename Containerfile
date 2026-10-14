@@ -119,7 +119,7 @@ RUN --mount=type=bind,source=.npmrc,target=/tmp/ig/.npmrc \
     else \
       echo "Ignite UI: trial (watermarked) build — empty .npmrc"; \
       GRID_PKG="igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2";
+      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2"; \
       NAMES="${BASE_PKG} ${GRID_PKG}"; \
       ALIAS=""; \
     fi; \
