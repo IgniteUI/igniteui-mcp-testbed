@@ -240,7 +240,7 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
         const msg = cancelled() ? 'cancelled' : `${firstLine(err.message)} (during ${phase})`;
         results.push({ route, file, ok: false, error: msg });
         log(`  ✗ ${route} — ${msg}`);
-        if (!cancelled()) await recover().catch((e: any) => { page = null; log(`  warning: recovery failed — ${firstLine(e.message)}`); });
+        if (!cancelled() && i + 1 < routes.length) await recover().catch((e: any) => { page = null; log(`  warning: recovery failed — ${firstLine(e.message)}`); });
       }
     };
 
