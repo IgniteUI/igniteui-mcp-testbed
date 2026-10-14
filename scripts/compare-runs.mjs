@@ -570,7 +570,7 @@ if (opt.fragment) {
   const style = (html.match(/<style>[\s\S]*?<\/style>/) || [''])[0];
   const body = html.slice(html.indexOf('<body>') + '<body>'.length, html.lastIndexOf('</body>'));
   const script = (html.match(/<script>[\s\S]*?<\/script>/) || [''])[0];
-  output = [title, style, body, script].join('\n');
+  output = [title, style, body].join('\n');
 }
 fs.writeFileSync(outFile, output);
 
