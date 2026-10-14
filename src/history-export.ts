@@ -22,6 +22,8 @@ async function toDataUrl(runId: string, filename: string): Promise<string | null
 export interface ExportShot {
   route: string;
   ok: boolean;
+  /** Captured, but not the page requested (state-nav fallback). */
+  warning?: string;
   dataUrl: string | null;
 }
 
@@ -39,6 +41,7 @@ export async function buildExportRuns(runs: HistoryRecord[]): Promise<ExportRun[
         (r.screenshots || []).map(async (s) => ({
           route: s.route,
           ok: s.ok,
+          ...(s.warning ? { warning: s.warning } : {}),
           dataUrl: s.ok ? await toDataUrl(r.id, s.file) : null,
         })),
       );
@@ -299,7 +302,7 @@ function renderDetail(r){
 
   const shotsHtml=r.screenshotData?.length?
     '<div class="shots-wrap"><h4>Screenshots ('+okShots.length+'/'+(r.screenshotData||[]).length+')</h4><div class="shot-strip" data-run-id="'+esc(r.id)+'">'+
-    okShots.map((s,i)=>'<button class="shot-btn" data-shot-idx="'+i+'" data-run-id="'+esc(r.id)+'" title="'+esc(s.route)+'"><img src="'+esc(s.dataUrl)+'" alt="'+esc(s.route)+'" loading="lazy" width="150" height="100"><span class="cap">'+esc(s.route)+'</span></button>').join('')+
+    okShots.map((s,i)=>'<button class="shot-btn" data-shot-idx="'+i+'" data-run-id="'+esc(r.id)+'" title="'+esc(s.warning?'⚠ '+s.warning:s.route)+'"><img src="'+esc(s.dataUrl)+'" alt="'+esc(s.route)+'" loading="lazy" width="150" height="100"><span class="cap">'+(s.warning?'⚠ ':'')+esc(s.route)+'</span></button>').join('')+
     (r.screenshotData||[]).filter(s=>!s.ok).map(s=>'<div class="shot-fail">'+esc(s.route)+'<br><small>failed</small></div>').join('')+
     '</div></div>':'';
 

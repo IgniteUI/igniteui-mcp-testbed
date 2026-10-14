@@ -131,7 +131,7 @@ function entrySection(e: MatrixEntry, r: HistoryRecord | null): string {
     .map(([name, ms]) => `<span class="stage">${esc(name)} <b>${fmtMs(ms)}</b></span>`).join(' ');
   const shots = (r.screenshots || []).map((s) =>
     s.ok
-      ? `<a class="shot" href="../../artifacts/${esc(r.id)}/${esc(s.file)}"><img loading="lazy" src="../../artifacts/${esc(r.id)}/${esc(s.file)}" alt="${esc(s.route)}"><span class="cap">${esc(s.route)}</span></a>`
+      ? `<a class="shot" href="../../artifacts/${esc(r.id)}/${esc(s.file)}"${s.warning ? ` title="⚠ ${esc(s.warning)}"` : ''}><img loading="lazy" src="../../artifacts/${esc(r.id)}/${esc(s.file)}" alt="${esc(s.route)}"><span class="cap">${s.warning ? `⚠ ${esc(s.route)} — ${esc(s.warning)}` : esc(s.route)}</span></a>`
       : `<span class="shot fail">✖ ${esc(s.route)} — ${esc(s.error || 'capture failed')}</span>`
   ).join('');
   const failures = (r.tests?.failures || []).map((f) =>
