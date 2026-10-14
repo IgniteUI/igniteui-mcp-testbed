@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-09-29
+## [0.4.0] - 2026-10-14
 
 ### Added
 
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated `igniteui-webcomponents` to 7.4.1 and `igniteui-webcomponents-grids` to 7.3.2.
 - The local MCP `PACKAGES` manifest records a sha256 per tarball, and `run-ab-sweep.sh`
   compares hashes, so a re-packed tarball that keeps its filename is detected as a stale
   image instead of being A/B-tested against the previous build.
