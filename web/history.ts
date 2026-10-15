@@ -407,11 +407,11 @@ function bindGridTemplates() {
             <details class="shot-details">
               <summary>Screenshots (${shots.filter((s: any) => s.ok).length}/${shots.length})</summary>
               <div class="shot-strip">${shots.map((s: any) => s.ok
-                ? gridHtml`<button type="button" class="shot" title="View ${s.route}"
+                ? gridHtml`<button type="button" class="shot" title="${s.warning ? `⚠ ${s.warning}` : `View ${s.route}`}"
                     @click=${() => openLightbox(okShots, okShots.indexOf(s), art)}>
                     <img loading="lazy" decoding="async" fetchpriority="low" width="150" height="100"
                       src="${art(s.file)}" alt="${s.route}">
-                    <span class="cap">${s.route}</span>
+                    <span class="cap">${s.warning ? '⚠ ' : ''}${s.route}</span>
                   </button>`
                 : gridHtml`<div class="shot fail">${s.route}<br><small>failed</small></div>`)}
               </div>

@@ -570,7 +570,12 @@ export async function runPipeline(
   if (!disc.routes.length) emit('log', 'no routes discovered — falling back to root (/)');
   let screenshots: HeadlessResult['screenshots'] = [];
   try {
-    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '', { stateNav: disc.stateNav });
+    screenshots = await shoot(`http://127.0.0.1:${APP_PORT}`, routesToShoot, artifactDir || '', {
+      stateNav: disc.stateNav,
+      log: (m) => emit('log', m),
+      isCancelled,
+      onChild,
+    });
     emit('log', `screenshots: ${screenshots.filter((s) => s.ok).length}/${screenshots.length} captured`);
     // The count alone hides WHY a capture failed — the reason sat only in the history
     // record's screenshots array, so a run that captured nothing looked identical to

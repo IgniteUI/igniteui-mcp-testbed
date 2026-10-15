@@ -162,8 +162,11 @@ export interface PromptImage {
 export interface Screenshot {
   route: string;
   file: string;
+  /** An image was written (it may still carry a `warning`). */
   ok: boolean;
   error?: string;
+  /** Captured, but not the page requested (e.g. state-nav item not found). */
+  warning?: string;
 }
 
 // One failed Playwright test, surfaced in the run log + History detail.
