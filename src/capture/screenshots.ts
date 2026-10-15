@@ -225,7 +225,7 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
     }
 
     // `work` resolves to a warning when it captured *something* but not the page asked for.
-    const shootOne = async (route: string, i: number, work: (dest: string, setPhase: (p: string) => void) => Promise<string | void>) => {
+    const shootOne = async (route: string, i: number, work: (dest: string, setPhase: (p: string) => void, routePage: any) => Promise<string | void>) => {
       const file = fileFor(route);
       if (cancelled()) { results.push({ route, file, ok: false, error: 'cancelled' }); return; }
       let phase = 'navigate';
@@ -233,7 +233,8 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
       log(`  → [${i + 1}/${routes.length}] ${route}`);
       try {
         if (!page) await recover();
-        const warning = await withTimeout(work(path.join(outDir, file), (p) => { phase = p; }), routeTimeout, `route ${route}`);
+        const routePage = page;
+        const warning = await withTimeout(work(path.join(outDir, file), (p) => { phase = p; }, routePage), routeTimeout, `route ${route}`);
         results.push(warning ? { route, file, ok: true, warning } : { route, file, ok: true });
         log(`  ${warning ? '⚠' : '✓'} ${route} (${Date.now() - t0}ms)${warning ? ` — ${warning}` : ''}`);
       } catch (err: any) {
@@ -252,25 +253,25 @@ export async function shoot(baseUrl: string, routes: string[], outDir: string, o
         // the sidebar/nav item whose text matches the page name ('/dashboard' → 'Dashboard').
         const pageName = route.replace(/^\//, '');
         const displayName = pageName.charAt(0).toUpperCase() + pageName.slice(1);
-        await shootOne(route, i, async (dest, setPhase) => {
+        await shootOne(route, i, async (dest, setPhase, routePage) => {
           setPhase('find nav item');
-          const item = page.locator(NAV_SEL).getByText(displayName, { exact: false }).first();
+          const item = routePage.locator(NAV_SEL).getByText(displayName, { exact: false }).first();
           if (await item.count() === 0) {
             setPhase('capture');
-            await capture(page, dest);
+            await capture(routePage, dest);
             return `nav item not found: ${displayName} — captured the current page instead`;
           }
           setPhase('click nav item');
           await item.click({ timeout: 10000 });
-          await page.waitForTimeout(settle);
+          await routePage.waitForTimeout(settle);
           setPhase('capture');
-          await capture(page, dest);
+          await capture(routePage, dest);
         });
       } else {
-        await shootOne(route, i, async (dest, setPhase) => {
-          await goTo(page, joinUrl(baseUrl, route));
+        await shootOne(route, i, async (dest, setPhase, routePage) => {
+          await goTo(routePage, joinUrl(baseUrl, route));
           setPhase('capture');
-          await capture(page, dest);
+          await capture(routePage, dest);
         });
       }
     }
