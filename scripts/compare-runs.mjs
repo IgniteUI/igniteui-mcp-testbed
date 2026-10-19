@@ -248,8 +248,14 @@ function cellFor(c, route) {
   const url = shot?.ok ? imageUrl(c.id, shot.file) : null;
   const attrs = 'data-route="' + esc(route) + '" data-col="' + c.i + '" data-label="' + esc(c.label) + '" data-status="' + esc(c.run.status) + '"';
   if (url) {
-    return '<div class="cell shot" ' + attrs + ' data-src="' + esc(url) + '" tabindex="0">' +
-      '<img src="' + esc(url) + '" alt="' + esc(c.label + ' ' + route) + '" loading="lazy"></div>';
+    // A state-nav fallback is an image of whatever page was showing, not this route —
+    // say so on the cell, or the row silently compares different pages.
+    const warn = shot.warning
+      ? ' data-warning="' + esc(shot.warning) + '" title="⚠ ' + esc(shot.warning) + '"'
+      : '';
+    return '<div class="cell shot' + (shot.warning ? ' fallback' : '') + '" ' + attrs + warn + ' data-src="' + esc(url) + '" tabindex="0">' +
+      '<img src="' + esc(url) + '" alt="' + esc(c.label + ' ' + route) + '" loading="lazy">' +
+      (shot.warning ? '<span class="shot-warn">⚠ ' + esc(shot.warning) + '</span>' : '') + '</div>';
   }
   // Never render an ambiguous blank — say which of the reasons it is.
   let why = 'route absent';
@@ -363,7 +369,9 @@ const clientJs = [
   "var cur=-1;",
   "function open(i){ if(i<0||i>=cells.length)return; cur=i; var c=cells[i];",
   "  lbImg.src=c.getAttribute('data-src');",
-  "  lbCap.textContent=c.getAttribute('data-label')+'  —  '+c.getAttribute('data-route')+'  ('+c.getAttribute('data-status')+')';",
+  "  var w=c.getAttribute('data-warning');",
+  "  lbCap.textContent=c.getAttribute('data-label')+'  —  '+c.getAttribute('data-route')+'  ('+c.getAttribute('data-status')+')'+(w?'  ⚠ '+w:'');",
+  "  lbCap.classList.toggle('warn',!!w);",
   "  lb.classList.add('on'); }",
   "function close(){ lb.classList.remove('on'); lbImg.src=''; cur=-1; }",
   "function step(dRoute,dCol){ if(cur<0)return; var c=cells[cur];",
@@ -494,6 +502,10 @@ const html = `<!DOCTYPE html>
   .cell.shot img { display:block; width:100%; height:calc(var(--cw) * 0.72); object-fit:cover;
                    object-position:top center; }
   .sheet.contain .cell.shot img { object-fit:contain; background:#05100f; }
+  .cell.shot.fallback { position:relative; outline:2px dashed var(--amber); outline-offset:-2px; }
+  .shot-warn { position:absolute; left:0; right:0; bottom:0; padding:.2rem .4rem; background:rgba(0,0,0,.78);
+    color:var(--amber); font-family:var(--mono); font-size:.62rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #lb-cap.warn { color:var(--amber); }
   .cell.shot:focus { outline:2px solid var(--teal); outline-offset:-2px; }
   .cell.empty { display:flex; align-items:center; justify-content:center; padding:.6rem;
                 min-height:calc(var(--cw) * 0.72); background:repeating-linear-gradient(45deg,#0c1a18,#0c1a18 8px,#0a1615 8px,#0a1615 16px);
