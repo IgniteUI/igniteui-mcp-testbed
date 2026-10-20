@@ -10,6 +10,7 @@ import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
 import { agentRunArgv, serverArgv, serverEnv, serverPassword, statsArgv } from './opencode-cli.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
+import { openStore, readUsage } from '../capture/opencode-store.ts';
 import {
   APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor,
   LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
@@ -26,7 +27,7 @@ import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage } from '../types.ts';
-import { createDiagnosticsCollector, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
+import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
   emit: Emit;
@@ -443,16 +444,38 @@ export async function runPipeline(
   // failure path. Extracted because every failed run in the corpus lost all of it —
   // and with diagnostics in play that matters more, since "429 at minute 2 with 0
   // tokens" and "429 at minute 24 with 180k tokens" are different stories.
-  const collectRunEvidence = async (): Promise<{ stats: Stats | null; tools: ToolUsage | null }> => {
+  const collectRunEvidence = async (): Promise<{ stats: Stats | null; tools: ToolUsage | null; modelDiag: Diagnostic | null }> => {
     let stats: Stats | null = null;
+    let modelDiag: Diagnostic | null = null;
+    // 2.x: summed from the store's messages, which also say which model actually answered.
     try {
-      const text = await capture('opencode', statsArgv(), appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
-      stats = parseOpencodeStats(text);
-      stats.model = cfg.model;
-      stats.updatedAt = new Date().toISOString();
-      if (!stats.parsed) emit('log', 'warning: could not parse `opencode stats`; tokens/cost may be incomplete');
+      const store = await openStore(toolDataDir);
+      if (store) {
+        try {
+          const usage = readUsage(store, agentSince);
+          if (usage) {
+            stats = { ...usage.stats, model: cfg.model, updatedAt: new Date().toISOString() };
+            modelDiag = modelDiagnostic(cfg.model, usage.models);
+            if (modelDiag) emit('log', `${modelDiag.severity === 'fatal' ? 'error' : 'warning'}: ${modelDiag.title} — ${modelDiag.advice}`);
+          }
+        } finally {
+          store.close();
+        }
+      }
     } catch (e: any) {
-      emit('log', `warning: opencode stats failed (${e.message})`);
+      emit('log', `warning: could not read usage from opencode.db (${e.message})`);
+    }
+    // 1.x: the store has no per-message cost, so parse `opencode stats`.
+    if (!stats) {
+      try {
+        const text = await capture('opencode', statsArgv(), appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
+        stats = parseOpencodeStats(text);
+        stats.model = cfg.model;
+        stats.updatedAt = new Date().toISOString();
+        if (!stats.parsed) emit('log', 'warning: could not parse `opencode stats`; tokens/cost may be incomplete');
+      } catch (e: any) {
+        emit('log', `warning: opencode stats failed (${e.message})`);
+      }
     }
 
     // Which MCP tools and skills the agent actually reached for. The one-shot agent has
@@ -470,7 +493,7 @@ export async function runPipeline(
     } catch (e: any) {
       emit('log', `warning: tool usage collection failed (${e.message})`);
     }
-    return { stats, tools };
+    return { stats, tools, modelDiag };
   };
 
   // Observe the agent's output for provider failures. Purely observational with respect
@@ -520,6 +543,7 @@ export async function runPipeline(
       const evidence = await collectRunEvidence();
       agentErr.stats = evidence.stats;
       agentErr.tools = evidence.tools;
+      if (evidence.modelDiag) agentErr.diagnostics = [...(agentErr.diagnostics || []), evidence.modelDiag];
     }
     throw agentErr;
   }
@@ -528,7 +552,11 @@ export async function runPipeline(
     if (summary) emit('log', `warning: ${summary}`);
   }
 
-  const { stats: entryStats, tools: entryTools } = await collectRunEvidence();
+  const { stats: entryStats, tools: entryTools, modelDiag } = await collectRunEvidence();
+  if (modelDiag) {
+    diagnostics = [...diagnostics, modelDiag];
+    emit('diagnostics', { diagnostics });
+  }
 
   // 7. Now that edits are done, build the app once and screenshot every route.
   // Bail as soon as the build is known to have failed (the agent's edits often don't

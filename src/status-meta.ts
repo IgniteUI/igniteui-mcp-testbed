@@ -67,4 +67,5 @@ export const KIND_CHIP: Record<DiagnosticKind, string> = {
   looping: 'looping',
   'timed-out': 'timeout',
   'unknown-provider-error': 'provider',
+  'wrong-model': 'model',
 };

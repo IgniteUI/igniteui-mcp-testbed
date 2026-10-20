@@ -289,7 +289,7 @@ export interface Diagnostic {
 
 export type DiagnosticKind =
   | 'rate-limited' | 'no-credits' | 'auth' | 'provider-down'
-  | 'network' | 'stalled' | 'looping' | 'timed-out' | 'unknown-provider-error';
+  | 'network' | 'stalled' | 'looping' | 'timed-out' | 'unknown-provider-error' | 'wrong-model';
 
 /**
  * What a failed agent run carries out with it. A failed pipeline returns no

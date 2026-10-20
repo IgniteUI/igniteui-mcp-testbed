@@ -12,7 +12,7 @@
 import { stripAnsi } from '../src/ansi.ts';
 import {
   createLineFramer, classifyAgentLine, classifyNetworkFailure, createDiagnosticsCollector,
-  deriveStatus, isToolFailureLabel,
+  deriveStatus, isToolFailureLabel, modelDiagnostic,
 } from '../src/capture/diagnostics.ts';
 import { fingerprintInput, detectLoop } from '../src/capture/loop.ts';
 import { parseOpencodeStats } from '../src/capture/usage.ts';
@@ -320,6 +320,9 @@ bothStreams('classify: prose auth, 1.19 wording', '\x1b[91m\x1b[1mError: \x1b[0m
   ['auth', 'fatal', 'confirmed', 'auth:text']);
 bothStreams('classify: prose unreachable endpoint, 1.19 wording',
   '\x1b[91m\x1b[1mError: \x1b[0mCannot connect to API: Unable to connect. Is the computer able to access the url?',
+  ['network', 'fatal', 'confirmed', 'network:text']);
+bothStreams('classify: prose unreachable endpoint, 2.x wording',
+  '\x1b[91m\x1b[1mError: \x1b[0mConnectionRefused: Unable to connect. Is the computer able to access the url?',
   ['network', 'fatal', 'confirmed', 'network:text']);
 check('classify: unrelated "unable to connect" prose stays unclassified',
   classifyAgentLine('Error: Unable to connect to database', 'stderr'), null);
@@ -971,6 +974,21 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   check('cli 2.x: server env carries the password',
     cli.serverEnv().OPENCODE_SERVER_PASSWORD === cli.serverPassword() && !!cli.serverPassword(), true);
   if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
+}
+
+// Model guard: 2.x silently answers an unusable model with a free one and exits 0
+// (probed: `anthropic/no-such-model` ran on `opencode/minimax-m3.1-flash-free`).
+{
+  check('model: same model is no diagnostic', modelDiagnostic('openrouter/openai/gpt-6-luna', ['openrouter/openai/gpt-6-luna']), null);
+  check('model: variant suffix is ignored', modelDiagnostic('openrouter/openai/gpt-6-luna#high', ['openrouter/openai/gpt-6-luna']), null);
+  check('model: no messages means no verdict', modelDiagnostic('a/b', []), null);
+  const fb = modelDiagnostic('anthropic/no-such-model', ['opencode/minimax-m3.1-flash-free']);
+  check('model: full fallback is fatal', [fb?.kind, fb?.severity], ['wrong-model', 'fatal']);
+  check('model: and fails the run', deriveStatus([fb]), 'error');
+  check('model: but a build failure still reads as one', deriveStatus([fb], { buildFailed: true }), 'build-error');
+  const mixed = modelDiagnostic('a/b', ['a/b', 'c/d']);
+  check('model: an extra model alongside the right one is a warning', mixed?.severity, 'warning');
+  check('model: which does not change the status', deriveStatus([mixed]), 'success');
 }
 
 // opencode.json writer: 2.x only honours `codemode` under `mcp.servers` (a flat-shape

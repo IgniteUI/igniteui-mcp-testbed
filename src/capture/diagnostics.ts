@@ -134,8 +134,9 @@ const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> 
     || /\bbudget\b[^.]*\b(limit|exceeded)\b/i.test(m) || /\bspend(ing)? limit\b/i.test(m) },
   { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
   { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
-  // opencode 1.19's own wording for an unreachable endpoint (probed against a closed port).
-  { kind: 'network', test: (m) => /\bcannot connect to api\b/i.test(m) },
+  // opencode's own wording for an unreachable endpoint (probed against a closed port):
+  // 1.19 `Cannot connect to API: Unable to connect. …`, 2.x `ConnectionRefused: Unable to connect. …`.
+  { kind: 'network', test: (m) => /\bcannot connect to api\b|^ConnectionRefused\b|\bis the computer able to access the url\b/i.test(m) },
 ];
 
 const DETAIL_MAX = 400;
@@ -347,6 +348,32 @@ const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
  * provider *may* be unresponsive — which is true — rather than asserting a 429 nobody
  * observed.
  */
+/**
+ * opencode 2.x silently falls back to a free model when the configured one can't be used
+ * (an unknown id, or a provider with no key) and exits 0 — so a typo would otherwise be
+ * recorded as a successful run of the configured model. `used` comes from the store.
+ */
+export function modelDiagnostic(expected: string, used: string[], now = new Date().toISOString()): Diagnostic | null {
+  const want = expected.split('#')[0];
+  if (!used.length || used.every((m) => m === want)) return null;
+  const fellBack = !used.includes(want);
+  const others = used.filter((m) => m !== want).join(', ');
+  return {
+    id: `wrong-model:${others}`,
+    kind: 'wrong-model',
+    severity: fellBack ? 'fatal' : 'warning',
+    confidence: 'confirmed',
+    title: fellBack ? `Ran on ${others}, not ${want}` : `Also ran on ${others}`,
+    detail: `configured ${want}; the agent's messages were answered by ${used.join(', ')}`,
+    advice: fellBack
+      ? 'opencode fell back to another model. Check the model id and that the provider key is set.'
+      : 'Some messages used another model (e.g. a subagent). Tokens and cost include them.',
+    at: now,
+    count: 1,
+    lastAt: now,
+  };
+}
+
 export function stallDiagnostic(silentMs: number, now = new Date().toISOString()): Diagnostic {
   return {
     id: STALL_ID,
@@ -808,6 +835,9 @@ const STATUS_BY_KIND: Array<[DiagnosticKind, string]> = [
   ['network', 'provider-down'],
   ['unknown-provider-error', 'provider-down'],
   ['timed-out', 'timed-out'],
+  // Not a provider failure: the run's numbers describe a different model than the one
+  // configured, so it can't stand as a result for this entry.
+  ['wrong-model', 'error'],
 ];
 
 /** Rank a fatal kind by the status priority table (lower wins). Used to break ties
