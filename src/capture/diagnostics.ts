@@ -134,6 +134,8 @@ const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> 
     || /\bbudget\b[^.]*\b(limit|exceeded)\b/i.test(m) || /\bspend(ing)? limit\b/i.test(m) },
   { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
   { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
+  // opencode 1.19's own wording for an unreachable endpoint (probed against a closed port).
+  { kind: 'network', test: (m) => /\bcannot connect to api\b/i.test(m) },
 ];
 
 const DETAIL_MAX = 400;

@@ -28,8 +28,10 @@ RUN apt-get update \
 # run `npm run diagnostics:replay`.
 ARG IGNITEUI_CLI_VERSION=15.8.2
 ARG IGNITEUI_THEMING_VERSION=29.0.0
-ARG OPENCODE_VERSION=1.18.25
-RUN npm install -g opencode-ai@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
+# OPENCODE_PKG: `opencode-ai` is the 1.x line; `@opencode/cli` is 2.x (probe only for now).
+ARG OPENCODE_PKG=opencode-ai
+ARG OPENCODE_VERSION=1.19.3
+RUN npm install -g ${OPENCODE_PKG}@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
 
 # Bake the resolved versions into the build log — "which versions is this image?" is
 # otherwise only answerable by running the image.

@@ -15,6 +15,7 @@ import {
   deriveStatus, isToolFailureLabel,
 } from '../src/capture/diagnostics.ts';
 import { fingerprintInput, detectLoop } from '../src/capture/loop.ts';
+import { parseOpencodeStats } from '../src/capture/usage.ts';
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -312,6 +313,16 @@ bothStreams('classify: prose credits', 'Error: Your credit balance is too low',
   ['no-credits', 'fatal', 'confirmed', 'no-credits:text']);
 bothStreams('classify: prose overload', 'Error: Overloaded',
   ['provider-down', 'fatal', 'confirmed', 'provider-down:text']);
+
+// Observed by scripts/probe-opencode.sh against opencode 1.19.3 (anthropic bad key;
+// customBaseUrl on a closed port).
+bothStreams('classify: prose auth, 1.19 wording', '\x1b[91m\x1b[1mError: \x1b[0minvalid x-api-key',
+  ['auth', 'fatal', 'confirmed', 'auth:text']);
+bothStreams('classify: prose unreachable endpoint, 1.19 wording',
+  '\x1b[91m\x1b[1mError: \x1b[0mCannot connect to API: Unable to connect. Is the computer able to access the url?',
+  ['network', 'fatal', 'confirmed', 'network:text']);
+check('classify: unrelated "unable to connect" prose stays unclassified',
+  classifyAgentLine('Error: Unable to connect to database', 'stderr'), null);
 
 // Observed live (2026-09-03, openrouter): the account's weekly spend cap refuses the
 // request before the model sees it. Both entries settled as a bare `error` with no
@@ -924,6 +935,23 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   c.onOutput('stderr', PAYLOAD_429);
   c.flushOutput();
   check('flush: is a no-op once the collector is closed', c.list().length, 0);
+}
+
+// `opencode stats` report (verbatim excerpt, opencode 1.19.3): Cache Read + Cache Write
+// both count, and `Avg Cost/Day` must not overwrite `Total Cost`.
+{
+  const report = [
+    '│Total Cost                                        $0.42 │',
+    '│Avg Cost/Day                                      $0.21 │',
+    '│Avg Tokens/Session                                35.7K │',
+    '│Input                                             14.1K │',
+    '│Output                                              113 │',
+    '│Cache Read                                        20.9K │',
+    '│Cache Write                                         500 │',
+  ].join('\n');
+  const s = parseOpencodeStats(report);
+  check('stats: cache is read + write', s.tokens.cache, 21400);
+  check('stats: total cost wins over avg/day', s.cost.amount, 0.42);
 }
 
 // ---------------------------------------------------------------------------
