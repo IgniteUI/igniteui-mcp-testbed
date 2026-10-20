@@ -29,6 +29,13 @@ export function opencodeMajor(): number {
 
 const isV2 = () => opencodeMajor() >= 2;
 
+// Code Mode (2.x default) hides every MCP tool behind one `execute` tool. Off by default so
+// tool usage and token counts stay comparable with 1.x runs; OPENCODE_CODEMODE=1 keeps it.
+// Null on 1.x, which has no such mode.
+export function codemodeEnabled(): boolean | null {
+  return isV2() ? process.env.OPENCODE_CODEMODE === '1' : null;
+}
+
 // 2.x serve requires Basic auth (`opencode:<password>`) on /api/*, including the web UI's
 // own calls. Fixed per container so the wizard can show it and the stats collector can use it.
 export const OPENCODE_SERVER_PASSWORD = process.env.OPENCODE_SERVER_PASSWORD

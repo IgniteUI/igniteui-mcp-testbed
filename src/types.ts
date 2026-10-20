@@ -149,6 +149,10 @@ export interface StoredConfig {
    * "no key" means "released", not "unknown".
    */
   mcpCommands?: Record<string, string>;
+  /** opencode CLI version the run used (e.g. `2.0.32`). Absent on records that predate it. */
+  opencodeVersion?: string;
+  /** 2.x only: whether MCP tools ran through Code Mode. Absent on 1.x and older records. */
+  codemode?: boolean;
 }
 
 // One reference image available under PROMPT_IMAGES_DIR. `name` is the path relative

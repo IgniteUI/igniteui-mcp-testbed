@@ -101,6 +101,20 @@ const toolPart = (tool, input, t) => ({
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// 5b. opencode 1.19 ships an EMPTY `session_message` table next to the `part` table it
+//     actually writes to; picking the reader by table presence read nothing at all.
+{
+  const parts = [];
+  for (let i = 0; i < 3; i++) parts.push(toolPart('igniteui-cli_get_doc', { q: i }, i));
+  const dir = makeStore(parts);
+  const db = new DatabaseSync(path.join(dir, 'opencode', 'opencode.db'));
+  db.exec('CREATE TABLE `session_message` (`id` text PRIMARY KEY, `session_id` text NOT NULL, `type` text NOT NULL, `seq` integer NOT NULL, `time_created` integer NOT NULL, `time_updated` integer NOT NULL, `data` text NOT NULL)');
+  db.close();
+  const calls = await recentCalls(dir, 0);
+  ok('1.19: an empty session_message does not shadow part', calls?.length === 3, JSON.stringify(calls?.length));
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // 6. A missing store is null ("no data"), never an empty array ("no loop").
 {
   ok('a missing store returns null, not []', (await recentCalls(path.join(os.tmpdir(), 'nope-' + Date.now()), 0)) === null);

@@ -7,7 +7,7 @@ import { OPENCODE_PORT, WORK, APP_DIR, MCP_COMMAND_OVERRIDES } from '../config.t
 import { capture } from '../proc/exec.ts';
 import { procs } from '../proc/watcher.ts';
 import * as session from '../session.ts';
-import { opencodeVersion, serverPassword, statsArgv } from '../pipeline/opencode-cli.ts';
+import { codemodeEnabled, opencodeVersion, serverPassword, statsArgv } from '../pipeline/opencode-cli.ts';
 
 export default function registerStatsRoutes(app: Express): void {
   // Structured live stats for the current session (messages / tokens / cost).
@@ -51,6 +51,7 @@ export default function registerStatsRoutes(app: Express): void {
       opencodePort: OPENCODE_PORT,
       opencodePassword: serverPassword(),
       opencodeVersion: opencodeVersion(),
+      codemode: codemodeEnabled(),
       model: lastConfig && lastConfig.model,
       phase: session.getRunState().phase,
       // Which MCP classes THIS container will launch from a local binary, keyed by the

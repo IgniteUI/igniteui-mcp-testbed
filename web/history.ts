@@ -364,6 +364,7 @@ function bindGridTemplates() {
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
             gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
+          <dt>opencode</dt><dd>${opencodeSummary(c)}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
@@ -704,6 +705,23 @@ let pendingRerun: any = null;
 // against the released one unless this container was started with the same override.
 // The record stays honest either way (redact() stamps the live env), but that is only
 // visible afterwards, so compare up-front and say so.
+function opencodeSummary(c: any): string {
+  if (!c.opencodeVersion) return '—';
+  return c.codemode == null ? c.opencodeVersion : `${c.opencodeVersion} · Code Mode ${c.codemode ? 'on' : 'off'}`;
+}
+
+// Same reasoning as the MCP binary: the version is fixed by the image, the Code Mode
+// switch by the container's env, and a re-run silently inherits both.
+function rerunOpencodeWarning(cfg: any, live: { opencodeVersion?: string; codemode?: boolean | null } | null): string {
+  if (!live || !cfg.opencodeVersion || !live.opencodeVersion) return '';
+  const diffs: string[] = [];
+  if (cfg.opencodeVersion !== live.opencodeVersion) diffs.push(`opencode ${cfg.opencodeVersion} → ${live.opencodeVersion}`);
+  if (cfg.codemode != null && live.codemode != null && cfg.codemode !== live.codemode) {
+    diffs.push(`Code Mode ${cfg.codemode ? 'on' : 'off'} → ${live.codemode ? 'on' : 'off'} (OPENCODE_CODEMODE)`);
+  }
+  return diffs.length ? `This container differs from the recorded run: ${diffs.join('; ')}.` : '';
+}
+
 function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string {
   if (!live) return '';
   const recorded: Record<string, string> = cfg.mcpCommands || {};
@@ -735,7 +753,8 @@ async function rerunRun(id: string) {
   st.rerunWarn = '';
   try {
     const s = await getJSON('/api/status');
-    st.rerunWarn = rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null);
+    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s)]
+      .filter(Boolean).join(' ');
   } catch { /* leave the warning empty */ }
   update();
   ($('#rerunKey') as any).value = '';

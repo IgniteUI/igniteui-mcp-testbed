@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PROVIDER_ENV } from '../config.ts';
 import type { RunConfig, Emit } from '../types.ts';
-import { opencodeMajor } from './opencode-cli.ts';
+import { codemodeEnabled, opencodeMajor } from './opencode-cli.ts';
 
 export function providerEnvFor(model: string, apiKey?: string): Record<string, string> {
   const prefix = String(model).split('/')[0];
@@ -51,15 +51,11 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
   fs.writeFileSync(path.join(appDir, 'opencode.json'), JSON.stringify(doc, null, 2));
 }
 
-// Code Mode (2.x default) hides every MCP tool behind one `execute` tool. Off by default so
-// tool usage and token counts stay comparable with 1.x runs; OPENCODE_CODEMODE=1 keeps it.
-const CODEMODE = process.env.OPENCODE_CODEMODE === '1';
-
 function toV2Servers(mcp: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [name, def] of Object.entries(mcp)) {
     const { enabled, ...rest } = def || {};
-    out[name] = { ...rest, disabled: enabled === false, codemode: CODEMODE };
+    out[name] = { ...rest, disabled: enabled === false, codemode: !!codemodeEnabled() };
   }
   return out;
 }

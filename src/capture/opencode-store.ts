@@ -54,7 +54,12 @@ export async function openStore(dataDir: string): Promise<Store | null> {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   const tables = new Set((db.prepare("select name from sqlite_master where type='table'").all() as any[])
     .map((r) => r.name));
-  const schema: StoreSchema | null = tables.has('session_message') ? 'session_message'
+  // 1.19 already creates an EMPTY `session_message` next to the `part` table it still
+  // writes to, so table presence alone picks the wrong reader there.
+  const v2HasRows = tables.has('session_message')
+    && !!db.prepare('select 1 from session_message limit 1').get();
+  const schema: StoreSchema | null = tables.has('session_message') && (v2HasRows || !tables.has('part'))
+    ? 'session_message'
     : tables.has('part') ? 'part' : null;
   if (!schema) {
     db.close();
