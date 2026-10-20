@@ -213,7 +213,7 @@ for v in "${KEY_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 # Non-secret tunables: diagnostics tunables (src/config.ts): forwarded when set so a run can be tuned, and so DIAGNOSTICS_STREAM_DEBUG=1 can be used to answer which stream provider errors actually arrive on. Values are plain numbers/flags, not secrets.
-DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC_AGGREGATE_THRESHOLD AGENT_TIMEOUT_MS SCREENSHOT_NAV_TIMEOUT_MS SCREENSHOT_ROUTE_TIMEOUT_MS)
+DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC_AGGREGATE_THRESHOLD AGENT_TIMEOUT_MS SCREENSHOT_NAV_TIMEOUT_MS SCREENSHOT_ROUTE_TIMEOUT_MS OPENCODE_CODEMODE)
 for v in "${DIAG_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v=${!v}")
 done

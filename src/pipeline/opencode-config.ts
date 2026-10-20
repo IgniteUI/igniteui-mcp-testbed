@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PROVIDER_ENV } from '../config.ts';
 import type { RunConfig, Emit } from '../types.ts';
+import { opencodeMajor } from './opencode-cli.ts';
 
 export function providerEnvFor(model: string, apiKey?: string): Record<string, string> {
   const prefix = String(model).split('/')[0];
@@ -11,21 +12,31 @@ export function providerEnvFor(model: string, apiKey?: string): Record<string, s
   return key && apiKey ? { [key]: apiKey } : {};
 }
 
-// Build the opencode.json the agent will read.
+// Build the opencode.json the agent will read. `mcp` is always the 1.x shape
+// (`{ <name>: { type, command, environment?, enabled } }`, from translate()); on 2.x it is
+// converted to the native shape, because 2.x only honours `codemode` there.
 export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, appDir: string): void {
+  const v2 = opencodeMajor() >= 2;
   const doc: Record<string, any> = {
     $schema: 'https://opencode.ai/config.json',
     model: cfg.model,
-    // Auto-approve every permission. Headless `opencode run` (matrix) has stdin =
-    // /dev/null, and opencode BLOCKS on a permission prompt rather than failing on
-    // EOF — e.g. an agent writing scratch files to /tmp triggers `external_directory`
-    // (default: ask) and hangs until AGENT_TIMEOUT_MS. This appliance is an ephemeral
-    // sandbox, so allowing everything (incl. external dirs) is the right default and
-    // also spares the interactive opencode-web user from approval prompts.
-    permission: 'allow',
-    mcp,
   };
-  // Custom OpenAI-compatible endpoint -> declare a provider.
+  // Auto-approve every permission. Headless `opencode run` (matrix) has stdin =
+  // /dev/null, and opencode BLOCKS on a permission prompt rather than failing on
+  // EOF — e.g. an agent writing scratch files to /tmp triggers `external_directory`
+  // (1.x default: ask) and hangs until AGENT_TIMEOUT_MS. This appliance is an ephemeral
+  // sandbox, so allowing everything (incl. external dirs) is the right default and
+  // also spares the interactive opencode-web user from approval prompts.
+  if (v2) {
+    doc.permissions = [{ action: '*', resource: '*', effect: 'allow' }];
+    doc.mcp = { servers: toV2Servers(mcp) };
+  } else {
+    doc.permission = 'allow';
+    doc.mcp = mcp;
+  }
+  // Custom OpenAI-compatible endpoint -> declare a provider. Kept in the 1.x spelling on
+  // 2.x too: 2.x normalizes it (probed against a closed port), and its normalizer is what
+  // maps `options.apiKey`.
   if (cfg.customBaseUrl) {
     const id = 'custom';
     doc.provider = {
@@ -38,6 +49,33 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
     };
   }
   fs.writeFileSync(path.join(appDir, 'opencode.json'), JSON.stringify(doc, null, 2));
+}
+
+// Code Mode (2.x default) hides every MCP tool behind one `execute` tool. Off by default so
+// tool usage and token counts stay comparable with 1.x runs; OPENCODE_CODEMODE=1 keeps it.
+const CODEMODE = process.env.OPENCODE_CODEMODE === '1';
+
+function toV2Servers(mcp: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [name, def] of Object.entries(mcp)) {
+    const { enabled, ...rest } = def || {};
+    out[name] = { ...rest, disabled: enabled === false, codemode: CODEMODE };
+  }
+  return out;
+}
+
+/** The `mcp` block of an existing opencode.json, in the 1.x shape whichever version wrote it. */
+export function readOpencodeMcp(appDir: string): Record<string, any> {
+  const p = path.join(appDir, 'opencode.json');
+  if (!fs.existsSync(p)) return {};
+  const mcp = JSON.parse(fs.readFileSync(p, 'utf8')).mcp || {};
+  if (!mcp.servers || typeof mcp.servers !== 'object') return mcp;
+  const out: Record<string, any> = {};
+  for (const [name, def] of Object.entries<any>(mcp.servers)) {
+    const { disabled, codemode, ...rest } = def || {};
+    out[name] = { ...rest, enabled: disabled !== true };
+  }
+  return out;
 }
 
 // Write a framework `prepare` file, merging instead of clobbering when one already

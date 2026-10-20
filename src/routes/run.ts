@@ -1,7 +1,5 @@
 'use strict';
 
-import * as fs from 'fs';
-import * as path from 'path';
 import type { Express } from 'express';
 import { APP_DIR, OPENCODE_PORT } from '../config.ts';
 import * as history from '../history.ts';
@@ -9,7 +7,7 @@ import * as session from '../session.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
 import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
 import { waitForPort, waitForPortFree } from '../proc/ports.ts';
-import { writeOpencodeConfig, providerEnvFor } from '../pipeline/opencode-config.ts';
+import { writeOpencodeConfig, providerEnvFor, readOpencodeMcp } from '../pipeline/opencode-config.ts';
 import { serverArgv, serverEnv } from '../pipeline/opencode-cli.ts';
 
 export default function registerRunRoutes(app: Express): void {
@@ -75,10 +73,7 @@ export default function registerRunRoutes(app: Express): void {
     lastConfig.customBaseUrl = req.body.customBaseUrl || lastConfig.customBaseUrl;
 
     // Preserve existing mcp block from the file.
-    let mcp: Record<string, any> = {};
-    const p = path.join(APP_DIR, 'opencode.json');
-    if (fs.existsSync(p)) mcp = JSON.parse(fs.readFileSync(p, 'utf8')).mcp || {};
-    writeOpencodeConfig(lastConfig, mcp, APP_DIR);
+    writeOpencodeConfig(lastConfig, readOpencodeMcp(APP_DIR), APP_DIR);
 
     // AWAIT it: killWatcher resolves only once the old process has actually exited, and
     // the replacement binds the same fixed port. Firing and forgetting lets the new

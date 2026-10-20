@@ -973,6 +973,45 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
 }
 
+// opencode.json writer: 2.x only honours `codemode` under `mcp.servers` (a flat-shape
+// `codemode:false` was probed and silently ignored), and /api/model must read back
+// either shape as the 1.x block it rewrites from.
+{
+  const os = await import('os');
+  const fsx = await import('fs');
+  const pathx = await import('path');
+  const { writeOpencodeConfig, readOpencodeMcp } = await import('../src/pipeline/opencode-config.ts');
+  const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'occfg-'));
+  const block = {
+    'igniteui-cli': { type: 'local', command: ['ig', 'mcp'], enabled: true },
+    'igniteui-theming': { type: 'local', command: ['igniteui-theming-mcp'], environment: { A: '1' }, enabled: false },
+  };
+  const cfg = { framework: 'react', model: 'custom/m', customBaseUrl: 'http://x/v1' };
+  const saved = process.env.OPENCODE_MAJOR;
+  const read = () => JSON.parse(fsx.readFileSync(pathx.join(dir, 'opencode.json'), 'utf8'));
+
+  process.env.OPENCODE_MAJOR = '2';
+  writeOpencodeConfig(cfg, block, dir);
+  const v2 = read();
+  check('config 2.x: native permissions', v2.permissions, [{ action: '*', resource: '*', effect: 'allow' }]);
+  check('config 2.x: no 1.x permission key', v2.permission, undefined);
+  check('config 2.x: servers carry disabled + codemode:false', v2.mcp.servers['igniteui-theming'],
+    { type: 'local', command: ['igniteui-theming-mcp'], environment: { A: '1' }, disabled: true, codemode: false });
+  check('config 2.x: enabled server', v2.mcp.servers['igniteui-cli'].disabled, false);
+  check('config 2.x: custom provider kept in the normalized 1.x spelling', v2.provider.custom.options.apiKey, '{env:CUSTOM_API_KEY}');
+  check('config 2.x: reads back as the 1.x block', readOpencodeMcp(dir), block);
+
+  process.env.OPENCODE_MAJOR = '1';
+  writeOpencodeConfig(cfg, block, dir);
+  const v1 = read();
+  check('config 1.x: permission string', v1.permission, 'allow');
+  check('config 1.x: flat mcp block', v1.mcp, block);
+  check('config 1.x: reads back unchanged', readOpencodeMcp(dir), block);
+
+  if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
+  fsx.rmSync(dir, { recursive: true, force: true });
+}
+
 // ---------------------------------------------------------------------------
 
 if (failures.length) {
