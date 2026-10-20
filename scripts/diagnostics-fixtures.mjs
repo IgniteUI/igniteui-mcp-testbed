@@ -954,6 +954,25 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   check('stats: total cost wins over avg/day', s.cost.amount, 0.42);
 }
 
+// opencode CLI shapes (FINDINGS.md): 2.x needs --standalone AFTER the subcommand, and
+// --file stays after the message on both lines.
+{
+  const cli = await import('../src/pipeline/opencode-cli.ts');
+  const saved = process.env.OPENCODE_MAJOR;
+  process.env.OPENCODE_MAJOR = '1';
+  check('cli 1.x: run argv', cli.agentRunArgv('hi', ['a.png']), ['run', 'hi', '--file', 'a.png']);
+  check('cli 1.x: server argv', cli.serverArgv(4096), ['web', '--hostname', '0.0.0.0', '--port', '4096']);
+  check('cli 1.x: no password', cli.serverPassword(), null);
+  process.env.OPENCODE_MAJOR = '2';
+  check('cli 2.x: run argv', cli.agentRunArgv('hi', ['a.png', 'b.png'], ['--x']),
+    ['run', '--standalone', '--x', 'hi', '--file', 'a.png', '--file', 'b.png']);
+  check('cli 2.x: stats argv', cli.statsArgv(), ['stats', '--standalone']);
+  check('cli 2.x: server argv', cli.serverArgv(4096), ['serve', '--hostname', '0.0.0.0', '--port', '4096']);
+  check('cli 2.x: server env carries the password',
+    cli.serverEnv().OPENCODE_SERVER_PASSWORD === cli.serverPassword() && !!cli.serverPassword(), true);
+  if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
+}
+
 // ---------------------------------------------------------------------------
 
 if (failures.length) {

@@ -7,6 +7,7 @@ import { attachConsoleMirror } from './matrix/console-mirror.ts';
 import { loadMatrixConfig, startAutoRun, type LoadedMatrixConfig } from './matrix/matrix-config.ts';
 import { loadAll } from './provider-registry.ts';
 import app from './app.ts';
+import { opencodeVersion } from './pipeline/opencode-cli.ts';
 
 ensureDirs();
 
@@ -51,6 +52,8 @@ if (process.env.MATRIX_VALIDATE === '1') {
     process.exit(1);
   }
 }
+
+console.log(`opencode: v${opencodeVersion()}`);
 
 // Settle any records left 'running' by a previous container that stopped mid-run.
 try {

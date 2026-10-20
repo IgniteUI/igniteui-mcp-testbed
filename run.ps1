@@ -75,7 +75,7 @@ Show this help and exit.
 .\run.ps1 build -Prune
 
 .EXAMPLE
-.\run.ps1 build -BuildArg IGNITEUI_CLI_VERSION=15.6.0,OPENCODE_VERSION=1.19.3
+.\run.ps1 build -BuildArg OPENCODE_PKG=opencode-ai,OPENCODE_VERSION=1.19.3
 
 .EXAMPLE
 .\run.ps1

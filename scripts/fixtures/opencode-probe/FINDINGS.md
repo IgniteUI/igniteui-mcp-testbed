@@ -31,7 +31,7 @@ passwords redacted. Baseline matrix on 1.19.3: `mx-20261020052958-74ae`, 2/2 suc
 | Code Mode | on by default: MCP tools only reachable via `execute`; the call appears as tool `execute` with `state.metadata.toolCalls[].tool = "igniteui-cli.list_components"` |
 | `codemode:false` | honoured (on `mcp.servers.<name>`): native tool `igniteui-cli_list_components`, same name as 1.x |
 | Store | no `part` table. Tool calls live in `session_message` (`type` = user/assistant/system/idle, `seq`, `time_created`, `data`); assistant `data.content[]` items `{type:'tool', id, name, state:{status,input,content,metadata}, time:{created,ran,completed}}`; `data.tokens {input,output,reasoning,cache:{read,write}}`, `data.cost`, `data.model {id,providerID}`. Sessions in `session_v2` |
-| Tool names | `bash` -> `shell`; skill input is `{id}` (was `{name}`), `metadata.name` still set; built-in skills `opencode`, `report` |
+| Tool names | `bash` -> `shell`; skill input is `{id}` (was `{name}`), `metadata.name` still set; built-in skills `opencode`, `report`. Seen in a real matrix run (gpt-6-luna): `read`, `glob`, `grep`, `shell`, `patch`, `skill`, `execute` |
 | Skills | `.agents/skills/` and `.claude/skills/` both discovered; `AGENTS.md` loaded |
 | `--file` | `--file, -f string` (single string, not a yargs array); missing file -> `Error: File not found: …`, exit 1 |
 | `--format json` | NDJSON events on stdout; provider errors arrive typed: `{"type":"error","error":{"type":"provider.auth","status":401,"message":…}}` |

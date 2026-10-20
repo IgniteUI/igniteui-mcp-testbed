@@ -427,6 +427,8 @@ export interface ToolContext {
 export interface InteractiveResult {
   appPort: number;
   opencodePort: number;
+  /** Basic-auth password for the 2.x opencode web UI; null on 1.x. */
+  opencodePassword: string | null;
 }
 
 export interface HeadlessResult {

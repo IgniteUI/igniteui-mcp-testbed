@@ -68,7 +68,7 @@ with --build-arg. Passing "=latest" does NOT force a refetch (same value, same c
 Examples:
   ./run.sh build --prune
   ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0
-  ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0 --build-arg OPENCODE_VERSION=1.19.3
+  ./run.sh build --build-arg OPENCODE_PKG=opencode-ai --build-arg OPENCODE_VERSION=1.19.3
   ./run.sh
   ./run.sh --matrix-config ./matrix.example.json
   ./run.sh --matrix-config ./matrix.json --validate

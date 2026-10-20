@@ -8,6 +8,7 @@ import { translate } from '../mcp-translate.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
+import { agentRunArgv, serverArgv, serverEnv, serverPassword, statsArgv } from './opencode-cli.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import {
   APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor,
@@ -406,12 +407,11 @@ export async function runPipeline(
       emit('log', `app not confirmed ready (${e.message}); check logs/app.log`);
     }
 
-    // 6a. Interactive: launch opencode web and hand off.
+    // 6a. Interactive: launch the opencode web server and hand off.
     emit('step', { step: 'launch-opencode' });
-    const ocEnv = providerEnvFor(cfg.model, cfg.apiKey);
+    const ocEnv = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
     if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
-    spawnWatcher('opencode', 'opencode',
-      ['web', '--hostname', '0.0.0.0', '--port', String(OPENCODE_PORT)], appDir, ocEnv,
+    spawnWatcher('opencode', 'opencode', serverArgv(OPENCODE_PORT), appDir, ocEnv,
       // Teeing (rather than redirecting) opencode's output is what makes provider errors
       // observable in an interactive session at all; logs/opencode.log still gets
       // everything. Omit the callback and the watcher keeps the plain fd redirect.
@@ -421,7 +421,7 @@ export async function runPipeline(
     // running and the user keeps prompting — so hand the collection context off to the
     // StatsCollector, which re-reads the store on its reconcile tick.
     if (onToolContext) onToolContext({ dataDir: toolDataDir, since: agentSince, mcpServers, skillNames });
-    return { appPort: APP_PORT, opencodePort: OPENCODE_PORT };
+    return { appPort: APP_PORT, opencodePort: OPENCODE_PORT, opencodePassword: serverPassword() };
   }
 
   // 6b. Headless: run the agent once with the prompt — with NO dev server running.
@@ -437,13 +437,8 @@ export async function runPipeline(
   // stdin is /dev/null (see run()) so opencode can never block on an interactive
   // prompt (auth / confirmation); heartbeat shows liveness if it streams nothing.
   // Extra args (e.g. a non-interactive/log flag for your opencode version) via env.
-  // `--file` (opencode's prompt attachment flag) is a yargs *array* option, so it must
-  // come AFTER the positional message — placed before it, it would greedily swallow the
-  // prompt as another filename.
-  const agentArgv = [
-    'run', ...(process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), prompt || '',
-    ...promptImageFiles.flatMap((f) => ['--file', f]),
-  ];
+  const agentArgv = agentRunArgv(prompt || '', promptImageFiles,
+    (process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean));
   // Token/cost and MCP-call evidence, collected the same way on the success and the
   // failure path. Extracted because every failed run in the corpus lost all of it —
   // and with diagnostics in play that matters more, since "429 at minute 2 with 0
@@ -451,7 +446,7 @@ export async function runPipeline(
   const collectRunEvidence = async (): Promise<{ stats: Stats | null; tools: ToolUsage | null }> => {
     let stats: Stats | null = null;
     try {
-      const text = await capture('opencode', ['stats'], appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
+      const text = await capture('opencode', statsArgv(), appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
       stats = parseOpencodeStats(text);
       stats.model = cfg.model;
       stats.updatedAt = new Date().toISOString();

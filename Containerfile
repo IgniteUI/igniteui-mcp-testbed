@@ -28,10 +28,16 @@ RUN apt-get update \
 # run `npm run diagnostics:replay`.
 ARG IGNITEUI_CLI_VERSION=15.8.2
 ARG IGNITEUI_THEMING_VERSION=29.0.0
-# OPENCODE_PKG: `opencode-ai` is the 1.x line; `@opencode/cli` is 2.x (probe only for now).
-ARG OPENCODE_PKG=opencode-ai
-ARG OPENCODE_VERSION=1.19.3
+# OPENCODE_PKG: `@opencode/cli` is the 2.x line; `opencode-ai` is 1.x, still buildable for
+# A/B (`--build-arg OPENCODE_PKG=opencode-ai --build-arg OPENCODE_VERSION=1.19.3`).
+# src/pipeline/opencode-cli.ts picks the CLI shape from `opencode --version` at runtime.
+ARG OPENCODE_PKG=@opencode/cli
+ARG OPENCODE_VERSION=2.0.32
 RUN npm install -g ${OPENCODE_PKG}@${OPENCODE_VERSION} igniteui-cli@${IGNITEUI_CLI_VERSION} igniteui-theming@${IGNITEUI_THEMING_VERSION}
+# 2.x: make private servers the CLI default. Every call the testbed makes already passes
+# --standalone; this catches any that don't, which would otherwise start a shared daemon
+# that outlives the call and keeps that call's XDG_DATA_HOME and provider keys.
+RUN if opencode service --help >/dev/null 2>&1; then opencode service set disabled true; fi
 
 # Bake the resolved versions into the build log — "which versions is this image?" is
 # otherwise only answerable by running the image.
