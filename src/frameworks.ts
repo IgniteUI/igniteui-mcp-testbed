@@ -56,7 +56,10 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
     // `ng` isn't global in the container; npx resolves the local node_modules/.bin/ng.
     // `--poll`: inotify doesn't fire across the Podman bind mount, so the watcher
     // must poll or edits never trigger a rebuild (stale routes / no hot reload).
-    dev: { cmd: 'npx', argv: ['ng', 'serve', '--host', '0.0.0.0', '--port', '{{port}}', '--poll', '1500'] },
+    // `CI=1` disables Angular's build cache (default cache environment: "local"), which
+    // skips Vite's dependency prebundling — under `--poll` on the bind mount that prebundle
+    // never finishes and every request hangs, even on a stock `ng new` app.
+    dev: { cmd: 'npx', argv: ['ng', 'serve', '--host', '0.0.0.0', '--port', '{{port}}', '--poll', '1500'], env: { CI: '1' } },
   },
 
   react: {

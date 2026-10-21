@@ -15,6 +15,23 @@ test('app renders a non-empty body', async ({ page }) => {
   // WebSocket open, so the network never goes idle. A fixed pause lets custom elements
   // upgrade before we read the rendered text.
   await page.waitForTimeout(2500);
-  const text = (await page.locator('body').innerText()).trim();
+  // innerText stops at shadow roots, and a Web Components app renders entirely inside
+  // its root element's shadow DOM — so walk open shadow roots and collect the text.
+  const text = await page.evaluate(() => {
+    const parts: string[] = [];
+    const walk = (root: Node) => {
+      for (const n of Array.from(root.childNodes)) {
+        if (n.nodeType === Node.TEXT_NODE) parts.push(n.textContent || '');
+        else if (n.nodeType === Node.ELEMENT_NODE) {
+          const el = n as Element;
+          if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
+          if (el.shadowRoot) walk(el.shadowRoot);
+          walk(el);
+        }
+      }
+    };
+    walk(document.body);
+    return parts.join(' ').trim();
+  });
   expect(text.length, 'app body rendered empty').toBeGreaterThan(0);
 });
