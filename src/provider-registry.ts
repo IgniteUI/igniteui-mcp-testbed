@@ -180,6 +180,11 @@ export function getFramework(id: string): FrameworkDef | undefined {
   return FRAMEWORKS[id] ?? externalFrameworks.get(id);
 }
 
+/** Every registered framework id: built-ins, then those owned by loaded packs. */
+export function frameworkIds(): string[] {
+  return [...Object.keys(FRAMEWORKS), ...externalFrameworks.keys()];
+}
+
 /** Read all *.json files from PROVIDERS_DIR and register them. */
 export function loadAll(): void {
   if (!fs.existsSync(PROVIDERS_DIR)) return;
