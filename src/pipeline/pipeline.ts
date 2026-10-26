@@ -556,6 +556,14 @@ export async function runPipeline(
   if (modelDiag) {
     diagnostics = [...diagnostics, modelDiag];
     emit('diagnostics', { diagnostics });
+    // The run is already an `error`; building and testing the wrong model's output is wasted time.
+    if (modelDiag.severity === 'fatal') {
+      emit('log', 'skipping build, screenshots and tests: the agent ran on a different model');
+      await killWatcher('opencode');
+      emit('step', { step: 'cleanup' });
+      await cleanupAppDir(appDir, emit);
+      return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], diagnostics };
+    }
   }
 
   // 7. Now that edits are done, build the app once and screenshot every route.

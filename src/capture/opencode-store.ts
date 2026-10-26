@@ -4,19 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Stats, Tokens } from '../types.ts';
 
-// opencode's SQLite store, read the same way for both schemas it has shipped:
-//
-//  1.x  `part` table, one row per message part; tool parts are
-//       { type:'tool', tool, state:{ status, input, metadata, time:{start,end} } }.
-//  2.x  no `part` table. `session_message` rows (`type` user|assistant|system|idle) hold
-//       the parts inside an assistant row's `data.content[]`:
-//       { type:'tool', name, state:{ status, input, metadata }, time:{created,ran,completed} },
-//       and the row's `data` carries `tokens`, `cost` and `model:{id, providerID}`.
-//       With Code Mode on, MCP calls run inside one `execute` tool and are listed in its
-//       `state.metadata.toolCalls[]` as `<server>.<tool>`.
-//
-// Evidence: scripts/fixtures/opencode-probe/FINDINGS.md. Everything opens read-only:
-// opencode may still hold the db open, and we must never take a write lock on its store.
+// opencode's SQLite store, for both schemas it has shipped: 1.x `part` rows, 2.x tool parts
+// inside `session_message.data.content[]` (see scripts/fixtures/opencode-probe/FINDINGS.md).
+// Always opened read-only: opencode may still hold the db open.
 
 const DB_REL = path.join('opencode', 'opencode.db');
 
@@ -38,9 +28,7 @@ export interface Store {
   close(): void;
 }
 
-// Code Mode's own helpers, called inside `execute` next to the MCP tools: `search`, and
-// the built-in `opencode.*` namespace (e.g. `opencode.list_mcp_resources`), which stays in
-// Code Mode even when every MCP server is configured with `codemode:false`.
+// Code Mode's own helpers (`opencode.*` stays in Code Mode even with `codemode:false`).
 const CODEMODE_INTERNAL = new Set(['search']);
 const CODEMODE_INTERNAL_NS = new Set(['opencode']);
 
@@ -48,14 +36,11 @@ const CODEMODE_INTERNAL_NS = new Set(['opencode']);
 export async function openStore(dataDir: string): Promise<Store | null> {
   const dbPath = path.join(dataDir, DB_REL);
   if (!fs.existsSync(dbPath)) return null;
-  // Lazily imported (like playwright in src/capture/screenshots.ts) so a runtime without
-  // it degrades instead of failing at module load.
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(dbPath, { readOnly: true });
   const tables = new Set((db.prepare("select name from sqlite_master where type='table'").all() as any[])
     .map((r) => r.name));
-  // 1.19 already creates an EMPTY `session_message` next to the `part` table it still
-  // writes to, so table presence alone picks the wrong reader there.
+  // 1.19 ships an empty `session_message` next to the `part` table it writes to.
   const v2HasRows = tables.has('session_message')
     && !!db.prepare('select 1 from session_message limit 1').get();
   const schema: StoreSchema | null = tables.has('session_message') && (v2HasRows || !tables.has('part'))
@@ -93,7 +78,7 @@ function partCalls(db: any, since: number, newest?: number): StoreToolCall[] {
     const state = part.state || {};
     const start = num(state.time?.start), end = num(state.time?.end);
     calls.push({
-      at: start ?? Number(row.time_created) ?? 0,
+      at: start ?? Number(row.time_created),
       tool: String(part.tool),
       input: state.input,
       skill: state.input?.name || state.metadata?.name || null,
@@ -130,8 +115,7 @@ function messageCalls(db: any, since: number, newest?: number): StoreToolCall[] 
         ok: state.status !== 'error',
         ms: ran != null && done != null ? done - ran : null,
       });
-      // Code Mode: surface each MCP call made inside `execute` under its 1.x-style name
-      // (`<server>_<tool>`), so it is classified and counted like a direct call.
+      // Code Mode: count each MCP call inside `execute` under its `<server>_<tool>` name.
       if (c.name === 'execute') {
         for (const inner of state.metadata?.toolCalls || []) {
           const name = String(inner?.tool || '');
@@ -156,44 +140,6 @@ export interface StoreUsage {
   stats: Stats;
   /** `provider/model` ids the assistant messages actually ran on. */
   models: string[];
-}
-
-/**
- * Tokens, cost and the models used, summed from the 2.x store's assistant messages —
- * 2.x `opencode stats` no longer reports cost and its layout can't be parsed. Null on a
- * 1.x store, whose caller keeps using `opencode stats`.
- */
-export function readUsage(store: Store, since: number): StoreUsage | null {
-  if (store.schema !== 'session_message') return null;
-  const tokens: Tokens = { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 };
-  const perModel: NonNullable<Stats['perModel']> = {};
-  let cost = 0, assistant = 0;
-  for (const row of assistantRows(store.db, since)) {
-    const m = row.data;
-    const t = m.tokens || {};
-    const cache = typeof t.cache === 'number' ? t.cache : (Number(t.cache?.read) || 0) + (Number(t.cache?.write) || 0);
-    const add: Tokens = {
-      input: Number(t.input) || 0, output: Number(t.output) || 0, reasoning: Number(t.reasoning) || 0, cache, total: 0,
-    };
-    add.total = add.input + add.output + add.reasoning + add.cache;
-    const model = m.model?.providerID && m.model?.id ? `${m.model.providerID}/${m.model.id}` : 'unknown';
-    const pm = perModel[model] || (perModel[model] = { tokens: { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 }, cost: 0 });
-    for (const k of Object.keys(add) as Array<keyof Tokens>) { tokens[k] += add[k]; pm.tokens[k] += add[k]; }
-    pm.cost += Number(m.cost) || 0;
-    cost += Number(m.cost) || 0;
-    assistant++;
-  }
-  const user = Number((store.db.prepare("select count(*) n from session_message where type = 'user' and time_created >= ?").get(since) as any)?.n) || 0;
-  return {
-    stats: {
-      tokens,
-      cost: { amount: cost, currency: 'USD', available: true },
-      messages: { total: user + assistant, user, assistant },
-      perModel,
-      parsed: true,
-    },
-    models: Object.keys(perModel).filter((m) => m !== 'unknown'),
-  };
 }
 
 export interface StoreMessage {
@@ -230,4 +176,31 @@ export function readMessages(store: Store, since: number): StoreMessage[] {
     });
   }
   return out;
+}
+
+/** Tokens, cost and models used, summed from the 2.x messages. Null on 1.x (use `opencode stats`). */
+export function readUsage(store: Store, since: number): StoreUsage | null {
+  if (store.schema !== 'session_message') return null;
+  const zero = (): Tokens => ({ input: 0, output: 0, reasoning: 0, cache: 0, total: 0 });
+  const tokens = zero();
+  const perModel: NonNullable<Stats['perModel']> = {};
+  let cost = 0, user = 0, assistant = 0;
+  for (const m of readMessages(store, since)) {
+    if (m.role === 'user') { user++; continue; }
+    assistant++;
+    const pm = perModel[m.model || 'unknown'] ||= { tokens: zero(), cost: 0 };
+    for (const k of Object.keys(m.tokens) as Array<keyof Tokens>) { tokens[k] += m.tokens[k]; pm.tokens[k] += m.tokens[k]; }
+    pm.cost += m.cost;
+    cost += m.cost;
+  }
+  return {
+    stats: {
+      tokens,
+      cost: { amount: cost, currency: 'USD', available: true },
+      messages: { total: user + assistant, user, assistant },
+      perModel,
+      parsed: true,
+    },
+    models: Object.keys(perModel).filter((m) => m !== 'unknown'),
+  };
 }

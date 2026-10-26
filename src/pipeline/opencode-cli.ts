@@ -11,23 +11,29 @@ let version: string | null = null;
 /** e.g. `2.0.32`, or `unknown` when opencode isn't on PATH (host-side dev). */
 export function opencodeVersion(): string {
   if (version == null) {
-    try {
-      const out = execFileSync('opencode', ['--version'], { encoding: 'utf8', timeout: 15000 });
-      version = /(\d+\.\d+\.\d+)/.exec(out)?.[1] || 'unknown';
-    } catch {
-      version = 'unknown';
+    version = 'unknown';
+    // A cold container can time out the first probe; retry before settling on `unknown`.
+    for (let attempt = 0; attempt < 3 && version === 'unknown'; attempt++) {
+      try {
+        const out = execFileSync('opencode', ['--version'], { encoding: 'utf8', timeout: 15000 });
+        version = /(\d+\.\d+\.\d+)/.exec(out)?.[1] || 'unknown';
+      } catch (e: any) {
+        if (e?.code === 'ENOENT') break;
+      }
     }
   }
   return version;
 }
 
+// An unknown version means 2.x, the image's default: guessing 1.x would drop
+// `--standalone` and write a config 2.x half-ignores, with nothing reporting it.
 export function opencodeMajor(): number {
   const forced = Number(process.env.OPENCODE_MAJOR);
   if (forced) return forced;
-  return Number(opencodeVersion().split('.')[0]) || 1;
+  return Number(opencodeVersion().split('.')[0]) || 2;
 }
 
-const isV2 = () => opencodeMajor() >= 2;
+export const isV2 = () => opencodeMajor() >= 2;
 
 // Code Mode (2.x default) hides every MCP tool behind one `execute` tool. Off by default so
 // tool usage and token counts stay comparable with 1.x runs; OPENCODE_CODEMODE=1 keeps it.

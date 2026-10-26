@@ -53,7 +53,8 @@ if (process.env.MATRIX_VALIDATE === '1') {
   }
 }
 
-console.log(`opencode: v${opencodeVersion()}`);
+if (opencodeVersion() === 'unknown') console.warn('opencode: version unknown (probe failed) — assuming 2.x; set OPENCODE_MAJOR to override');
+else console.log(`opencode: v${opencodeVersion()}`);
 
 // Settle any records left 'running' by a previous container that stopped mid-run.
 try {

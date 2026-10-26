@@ -441,7 +441,8 @@ export interface HeadlessResult {
   screenshots: Screenshot[];
   routes: string[];
   skipped: SkippedRoute[];
-  appReady: boolean;
+  /** Absent when the build was never attempted (e.g. the agent ran on the wrong model). */
+  appReady?: boolean;
   appError?: string;
   tests?: TestResult | null;
   tools?: ToolUsage | null;

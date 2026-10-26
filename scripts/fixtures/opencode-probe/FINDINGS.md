@@ -33,7 +33,7 @@ passwords redacted. Baseline matrix on 1.19.3: `mx-20261020052958-74ae`, 2/2 suc
 | Store | no `part` table. Tool calls live in `session_message` (`type` = user/assistant/system/idle, `seq`, `time_created`, `data`); assistant `data.content[]` items `{type:'tool', id, name, state:{status,input,content,metadata}, time:{created,ran,completed}}`; `data.tokens {input,output,reasoning,cache:{read,write}}`, `data.cost`, `data.model {id,providerID}`. Sessions in `session_v2` |
 | Tool names | `bash` -> `shell`; skill input is `{id}` (was `{name}`), `metadata.name` still set; built-in skills `opencode`, `report`. Seen in a real matrix run (gpt-6-luna): `read`, `glob`, `grep`, `shell`, `patch`, `skill`, `execute` |
 | Skills | `.agents/skills/` and `.claude/skills/` both discovered; `AGENTS.md` loaded |
-| `--file` | `--file, -f string` (single string, not a yargs array); missing file -> `Error: File not found: …`, exit 1 |
+| `--file` | `--file, -f string`, but **repeatable**: `--file a --file b --file c` attaches all three (text files are inlined into the message as `<file name=…>`, images go to `files[]`); also works before the message. A comma list fails (`File not found: a,b,c`) and extra names after one `--file` become prompt text. Missing file -> `Error: File not found: …`, exit 1 |
 | `--format json` | NDJSON events on stdout; provider errors arrive typed: `{"type":"error","error":{"type":"provider.auth","status":401,"message":…}}` |
 | Errors (text) | auth `Error: invalid x-api-key` (exit 1); network retries ~11x then `Error: ConnectionRefused: Unable to connect. …` |
 | `opencode stats` | entirely new prose/heatmap layout, no cost; `parseOpencodeStats` will not work |
@@ -52,4 +52,4 @@ passwords redacted. Baseline matrix on 1.19.3: `mx-20261020052958-74ae`, 2/2 suc
    reader; replace `opencode stats` parsing with summed message tokens/cost.
 6. Interactive: `opencode serve` instead of `opencode web`; stats.ts moves to `/api/*` with
    Basic auth.
-7. `--file` placement logic changes (single-string flag; repeat it per image — to verify).
+7. `--file` repeated once per image works on 2.x as on 1.x (verified 2026-10-26).

@@ -5,12 +5,7 @@ import * as path from 'path';
 import * as http from 'http';
 import { collectToolUsage } from './capture/tool-usage.ts';
 import { openStore, readMessages } from './capture/opencode-store.ts';
-import { opencodeMajor, serverAuthHeaders } from './pipeline/opencode-cli.ts';
-
-// 2.x moved the API under /api (Basic auth) and its message endpoints changed shape; the
-// old /event and /session paths now serve the web UI's HTML with a 200. On 2.x the event
-// stream is only a "something changed" signal and messages are read from the store.
-const isV2 = () => opencodeMajor() >= 2;
+import { isV2, serverAuthHeaders } from './pipeline/opencode-cli.ts';
 import type { Tokens, Stats, ToolContext, ToolUsage } from './types.ts';
 
 const EMPTY_TOKENS = (): Tokens => ({ input: 0, output: 0, reasoning: 0, cache: 0, total: 0 });
@@ -104,6 +99,7 @@ export class StatsCollector {
   toolsBusy: boolean;
   warnedTools: boolean;
   storeBusy: boolean;
+  storeAgain: boolean;
   storeTimer: NodeJS.Timeout | null;
   _onUpdate?: (snap: Stats) => void;
   _onTools?: (usage: ToolUsage) => void;
@@ -134,6 +130,7 @@ export class StatsCollector {
     this.toolsBusy = false;
     this.warnedTools = false;
     this.storeBusy = false;
+    this.storeAgain = false;
     this.storeTimer = null;
   }
 
@@ -173,6 +170,9 @@ export class StatsCollector {
     if (this.req) { try { this.req.destroy(); } catch (_) {} this.req = null; }
     if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
     if (this.storeTimer) { clearTimeout(this.storeTimer); this.storeTimer = null; }
+    // 2.x tokens come from the store, so the debounced read just cancelled may hold the
+    // session's last message.
+    if (isV2()) this._readStore();
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = null; this._writeNow(); }
   }
 
@@ -266,13 +266,15 @@ export class StatsCollector {
 
   _upsert(m: NormMsg): boolean {
     if (!m.model && this.model) m.model = this.model;
+    const prev = this.messages.get(m.id);
     this.messages.set(m.id, m);
+    const changed = !prev || JSON.stringify(prev) !== JSON.stringify(m);
 
     if (m.role === 'assistant' && m.completed && !this.loggedIds.has(m.id)) {
       this.loggedIds.add(m.id);
       this._appendTimeline(m);
     }
-    return true;
+    return changed;
   }
 
   _aggregate(): Stats {
@@ -351,7 +353,9 @@ export class StatsCollector {
   }
 
   _readStore(): void {
-    if (!this.toolCtx || this.storeBusy) return;
+    if (!this.toolCtx) return;
+    // A read requested mid-read runs right after it, rather than waiting for the 30s tick.
+    if (this.storeBusy) { this.storeAgain = true; return; }
     const { dataDir, since } = this.toolCtx;
     this.storeBusy = true;
     openStore(dataDir)
@@ -366,7 +370,10 @@ export class StatsCollector {
         if (changed) this._scheduleWrite();
       })
       .catch(() => {})
-      .finally(() => { this.storeBusy = false; });
+      .finally(() => {
+        this.storeBusy = false;
+        if (this.storeAgain) { this.storeAgain = false; this._readStore(); }
+      });
   }
 
   _backfill(): void {
