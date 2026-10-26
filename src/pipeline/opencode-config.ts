@@ -28,7 +28,13 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
   // sandbox, so allowing everything (incl. external dirs) is the right default and
   // also spares the interactive opencode-web user from approval prompts.
   if (v2) {
-    doc.permissions = [{ action: '*', resource: '*', effect: 'allow' }];
+    // Except `websearch`, which always fails in the container ("Web search cancelled") and
+    // makes `opencode run` exit 1 on an otherwise successful session. A deny removes the tool
+    // (the agent falls back to `webfetch`); rules apply in order, so it must come after the allow.
+    doc.permissions = [
+      { action: '*', resource: '*', effect: 'allow' },
+      { action: 'websearch', resource: '*', effect: 'deny' },
+    ];
     doc.mcp = { servers: toV2Servers(mcp) };
   } else {
     doc.permission = 'allow';

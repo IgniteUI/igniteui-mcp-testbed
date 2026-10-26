@@ -8,11 +8,11 @@ import { translate } from '../mcp-translate.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
-import { agentRunArgv, serverArgv, serverEnv, serverPassword, statsArgv } from './opencode-cli.ts';
+import { agentRunArgv, isV2, serverArgv, serverEnv, serverPassword, statsArgv } from './opencode-cli.ts';
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import { openStore, readUsage } from '../capture/opencode-store.ts';
 import {
-  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor,
+  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor, AGENT_SERVER_PORT, MCP_READY_TIMEOUT_MS,
   LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
@@ -21,6 +21,7 @@ import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts'
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
+import { waitForMcp } from './mcp-ready.ts';
 import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
@@ -427,10 +428,20 @@ export async function runPipeline(
 
   // 6b. Headless: run the agent once with the prompt — with NO dev server running.
   emit('step', { step: 'agent' });
-  const ocEnv = providerEnvFor(cfg.model, cfg.apiKey);
+  const ocEnv: Record<string, string> = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
   if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
+  // 2.x: run against a private server so the prompt can wait for the MCP servers to connect
+  // (see mcp-ready.ts). The server makes the provider calls, so it gets the same env.
+  let agentServer: string | null = null;
+  if (isV2()) {
+    await killWatcher('opencode');
+    spawnWatcher('opencode', 'opencode', serverArgv(AGENT_SERVER_PORT, '127.0.0.1'), appDir, ocEnv);
+    await waitForPort(AGENT_SERVER_PORT, 30000, emit);
+    agentServer = `http://127.0.0.1:${AGENT_SERVER_PORT}`;
+    if (mcpServers.length) await waitForMcp(AGENT_SERVER_PORT, appDir, mcpServers, MCP_READY_TIMEOUT_MS, emit, isCancelled);
+  }
   emit('log', `agent (one-shot): ${prompt}`);
   if (promptImageFiles.length) {
     emit('log', `with ${promptImageFiles.length} image attachment(s): ${promptImageFiles.map((f) => path.basename(f)).join(', ')}`);
@@ -439,7 +450,7 @@ export async function runPipeline(
   // prompt (auth / confirmation); heartbeat shows liveness if it streams nothing.
   // Extra args (e.g. a non-interactive/log flag for your opencode version) via env.
   const agentArgv = agentRunArgv(prompt || '', promptImageFiles,
-    (process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean));
+    (process.env.OPENCODE_RUN_ARGS || '').split(' ').filter(Boolean), agentServer);
   // Token/cost and MCP-call evidence, collected the same way on the success and the
   // failure path. Extracted because every failed run in the corpus lost all of it —
   // and with diagnostics in play that matters more, since "429 at minute 2 with 0
@@ -465,8 +476,9 @@ export async function runPipeline(
     } catch (e: any) {
       emit('log', `warning: could not read usage from opencode.db (${e.message})`);
     }
-    // 1.x: the store has no per-message cost, so parse `opencode stats`.
-    if (!stats) {
+    // 1.x: the store has no per-message cost, so parse `opencode stats`. 2.x's report has
+    // no cost and a layout parseOpencodeStats can't read, so there the store is the only source.
+    if (!stats && !isV2()) {
       try {
         const text = await capture('opencode', statsArgv(), appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
         stats = parseOpencodeStats(text);
@@ -526,8 +538,10 @@ export async function runPipeline(
         diag.noteResume(silentMs);
       },
     });
+    await killWatcher('opencode');
     diagnostics = await diag.finish({ exitCode: 0 });
   } catch (err: any) {
+    await killWatcher('opencode');
     diagnostics = await diag.finish({ exitCode: err.timedOut ? null : 1, timedOut: !!err.timedOut, timeoutMs: AGENT_TIMEOUT_MS });
     for (const d of diagnostics) {
       emit('log', `${d.severity === 'fatal' ? 'error' : 'warning'}: ${d.title} — ${d.advice}`);

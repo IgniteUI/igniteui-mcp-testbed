@@ -52,10 +52,12 @@ export const OPENCODE_SERVER_PASSWORD = process.env.OPENCODE_SERVER_PASSWORD
 // entry's XDG_DATA_HOME and provider key would be silently ignored.
 const standalone = (): string[] => (isV2() ? ['--standalone'] : []);
 
-export function agentRunArgv(prompt: string, files: string[], extra: string[] = []): string[] {
+/** With `server`, the run attaches to that `opencode serve` instead of a private one. */
+export function agentRunArgv(prompt: string, files: string[], extra: string[] = [], server: string | null = null): string[] {
   // `--file` goes AFTER the message: on 1.x it is a yargs array option that would
   // otherwise swallow the prompt as another filename.
-  return ['run', ...standalone(), ...extra, prompt, ...files.flatMap((f) => ['--file', f])];
+  const target = server ? ['--server', server] : standalone();
+  return ['run', ...target, ...extra, prompt, ...files.flatMap((f) => ['--file', f])];
 }
 
 export function statsArgv(): string[] {
@@ -63,8 +65,8 @@ export function statsArgv(): string[] {
 }
 
 /** The long-lived interactive server: `opencode web` on 1.x, `opencode serve` on 2.x. */
-export function serverArgv(port: number): string[] {
-  return [isV2() ? 'serve' : 'web', '--hostname', '0.0.0.0', '--port', String(port)];
+export function serverArgv(port: number, hostname = '0.0.0.0'): string[] {
+  return [isV2() ? 'serve' : 'web', '--hostname', hostname, '--port', String(port)];
 }
 
 export function serverEnv(): Record<string, string> {

@@ -38,14 +38,20 @@ export async function openStore(dataDir: string): Promise<Store | null> {
   if (!fs.existsSync(dbPath)) return null;
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(dbPath, { readOnly: true });
-  const tables = new Set((db.prepare("select name from sqlite_master where type='table'").all() as any[])
-    .map((r) => r.name));
-  // 1.19 ships an empty `session_message` next to the `part` table it writes to.
-  const v2HasRows = tables.has('session_message')
-    && !!db.prepare('select 1 from session_message limit 1').get();
-  const schema: StoreSchema | null = tables.has('session_message') && (v2HasRows || !tables.has('part'))
-    ? 'session_message'
-    : tables.has('part') ? 'part' : null;
+  let schema: StoreSchema | null;
+  try {
+    const tables = new Set((db.prepare("select name from sqlite_master where type='table'").all() as any[])
+      .map((r) => r.name));
+    // 1.19 ships an empty `session_message` next to the `part` table it writes to.
+    const v2HasRows = tables.has('session_message')
+      && !!db.prepare('select 1 from session_message limit 1').get();
+    schema = tables.has('session_message') && (v2HasRows || !tables.has('part'))
+      ? 'session_message'
+      : tables.has('part') ? 'part' : null;
+  } catch (e) {
+    try { db.close(); } catch (_) {}
+    throw e;
+  }
   if (!schema) {
     db.close();
     throw new Error('no known opencode schema (neither `part` nor `session_message`)');
@@ -93,8 +99,8 @@ function partCalls(db: any, since: number, newest?: number): StoreToolCall[] {
 function assistantRows(db: any, since: number, newest?: number): Array<{ time_created: number; data: any }> {
   // A message holds at least one call per tool part, so N messages cover >= N calls.
   const rows = (newest
-    ? db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by seq desc limit ?").all(since, newest)
-    : db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by seq asc").all(since)
+    ? db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created desc, seq desc limit ?").all(since, newest)
+    : db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created asc, seq asc").all(since)
   ) as Array<{ time_created: number; data: string }>;
   return rows.map((r) => ({ time_created: Number(r.time_created), data: parse(r.data) })).filter((r) => r.data);
 }
@@ -156,7 +162,7 @@ export interface StoreMessage {
 export function readMessages(store: Store, since: number): StoreMessage[] {
   if (store.schema !== 'session_message') return [];
   const rows = store.db.prepare(
-    "select id, session_id, type, data from session_message where type in ('user', 'assistant') and time_created >= ? order by seq asc",
+    "select id, session_id, type, data from session_message where type in ('user', 'assistant') and time_created >= ? order by time_created asc, seq asc",
   ).all(since) as Array<{ id: string; session_id: string; type: 'user' | 'assistant'; data: string }>;
   const out: StoreMessage[] = [];
   for (const r of rows) {

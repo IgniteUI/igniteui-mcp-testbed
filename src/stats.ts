@@ -367,7 +367,11 @@ export class StatsCollector {
         } finally {
           store.close();
         }
-        if (changed) this._scheduleWrite();
+        if (!changed) return;
+        // A read that lands after stop() belongs to a replaced collector: stats.json and
+        // the live feed now belong to the next session, so only the run's record is updated.
+        if (this.stopped) { if (this._onUpdate) { try { this._onUpdate(this.snapshot()); } catch (_) {} } }
+        else this._scheduleWrite();
       })
       .catch(() => {})
       .finally(() => {

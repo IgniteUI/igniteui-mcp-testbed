@@ -1011,7 +1011,10 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   process.env.OPENCODE_MAJOR = '2';
   writeOpencodeConfig(cfg, block, dir);
   const v2 = read();
-  check('config 2.x: native permissions', v2.permissions, [{ action: '*', resource: '*', effect: 'allow' }]);
+  check('config 2.x: native permissions', v2.permissions, [
+    { action: '*', resource: '*', effect: 'allow' },
+    { action: 'websearch', resource: '*', effect: 'deny' },
+  ]);
   check('config 2.x: no 1.x permission key', v2.permission, undefined);
   check('config 2.x: servers carry disabled + codemode:false', v2.mcp.servers['igniteui-theming'],
     { type: 'local', command: ['igniteui-theming-mcp'], environment: { A: '1' }, disabled: true, codemode: false });
