@@ -7,7 +7,8 @@ import type { Emit } from '../types.ts';
 // 2.x `opencode run` sends the prompt before its MCP servers have connected (`ig mcp` takes
 // ~8s), and an agent that looks for its tools in that window concludes they don't exist.
 // Poll the server's `GET /api/mcp` (pending → connected | failed | needs_auth) until every
-// enabled server has settled. A timeout only warns: the run goes ahead either way.
+// enabled server has settled. A timeout only warns: the run goes ahead either way. A cancel
+// rejects, so the pipeline never prompts a server that is being torn down.
 export async function waitForMcp(
   port: number,
   directory: string,
@@ -20,10 +21,21 @@ export async function waitForMcp(
   const started = Date.now();
   const secs = () => ((Date.now() - started) / 1000).toFixed(1);
   const pending = new Set(servers);
+  let loggedStatus = false;
   while (pending.size) {
-    if (isCancelled && isCancelled()) return;
+    if (isCancelled && isCancelled()) throw new Error('cancelled while waiting for MCP servers');
     try {
       const res = await fetch(url, { headers: serverAuthHeaders(), signal: AbortSignal.timeout(5000) });
+      // A 401/403 is a server-password mismatch, not a slow MCP server, and it won't
+      // recover: stop waiting rather than let the timeout warning blame the servers.
+      if (res.status === 401 || res.status === 403) {
+        emit('log', `warning: GET /api/mcp returned HTTP ${res.status} (server password mismatch?); prompting without waiting for MCP`);
+        return;
+      }
+      if (!res.ok && !loggedStatus) {
+        loggedStatus = true;
+        emit('log', `warning: GET /api/mcp returned HTTP ${res.status}; MCP readiness can't be checked yet`);
+      }
       // The first answers can be an empty list, before the location's config has loaded.
       const body: any = res.ok ? await res.json() : null;
       for (const s of body?.data || []) {

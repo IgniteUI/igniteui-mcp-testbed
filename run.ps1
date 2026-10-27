@@ -205,10 +205,13 @@ foreach ($v in $keyVars) {
   if (Test-Path "env:$v") { $envFlags += @('-e', $v) }
 }
 # Non-secret tunables: diagnostics tunables (src/config.ts): forwarded when set so a run can be tuned, and so DIAGNOSTICS_STREAM_DEBUG=1 can be used to answer which stream provider errors actually arrive on. Values are plain numbers/flags, not secrets.
-$diagVars = @('DIAGNOSTICS_STREAM_DEBUG', 'AGENT_STALL_MS', 'AGENT_LOOP_REPEATS', 'DIAGNOSTIC_AGGREGATE_THRESHOLD', 'AGENT_TIMEOUT_MS',  'SCREENSHOT_NAV_TIMEOUT_MS', 'SCREENSHOT_ROUTE_TIMEOUT_MS', 'OPENCODE_CODEMODE')
+$diagVars = @('DIAGNOSTICS_STREAM_DEBUG', 'AGENT_STALL_MS', 'AGENT_LOOP_REPEATS', 'DIAGNOSTIC_AGGREGATE_THRESHOLD', 'AGENT_TIMEOUT_MS',  'SCREENSHOT_NAV_TIMEOUT_MS', 'SCREENSHOT_ROUTE_TIMEOUT_MS', 'OPENCODE_CODEMODE', 'OPENCODE_MAJOR', 'MCP_READY_TIMEOUT_MS', 'AGENT_SERVER_PORT')
 foreach ($v in $diagVars) {
   if (Test-Path "env:$v") { $envFlags += @('-e', "$v=$((Get-Item "env:$v").Value)") }
 }
+# The opencode 2.x server password is a secret: forwarded by name so the value stays off
+# the podman command line. Unset means the container generates its own.
+if ($env:OPENCODE_SERVER_PASSWORD) { $envFlags += @('-e', 'OPENCODE_SERVER_PASSWORD') }
 
 # MCP server tuning, forwarded the same way. MCP_CMD_<CLASS> swaps that class's server
 # for a locally-built one installed in the image (e.g.

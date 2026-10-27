@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { Stats, Tokens } from '../types.ts';
 
 // opencode's SQLite store, for both schemas it has shipped: 1.x `part` rows, 2.x tool parts
-// inside `session_message.data.content[]` (see scripts/fixtures/opencode-probe/FINDINGS.md).
+// inside `session_message.data.content[]`.
 // Always opened read-only: opencode may still hold the db open.
 
 const DB_REL = path.join('opencode', 'opencode.db');
@@ -29,7 +29,6 @@ export interface Store {
 }
 
 // Code Mode's own helpers (`opencode.*` stays in Code Mode even with `codemode:false`).
-const CODEMODE_INTERNAL = new Set(['search']);
 const CODEMODE_INTERNAL_NS = new Set(['opencode']);
 
 /** Open the store read-only. Null when there is no db, no `node:sqlite`, or no known schema. */
@@ -97,7 +96,8 @@ function partCalls(db: any, since: number, newest?: number): StoreToolCall[] {
 }
 
 function assistantRows(db: any, since: number, newest?: number): Array<{ time_created: number; data: any }> {
-  // A message holds at least one call per tool part, so N messages cover >= N calls.
+  // N messages is only an approximate tail: a message can hold several tool parts or none
+  // (text-only), so it may yield more or fewer than N calls. Fine for the loop detector.
   const rows = (newest
     ? db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created desc, seq desc limit ?").all(since, newest)
     : db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created asc, seq asc").all(since)
@@ -126,7 +126,7 @@ function messageCalls(db: any, since: number, newest?: number): StoreToolCall[] 
         for (const inner of state.metadata?.toolCalls || []) {
           const name = String(inner?.tool || '');
           const dot = name.indexOf('.');
-          if (dot <= 0 || CODEMODE_INTERNAL.has(name) || CODEMODE_INTERNAL_NS.has(name.slice(0, dot))) continue;
+          if (dot <= 0 || CODEMODE_INTERNAL_NS.has(name.slice(0, dot))) continue;
           calls.push({
             at,
             tool: `${name.slice(0, dot)}_${name.slice(dot + 1)}`,

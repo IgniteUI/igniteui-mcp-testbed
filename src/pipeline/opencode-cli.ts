@@ -1,7 +1,6 @@
 'use strict';
 
-// The one place that knows how the 1.x and 2.x opencode CLIs differ. Evidence for every
-// 2.x branch is in scripts/fixtures/opencode-probe/FINDINGS.md.
+// The one place that knows how the 1.x and 2.x opencode CLIs differ.
 
 import { execFileSync } from 'child_process';
 import * as crypto from 'crypto';

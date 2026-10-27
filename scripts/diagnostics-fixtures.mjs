@@ -324,6 +324,12 @@ bothStreams('classify: prose unreachable endpoint, 1.19 wording',
 bothStreams('classify: prose unreachable endpoint, 2.x wording',
   '\x1b[91m\x1b[1mError: \x1b[0mConnectionRefused: Unable to connect. Is the computer able to access the url?',
   ['network', 'fatal', 'confirmed', 'network:text']);
+check('classify: unreachable endpoint title, 1.19 wording',
+  classifyAgentLine('\x1b[91m\x1b[1mError: \x1b[0mCannot connect to API: Unable to connect. Is the computer able to access the url?', 'stderr')?.title,
+  'Provider endpoint unreachable');
+check('classify: unreachable endpoint title, 2.x wording',
+  classifyAgentLine('\x1b[91m\x1b[1mError: \x1b[0mConnectionRefused: Unable to connect. Is the computer able to access the url?', 'stderr')?.title,
+  'Provider endpoint unreachable');
 check('classify: unrelated "unable to connect" prose stays unclassified',
   classifyAgentLine('Error: Unable to connect to database', 'stderr'), null);
 
@@ -957,7 +963,7 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   check('stats: total cost wins over avg/day', s.cost.amount, 0.42);
 }
 
-// opencode CLI shapes (FINDINGS.md): 2.x needs --standalone AFTER the subcommand, and
+// opencode CLI shapes: 2.x needs --standalone AFTER the subcommand, and
 // --file stays after the message on both lines.
 {
   const cli = await import('../src/pipeline/opencode-cli.ts');
@@ -982,6 +988,12 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   check('model: same model is no diagnostic', modelDiagnostic('openrouter/openai/gpt-6-luna', ['openrouter/openai/gpt-6-luna']), null);
   check('model: variant suffix is ignored', modelDiagnostic('openrouter/openai/gpt-6-luna#high', ['openrouter/openai/gpt-6-luna']), null);
   check('model: no messages means no verdict', modelDiagnostic('a/b', []), null);
+  check('model: a dated id for the configured one is the same model',
+    modelDiagnostic('anthropic/claude-sonnet-4-5', ['anthropic/claude-sonnet-4-5-20250929']), null);
+  check('model: so is the resolved id of a -latest alias',
+    modelDiagnostic('anthropic/claude-3-5-sonnet-latest', ['anthropic/claude-3-5-sonnet-20241022']), null);
+  check('model: provider case is not a difference', modelDiagnostic('OpenRouter/a/b', ['openrouter/a/b']), null);
+  check('model: a sibling that merely shares a prefix is not', modelDiagnostic('a/gpt-6', ['a/gpt-6-mini'])?.severity, 'fatal');
   const fb = modelDiagnostic('anthropic/no-such-model', ['opencode/minimax-m3.1-flash-free']);
   check('model: full fallback is fatal', [fb?.kind, fb?.severity], ['wrong-model', 'fatal']);
   check('model: and fails the run', deriveStatus([fb]), 'error');

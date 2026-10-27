@@ -699,18 +699,12 @@ async function deleteRun(id: string) {
 // single-entry matrix submission, prompting for the (never-stored) API key first.
 let pendingRerun: any = null;
 
-// A re-run POSTs into the ALREADY-RUNNING container, so it inherits that container's
-// MCP_CMD_* environment — those are read once at module load and nothing in the request
-// can change them. A run recorded against a locally-built server therefore re-runs
-// against the released one unless this container was started with the same override.
-// The record stays honest either way (redact() stamps the live env), but that is only
-// visible afterwards, so compare up-front and say so.
 function opencodeSummary(c: any): string {
   if (!c.opencodeVersion) return '—';
   return c.codemode == null ? c.opencodeVersion : `${c.opencodeVersion} · Code Mode ${c.codemode ? 'on' : 'off'}`;
 }
 
-// Same reasoning as the MCP binary: the version is fixed by the image, the Code Mode
+// Same reasoning as the MCP binary (rerunMcpWarning below): the version is fixed by the image, the Code Mode
 // switch by the container's env, and a re-run silently inherits both.
 function rerunOpencodeWarning(cfg: any, live: { opencodeVersion?: string; codemode?: boolean | null } | null): string {
   if (!live || !cfg.opencodeVersion || !live.opencodeVersion) return '';
@@ -722,6 +716,12 @@ function rerunOpencodeWarning(cfg: any, live: { opencodeVersion?: string; codemo
   return diffs.length ? `This container differs from the recorded run: ${diffs.join('; ')}.` : '';
 }
 
+// A re-run POSTs into the ALREADY-RUNNING container, so it inherits that container's
+// MCP_CMD_* environment — those are read once at module load and nothing in the request
+// can change them. A run recorded against a locally-built server therefore re-runs
+// against the released one unless this container was started with the same override.
+// The record stays honest either way (redact() stamps the live env), but that is only
+// visible afterwards, so compare up-front and say so.
 function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string {
   if (!live) return '';
   const recorded: Record<string, string> = cfg.mcpCommands || {};

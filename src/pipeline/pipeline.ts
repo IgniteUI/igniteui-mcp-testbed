@@ -16,7 +16,7 @@ import {
   LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
-import { spawnWatcher, killWatcher } from '../proc/watcher.ts';
+import { spawnWatcher, killWatcher, killAllWatchers } from '../proc/watcher.ts';
 import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts';
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
@@ -95,7 +95,7 @@ export async function runPipeline(
   // Clean any previous attempt. In matrix mode `appDir` is unique per entry, so
   // this is a no-op there; await the watchers' exit first so their file handles
   // are released before we delete (else rmrf races a dying dev server).
-  await killWatcher('app'); await killWatcher('opencode');
+  await killAllWatchers();
   await rmrf(appDir);
 
   // 1. Scaffold
@@ -436,9 +436,14 @@ export async function runPipeline(
   // (see mcp-ready.ts). The server makes the provider calls, so it gets the same env.
   let agentServer: string | null = null;
   if (isV2()) {
-    await killWatcher('opencode');
-    spawnWatcher('opencode', 'opencode', serverArgv(AGENT_SERVER_PORT, '127.0.0.1'), appDir, ocEnv);
-    await waitForPort(AGENT_SERVER_PORT, 30000, emit);
+    await killWatcher('opencode-agent');
+    // A survivor still bound here would answer waitForPort, and the agent would run against
+    // the previous entry's data dir, key and app dir.
+    if (!(await waitForPortFree(AGENT_SERVER_PORT, 15000))) {
+      throw new Error(`port ${AGENT_SERVER_PORT} is still in use by a previous agent server`);
+    }
+    spawnWatcher('opencode-agent', 'opencode', serverArgv(AGENT_SERVER_PORT, '127.0.0.1'), appDir, ocEnv);
+    await waitForPort(AGENT_SERVER_PORT, 30000, emit, isCancelled);
     agentServer = `http://127.0.0.1:${AGENT_SERVER_PORT}`;
     if (mcpServers.length) await waitForMcp(AGENT_SERVER_PORT, appDir, mcpServers, MCP_READY_TIMEOUT_MS, emit, isCancelled);
   }
@@ -538,10 +543,10 @@ export async function runPipeline(
         diag.noteResume(silentMs);
       },
     });
-    await killWatcher('opencode');
+    await killWatcher('opencode-agent');
     diagnostics = await diag.finish({ exitCode: 0 });
   } catch (err: any) {
-    await killWatcher('opencode');
+    await killWatcher('opencode-agent');
     diagnostics = await diag.finish({ exitCode: err.timedOut ? null : 1, timedOut: !!err.timedOut, timeoutMs: AGENT_TIMEOUT_MS });
     for (const d of diagnostics) {
       emit('log', `${d.severity === 'fatal' ? 'error' : 'warning'}: ${d.title} — ${d.advice}`);
@@ -557,7 +562,10 @@ export async function runPipeline(
       const evidence = await collectRunEvidence();
       agentErr.stats = evidence.stats;
       agentErr.tools = evidence.tools;
-      if (evidence.modelDiag) agentErr.diagnostics = [...(agentErr.diagnostics || []), evidence.modelDiag];
+      if (evidence.modelDiag) {
+        agentErr.diagnostics = [...(agentErr.diagnostics || []), evidence.modelDiag];
+        emit('diagnostics', { diagnostics: agentErr.diagnostics });
+      }
     }
     throw agentErr;
   }
@@ -573,7 +581,7 @@ export async function runPipeline(
     // The run is already an `error`; building and testing the wrong model's output is wasted time.
     if (modelDiag.severity === 'fatal') {
       emit('log', 'skipping build, screenshots and tests: the agent ran on a different model');
-      await killWatcher('opencode');
+      await killWatcher('opencode-agent');
       emit('step', { step: 'cleanup' });
       await cleanupAppDir(appDir, emit);
       return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], diagnostics };
@@ -599,7 +607,7 @@ export async function runPipeline(
   }
   emit('step', { step: 'screenshot' });
   if (!ready.ready) {
-    await killWatcher('app'); await killWatcher('opencode');
+    await killAllWatchers();
     emit('step', { step: 'cleanup' });
     await cleanupAppDir(appDir, emit);
     return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason, diagnostics };
@@ -645,7 +653,7 @@ export async function runPipeline(
   }
 
   // Free the ports before the next matrix entry reuses them.
-  await killWatcher('app'); await killWatcher('opencode');
+  await killAllWatchers();
   // Prune heavy regenerable dirs from the kept entry (screenshots already saved).
   emit('step', { step: 'cleanup' });
   await cleanupAppDir(appDir, emit);

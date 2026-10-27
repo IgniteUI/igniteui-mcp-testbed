@@ -7,10 +7,12 @@ import { LOG_DIR } from '../config.ts';
 import { terminateTree } from './exec.ts';
 import type { OutputStream } from './exec.ts';
 
-export type WatcherName = 'app' | 'opencode';
+export type WatcherName = 'app' | 'opencode' | 'opencode-agent';
 
-// Long-lived child processes for this session (one app, one opencode).
-export const procs: Record<WatcherName, ChildProcess | null> = { app: null, opencode: null };
+// Long-lived child processes for this session (one app, one interactive opencode, and on
+// 2.x the headless agent's private opencode server — kept apart so /api/status never
+// reports a matrix agent server as an interactive session).
+export const procs: Record<WatcherName, ChildProcess | null> = { app: null, opencode: null, 'opencode-agent': null };
 
 // Spawn a long-running watcher; tee its output to a log file. `detached:true` puts
 // it in its own process group so killWatcher can take down the WHOLE tree — `npm run
@@ -94,4 +96,8 @@ export async function killWatcher(name: WatcherName): Promise<void> {
   procs[name] = null;
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   await terminateTree(child);
+}
+
+export async function killAllWatchers(): Promise<void> {
+  await Promise.all((Object.keys(procs) as WatcherName[]).map(killWatcher));
 }

@@ -121,7 +121,7 @@ const toolPart = (tool, input, t) => ({
 }
 
 // ── opencode 2.x: no `part` table; tool parts live inside `session_message.data.content[]`.
-// Schema copied from a real 2.0.32 store (scripts/fixtures/opencode-probe/FINDINGS.md).
+// Schema copied from a real 2.0.32 store.
 const { collectToolUsage } = await import('../src/capture/tool-usage.ts');
 const { openStore, readUsage } = await import('../src/capture/opencode-store.ts');
 

@@ -268,6 +268,10 @@ function providerDiagnostic(
       title: `Provider unavailable${info.code || info.errorType ? ` (${[info.code || null, info.errorType || null].filter(Boolean).join(' · ')})` : ''}`,
       advice: 'The provider failed, not this run. Re-run the entry once it recovers.',
     },
+    network: {
+      title: `Provider endpoint unreachable${c}`,
+      advice: 'Check the base URL and that the endpoint is reachable from the container.',
+    },
     'unknown-provider-error': {
       title: `Provider error${c}`,
       advice: 'Unrecognized provider status — see the evidence line for what it said.',
@@ -339,15 +343,13 @@ const STALL_ID = 'stalled:stall';
 
 const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
 
-/**
- * No output for AGENT_STALL_MS. A **warning**, never fatal: it is recoverable by
- * definition and nothing is killed.
- *
- * This is the honest replacement for inferring a rate limit from the agent timeout. It
- * fires at 5 minutes of silence instead of 25 minutes of nothing, and it says the
- * provider *may* be unresponsive — which is true — rather than asserting a 429 nobody
- * observed.
- */
+// The store may hold the resolved id of an alias (`…-latest` or undated → `…-20250929`),
+// so a date or `-latest` suffix is not a difference. Anything else is (`gpt-6` ≠ `gpt-6-mini`).
+function sameModel(want: string, got: string): boolean {
+  const norm = (m: string) => m.toLowerCase().replace(/-(latest|\d{8}|\d{4}-\d{2}-\d{2})$/, '');
+  return norm(want) === norm(got);
+}
+
 /**
  * opencode 2.x silently falls back to a free model when the configured one can't be used
  * (an unknown id, or a provider with no key) and exits 0 — so a typo would otherwise be
@@ -355,9 +357,9 @@ const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
  */
 export function modelDiagnostic(expected: string, used: string[], now = new Date().toISOString()): Diagnostic | null {
   const want = expected.split('#')[0];
-  if (!used.length || used.every((m) => m === want)) return null;
-  const fellBack = !used.includes(want);
-  const others = used.filter((m) => m !== want).join(', ');
+  if (!used.length || used.every((m) => sameModel(want, m))) return null;
+  const fellBack = !used.some((m) => sameModel(want, m));
+  const others = used.filter((m) => !sameModel(want, m)).join(', ');
   return {
     id: `wrong-model:${others}`,
     kind: 'wrong-model',
@@ -374,6 +376,15 @@ export function modelDiagnostic(expected: string, used: string[], now = new Date
   };
 }
 
+/**
+ * No output for AGENT_STALL_MS. A **warning**, never fatal: it is recoverable by
+ * definition and nothing is killed.
+ *
+ * This is the honest replacement for inferring a rate limit from the agent timeout. It
+ * fires at 5 minutes of silence instead of 25 minutes of nothing, and it says the
+ * provider *may* be unresponsive — which is true — rather than asserting a 429 nobody
+ * observed.
+ */
 export function stallDiagnostic(silentMs: number, now = new Date().toISOString()): Diagnostic {
   return {
     id: STALL_ID,
