@@ -15,7 +15,7 @@ const STEPS: Array<[string, string]> = [
   ['overlay-skills', 'Overlay local skills'],
   ['attach-images', 'Attach prompt images'],
   ['launch-app', 'Start app (watch)'],
-  ['launch-opencode', 'Start opencode web'],
+  ['launch-opencode', 'Start opencode server'],
 ];
 const ORDER = STEPS.map(([k]) => k);
 
@@ -34,6 +34,7 @@ interface WizardState {
   testsNote: string;
   showResult: boolean;
   ocUrl: string;
+  ocPassword: string | null;
   appUrl: string;
   redirect: string;
   stats: any | null;
@@ -58,6 +59,7 @@ const st: WizardState = {
   testsNote: '',
   showResult: false,
   ocUrl: '#',
+  ocPassword: null,
   appUrl: '#',
   redirect: '',
   stats: null,
@@ -311,11 +313,13 @@ function handle(ev: any, getIdx: () => number, setIdx: (i: number) => void) {
 
 // Lock the launch controls and wire up live stats. Shared by a fresh launch and
 // by re-attaching to an already-running session on page load.
-function enterLiveState({ opencodePort, appPort, model }: { opencodePort: number; appPort: number; model?: string }) {
+function enterLiveState({ opencodePort, opencodePassword, appPort, model }:
+  { opencodePort: number; opencodePassword?: string | null; appPort: number; model?: string }) {
   st.sessionLive = true;
   $('#statusDot').classList.add('live');
   const host = location.hostname;
   st.ocUrl = `http://${host}:${opencodePort}`;
+  st.ocPassword = opencodePassword || null;
   st.appUrl = `http://${host}:${appPort}`;
   if (model) { $('#model').value = model; $('#m2').value = model; }
   st.showResult = true;
@@ -326,7 +330,7 @@ function enterLiveState({ opencodePort, appPort, model }: { opencodePort: number
 }
 
 function onDone(ev: any) {
-  const ocUrl = enterLiveState({ opencodePort: ev.opencodePort, appPort: ev.appPort, model: $('#model').value });
+  const ocUrl = enterLiveState({ opencodePort: ev.opencodePort, opencodePassword: ev.opencodePassword, appPort: ev.appPort, model: $('#model').value });
   const tab = window.open(ocUrl, '_blank', 'noopener');
   st.redirect = tab
     ? 'opencode opened in a new tab — this wizard stays open for live stats.'
@@ -353,7 +357,7 @@ function reattachRun(model: string) {
   st.sessionLive = false;
   update();
   let activeIdx = -1;
-  const goLive = (r: any) => enterLiveState({ opencodePort: r.opencodePort, appPort: r.appPort, model });
+  const goLive = (r: any) => enterLiveState({ opencodePort: r.opencodePort, opencodePassword: r.opencodePassword, appPort: r.appPort, model });
   const es = new EventSource('/api/run/stream');
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
@@ -384,7 +388,7 @@ export async function checkActiveSession() {
     if (!s) return;
     if (s.phase === 'running') { reattachRun(s.model); return; }
     if (s.opencode) {
-      enterLiveState({ opencodePort: s.opencodePort, appPort: s.appPort, model: s.model });
+      enterLiveState({ opencodePort: s.opencodePort, opencodePassword: s.opencodePassword, appPort: s.appPort, model: s.model });
       st.redirect = 'Reattached to the active session.';
       update();
     }
@@ -664,6 +668,8 @@ function tpl() {
     <div class="result ${classMap({ show: st.showResult })}" id="result">
       <igc-button id="openOc" href=${st.ocUrl} target="_blank" rel="noopener" variant="contained">Open opencode →</igc-button>
       <igc-button id="openApp" href=${st.appUrl} target="_blank" rel="noopener" variant="outlined">Open app</igc-button>
+      ${st.ocPassword ? html`<p class="note" id="ocPassword">opencode login: user <code>opencode</code>,
+        password <code>${st.ocPassword}</code></p>` : nothing}
       <p class="note" id="redirect">${st.redirect}</p>
 
       <details class="switcher" id="usageBox" open>

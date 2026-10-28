@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ToolUsage, ToolCallStat, ToolEvent, ToolUsageSet } from '../types.ts';
+import { openStore, readToolCalls } from './opencode-store.ts';
 
 // Which MCP tools and skills the agent actually invoked during a run.
 //
@@ -12,14 +13,8 @@ import type { ToolUsage, ToolCallStat, ToolEvent, ToolUsageSet } from '../types.
 // one that called it twelve times. Tokens/cost (src/capture/usage.ts) say how much the
 // agent worked; this says *what it worked with*.
 //
-// Source of truth is opencode's own store: a SQLite db at
-// `<dataDir>/opencode/opencode.db`, whose `part` table holds one row per message part.
-// Tool parts look like:
-//   { type:'tool', tool:'igniteui-cli_get_doc', callID:'…',
-//     state:{ status:'completed'|'error'|'running'|'pending', input:{…}, output:'…',
-//             metadata:{…}, time:{ start:<ms>, end:<ms> }, error?:'…' } }
-// MCP tools are named `<serverName>_<toolName>`; skills all come through the built-in
-// `skill` tool with the skill name in `state.input.name` / `state.metadata.name`.
+// Source of truth is opencode's store (opencode-store.ts). MCP tools are named
+// `<serverName>_<toolName>`; skills come through the built-in `skill` tool.
 //
 // Both the schema and the tool naming are opencode-version-dependent, so everything
 // here is defensive: an unreadable/renamed store falls back to parsing the permission
@@ -36,6 +31,8 @@ const BUILTIN_TOOLS = new Set([
   // OpenAI-family models edit through opencode's `apply_patch` built-in instead of
   // `edit`/`patch`; unlisted, the underscore split filed it as MCP server `apply`.
   'apply_patch',
+  // 2.x renames; `execute` is Code Mode's runner.
+  'shell', 'subagent', 'execute',
 ]);
 
 // Permission names that are evaluated *around* a tool call rather than being one
@@ -46,7 +43,6 @@ const NON_TOOL_PERMISSIONS = new Set(['external_directory', 'plan_enter', 'plan_
 // compared, so the ordered timeline is capped to keep the history record small.
 const TIMELINE_CAP = 500;
 
-const DB_REL = path.join('opencode', 'opencode.db');
 const LOG_REL = path.join('opencode', 'log');
 
 export interface CollectOpts {
@@ -171,43 +167,13 @@ function aggregate(calls: RawCall[], source: ToolUsage['source'], opts: CollectO
 
 // ── SQLite reader (primary) ───────────────────────────────────────────────────
 
-// `node:sqlite` is built into Node >= 22.5 but lazily imported (like playwright in
-// src/capture/screenshots.ts) so a runtime without it degrades to the log fallback
-// instead of failing at module load.
-async function readDb(dbPath: string, since: number): Promise<RawCall[]> {
-  const { DatabaseSync } = await import('node:sqlite');
-  // Read-only: opencode may still hold this db open (an interactive session polls it
-  // live), and we must never take a write lock on its store.
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+async function readDb(dataDir: string, since: number): Promise<RawCall[] | null> {
+  const store = await openStore(dataDir);
+  if (!store) return null;
   try {
-    const rows = db
-      .prepare('select time_created, data from part where time_created >= ? order by time_created asc')
-      .all(since) as Array<{ time_created: number; data: string }>;
-
-    const calls: RawCall[] = [];
-    for (const row of rows) {
-      let part: any;
-      try { part = JSON.parse(String(row.data)); } catch (_) { continue; }
-      if (!part || part.type !== 'tool' || !part.tool) continue;
-      const state = part.state || {};
-      const status = state.status;
-      // 'running'/'pending' calls are in flight — count them (the agent did reach for
-      // the tool) but don't mark them failed.
-      const time = state.time || {};
-      const ms = Number.isFinite(time.start) && Number.isFinite(time.end)
-        ? Number(time.end) - Number(time.start)
-        : null;
-      calls.push({
-        at: Number(time.start) || Number(row.time_created) || 0,
-        tool: String(part.tool),
-        skill: (state.input && state.input.name) || (state.metadata && state.metadata.name) || null,
-        ok: status !== 'error',
-        ms,
-      });
-    }
-    return calls;
+    return readToolCalls(store, since).map(({ at, tool, skill, ok, ms }) => ({ at, tool, skill, ok, ms }));
   } finally {
-    try { db.close(); } catch (_) {}
+    store.close();
   }
 }
 
@@ -255,15 +221,13 @@ function readLogs(logDir: string): string | null {
 // storing a misleading all-zeroes result.
 export async function collectToolUsage(opts: CollectOpts): Promise<ToolUsage | null> {
   const since = opts.since || 0;
-  const dbPath = path.join(opts.dataDir, DB_REL);
   let dbError: string | null = null;
 
-  if (fs.existsSync(dbPath)) {
-    try {
-      return aggregate(await readDb(dbPath, since), 'db', opts);
-    } catch (e: any) {
-      dbError = e && e.message ? e.message : String(e);
-    }
+  try {
+    const calls = await readDb(opts.dataDir, since);
+    if (calls) return aggregate(calls, 'db', opts);
+  } catch (e: any) {
+    dbError = e && e.message ? e.message : String(e);
   }
 
   const text = readLogs(path.join(opts.dataDir, LOG_REL));

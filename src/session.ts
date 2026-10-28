@@ -128,7 +128,7 @@ export function startStats(cfg: RunConfig): void {
   // currentRunId on while the previous collector is still ticking), so a live read
   // writes the old session's numbers into the new run's record.
   const runId = currentRunId;
-  stats = new StatsCollector({
+  const collector = stats = new StatsCollector({
     port: OPENCODE_PORT,
     dir: WORK,
     model: cfg.model,
@@ -136,7 +136,7 @@ export function startStats(cfg: RunConfig): void {
   });
   stats.onUpdate((snap: Stats) => {
     history.updateStats(runId, snap);
-    statsSSE.broadcast(snap);
+    if (stats === collector) statsSSE.broadcast(snap);
   });
   // Which MCP tools / skills the agent has invoked so far, refreshed on the collector's
   // reconcile tick for as long as the interactive session lives.

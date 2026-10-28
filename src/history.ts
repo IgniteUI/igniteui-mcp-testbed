@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic } from './types.ts';
 import { mcpOverrideFor } from './config.ts';
+import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -70,6 +71,8 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
       }
       return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
     })(),
+    ...(opencodeVersion() !== 'unknown' ? { opencodeVersion: opencodeVersion() } : {}),
+    ...(codemodeEnabled() != null ? { codemode: !!codemodeEnabled() } : {}),
   };
 }
 

@@ -72,6 +72,8 @@ Leave `IG_NPM_TOKEN` unset to keep the trial build.
 Open <http://localhost:8080>, fill in the wizard, and launch. For an interactive
 session, opencode web opens in a new tab (<http://localhost:4096>) and the generated
 app runs at <http://localhost:5000>; the wizard tab stays open to show live stats.
+With opencode 2.x the web UI asks for a login: user `opencode` and the password the
+wizard shows next to the "Open opencode" button (generated per container).
 
 > If PowerShell refuses to run the script ("running scripts is disabled on this
 > system"), either unblock it once with `Unblock-File .\run.ps1` or invoke it as
@@ -423,7 +425,7 @@ setup, so they're the most likely to need tuning:
    `npm run start` / `npm run dev` (Angular `ng serve`, React / Web Components on Vite)
    and `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to the
    scripts your scaffolds actually generate.
-2. **`Containerfile`** — the global package names (`opencode-ai`, `igniteui-cli`,
+2. **`Containerfile`** — the global package names (`@opencode/cli` or, for 1.x, `opencode-ai`; `igniteui-cli`,
    `igniteui-theming`) and the Blazor template install line (`dotnet new install
    <YourTemplateId>`).
 3. **`ig ai-config` flags** — driven non-interactively via `--framework --agents
@@ -431,8 +433,8 @@ setup, so they're the most likely to need tuning:
    them, since its built-in `ai-config` pass otherwise falls back to the interactive
    checkbox defaults (`generic` + `claude`) rather than to nothing. If your CLI version
    adds a `--skills` selector, prefer it over the post-generation prune.
-4. **Matrix mode's opencode parsing** — headless runs parse the human `opencode stats`
-   report for tokens / cost (`src/capture/usage.ts`), discover routes
+4. **Matrix mode's opencode parsing** — headless runs read tokens / cost from opencode's
+   store on 2.x and from the human `opencode stats` report on 1.x (`src/capture/usage.ts`), discover routes
    (`src/capture/route-discovery.ts`), and screenshot them with Playwright / Chromium
    (`src/capture/screenshots.ts`). The `opencode` output formats and the route-discovery
    heuristics are version-dependent — adjust these if a newer opencode changes its
@@ -490,9 +492,10 @@ See `local-mcp/README.md` for the details.
 - **Fixed ports.** Podman can't add published ports after a container is created, so the
   app dev server is pinned to 5000. If a framework refuses a custom port, change
   `APP_PORT` (env var) or switch to `--network=host` (less isolation).
-- **opencode web is unsecured.** It binds localhost by default; the wizard launches it
-  with `--hostname 0.0.0.0` so the published port is reachable. Fine on your own machine —
-  set `OPENCODE_SERVER_PASSWORD` if you expose it beyond it.
+- **opencode's server password.** The wizard launches it with `--hostname 0.0.0.0` so the
+  published port is reachable. On 2.x it requires a password (generated per container, or
+  set `OPENCODE_SERVER_PASSWORD`); 1.x's `opencode web` has none. Fine on your own machine —
+  don't expose it beyond it.
 - **Version-sensitive integration.** The points under "Adapting it to your packages"
   (CLI package names, `opencode` output formats, generated dev scripts) track specific
   tool versions. Treat the first build against your exact toolchain as a shakedown.

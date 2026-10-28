@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { collectToolUsage } from './capture/tool-usage.ts';
+import { openStore, readMessages } from './capture/opencode-store.ts';
+import { isV2, serverAuthHeaders } from './pipeline/opencode-cli.ts';
 import type { Tokens, Stats, ToolContext, ToolUsage } from './types.ts';
 
 const EMPTY_TOKENS = (): Tokens => ({ input: 0, output: 0, reasoning: 0, cache: 0, total: 0 });
@@ -96,6 +98,9 @@ export class StatsCollector {
   tools: ToolUsage | null;
   toolsBusy: boolean;
   warnedTools: boolean;
+  storeBusy: boolean;
+  storeAgain: boolean;
+  storeTimer: NodeJS.Timeout | null;
   _onUpdate?: (snap: Stats) => void;
   _onTools?: (usage: ToolUsage) => void;
   _onWarn?: (msg: string) => void;
@@ -124,6 +129,9 @@ export class StatsCollector {
     this.tools = null;
     this.toolsBusy = false;
     this.warnedTools = false;
+    this.storeBusy = false;
+    this.storeAgain = false;
+    this.storeTimer = null;
   }
 
   start(): this {
@@ -151,7 +159,7 @@ export class StatsCollector {
   // MCP tools and skills the agent invokes. Reads once immediately, then on each tick.
   setToolContext(ctx: ToolContext | null): void {
     this.toolCtx = ctx;
-    if (ctx) this._collectTools();
+    if (ctx) { this._collectTools(); this._backfill(); }
   }
 
   stop(): void {
@@ -161,6 +169,9 @@ export class StatsCollector {
     this._collectTools();
     if (this.req) { try { this.req.destroy(); } catch (_) {} this.req = null; }
     if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
+    if (this.storeTimer) { clearTimeout(this.storeTimer); this.storeTimer = null; }
+    // The cancelled debounced read may hold the last message.
+    if (isV2()) this._readStore();
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = null; this._writeNow(); }
   }
 
@@ -194,7 +205,8 @@ export class StatsCollector {
     if (this.stopped) return;
     this._backfill();
     const req = http.get(
-      { host: '127.0.0.1', port: this.port, path: '/event', headers: { Accept: 'text/event-stream' } },
+      { host: '127.0.0.1', port: this.port, path: isV2() ? '/api/event' : '/event',
+        headers: { Accept: 'text/event-stream', ...serverAuthHeaders() } },
       (res) => {
         this.backoff = 500;
         res.setEncoding('utf8');
@@ -234,6 +246,10 @@ export class StatsCollector {
     if (!data) return;
     let event;
     try { event = JSON.parse(data); } catch (_) { return; }
+    if (isV2()) {
+      if (event.type !== 'server.connected') this._scheduleStoreRead();
+      return;
+    }
     const found = extractMessages(event);
     if (!found.length) {
       if (!this.warnedShape && event.type === 'message.updated') {
@@ -249,13 +265,15 @@ export class StatsCollector {
 
   _upsert(m: NormMsg): boolean {
     if (!m.model && this.model) m.model = this.model;
+    const prev = this.messages.get(m.id);
     this.messages.set(m.id, m);
+    const changed = !prev || JSON.stringify(prev) !== JSON.stringify(m);
 
     if (m.role === 'assistant' && m.completed && !this.loggedIds.has(m.id)) {
       this.loggedIds.add(m.id);
       this._appendTimeline(m);
     }
-    return true;
+    return changed;
   }
 
   _aggregate(): Stats {
@@ -326,7 +344,41 @@ export class StatsCollector {
     try { fs.appendFileSync(this.ndjsonPath, line + '\n'); } catch (_) {}
   }
 
+  // Events arrive in bursts while the agent streams; one read per quiet second is enough.
+  _scheduleStoreRead(): void {
+    if (this.storeTimer) return;
+    this.storeTimer = setTimeout(() => { this.storeTimer = null; this._readStore(); }, 1000);
+    this.storeTimer.unref && this.storeTimer.unref();
+  }
+
+  _readStore(): void {
+    if (!this.toolCtx) return;
+    if (this.storeBusy) { this.storeAgain = true; return; }
+    const { dataDir, since } = this.toolCtx;
+    this.storeBusy = true;
+    openStore(dataDir)
+      .then((store) => {
+        if (!store) return;
+        let changed = false;
+        try {
+          for (const m of readMessages(store, since || 0)) { if (this._upsert({ ...m })) changed = true; }
+        } finally {
+          store.close();
+        }
+        if (!changed) return;
+        // After stop(): update only this run's record, not the next session's feed.
+        if (this.stopped) { if (this._onUpdate) { try { this._onUpdate(this.snapshot()); } catch (_) {} } }
+        else this._scheduleWrite();
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.storeBusy = false;
+        if (this.storeAgain) { this.storeAgain = false; this._readStore(); }
+      });
+  }
+
   _backfill(): void {
+    if (isV2()) { this._readStore(); return; }
     this._getJson('/session', (sessions) => {
       if (!Array.isArray(sessions)) return;
       for (const s of sessions) {

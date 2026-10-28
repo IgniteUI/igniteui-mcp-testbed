@@ -63,3 +63,6 @@ docs/
 # *.example.json templates are versioned — copy one to NN-<model>.json locally.
 matrix-models/*.json
 !matrix-models/*.example.json
+
+sessions-archive/
+scripts/fixtures/opencode-probe/*

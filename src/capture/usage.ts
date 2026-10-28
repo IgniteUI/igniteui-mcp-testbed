@@ -35,7 +35,9 @@ export function parseOpencodeStats(text: string): Stats {
     if (n == null) continue;
 
     if (/cost|\$/.test(low) && !/token/.test(low)) {
-      out.cost.amount = n; out.cost.available = true; matched = true;
+      // the report also prints `Avg Cost/Day`, which must not replace `Total Cost`
+      if (!out.cost.available || /total/.test(low)) { out.cost.amount = n; out.cost.available = true; }
+      matched = true;
     } else if (/\binput\b/.test(low)) {
       out.tokens.input = n; matched = true;
     } else if (/\boutput\b/.test(low)) {
@@ -43,7 +45,7 @@ export function parseOpencodeStats(text: string): Stats {
     } else if (/reason/.test(low)) {
       out.tokens.reasoning = n; matched = true;
     } else if (/cache/.test(low)) {
-      out.tokens.cache = n; matched = true;
+      out.tokens.cache += n; matched = true;
     } else if (/total/.test(low) && /token/.test(low)) {
       out.tokens.total = n; matched = true;
     } else if (/message/.test(low)) {

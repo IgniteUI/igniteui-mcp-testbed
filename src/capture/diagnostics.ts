@@ -134,6 +134,8 @@ const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> 
     || /\bbudget\b[^.]*\b(limit|exceeded)\b/i.test(m) || /\bspend(ing)? limit\b/i.test(m) },
   { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
   { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
+  // 1.19 `Cannot connect to API: …`, 2.x `ConnectionRefused: …`.
+  { kind: 'network', test: (m) => /\bcannot connect to api\b|^ConnectionRefused\b|\bis the computer able to access the url\b/i.test(m) },
 ];
 
 const DETAIL_MAX = 400;
@@ -265,6 +267,10 @@ function providerDiagnostic(
       title: `Provider unavailable${info.code || info.errorType ? ` (${[info.code || null, info.errorType || null].filter(Boolean).join(' · ')})` : ''}`,
       advice: 'The provider failed, not this run. Re-run the entry once it recovers.',
     },
+    network: {
+      title: `Provider endpoint unreachable${c}`,
+      advice: 'Check the base URL and that the endpoint is reachable from the container.',
+    },
     'unknown-provider-error': {
       title: `Provider error${c}`,
       advice: 'Unrecognized provider status — see the evidence line for what it said.',
@@ -335,6 +341,34 @@ export function classifyNetworkFailure(lines: string[], now = new Date().toISOSt
 const STALL_ID = 'stalled:stall';
 
 const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
+
+// Aliases resolve to dated ids, so a date or `-latest` suffix is not a difference.
+function sameModel(want: string, got: string): boolean {
+  const norm = (m: string) => m.toLowerCase().replace(/-(latest|\d{8}|\d{4}-\d{2}-\d{2})$/, '');
+  return norm(want) === norm(got);
+}
+
+// 2.x silently falls back to a free model and exits 0.
+export function modelDiagnostic(expected: string, used: string[], now = new Date().toISOString()): Diagnostic | null {
+  const want = expected.split('#')[0];
+  if (!used.length || used.every((m) => sameModel(want, m))) return null;
+  const fellBack = !used.some((m) => sameModel(want, m));
+  const others = used.filter((m) => !sameModel(want, m)).join(', ');
+  return {
+    id: `wrong-model:${others}`,
+    kind: 'wrong-model',
+    severity: fellBack ? 'fatal' : 'warning',
+    confidence: 'confirmed',
+    title: fellBack ? `Ran on ${others}, not ${want}` : `Also ran on ${others}`,
+    detail: `configured ${want}; the agent's messages were answered by ${used.join(', ')}`,
+    advice: fellBack
+      ? 'opencode fell back to another model. Check the model id and that the provider key is set.'
+      : 'Some messages used another model (e.g. a subagent). Tokens and cost include them.',
+    at: now,
+    count: 1,
+    lastAt: now,
+  };
+}
 
 /**
  * No output for AGENT_STALL_MS. A **warning**, never fatal: it is recoverable by
@@ -806,6 +840,7 @@ const STATUS_BY_KIND: Array<[DiagnosticKind, string]> = [
   ['network', 'provider-down'],
   ['unknown-provider-error', 'provider-down'],
   ['timed-out', 'timed-out'],
+  ['wrong-model', 'error'],
 ];
 
 /** Rank a fatal kind by the status priority table (lower wins). Used to break ties

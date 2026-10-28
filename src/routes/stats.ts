@@ -7,6 +7,7 @@ import { OPENCODE_PORT, WORK, APP_DIR, MCP_COMMAND_OVERRIDES } from '../config.t
 import { capture } from '../proc/exec.ts';
 import { procs } from '../proc/watcher.ts';
 import * as session from '../session.ts';
+import { codemodeEnabled, opencodeVersion, serverPassword, statsArgv } from '../pipeline/opencode-cli.ts';
 
 export default function registerStatsRoutes(app: Express): void {
   // Structured live stats for the current session (messages / tokens / cost).
@@ -34,7 +35,7 @@ export default function registerStatsRoutes(app: Express): void {
   app.get('/api/usage', async (_req, res) => {
     const cwd = fs.existsSync(APP_DIR) ? APP_DIR : WORK;
     try {
-      const text = await capture('opencode', ['stats'], cwd);
+      const text = await capture('opencode', statsArgv(), cwd);
       res.json({ ok: true, text });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
@@ -48,6 +49,9 @@ export default function registerStatsRoutes(app: Express): void {
       opencode: !!procs.opencode && !procs.opencode.killed,
       appPort: APP_PORT,
       opencodePort: OPENCODE_PORT,
+      opencodePassword: serverPassword(),
+      opencodeVersion: opencodeVersion(),
+      codemode: codemodeEnabled(),
       model: lastConfig && lastConfig.model,
       phase: session.getRunState().phase,
       // Which MCP classes THIS container will launch from a local binary, keyed by the

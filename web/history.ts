@@ -364,6 +364,7 @@ function bindGridTemplates() {
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
             gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
+          <dt>opencode</dt><dd>${opencodeSummary(c)}</dd>
           <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
@@ -698,6 +699,22 @@ async function deleteRun(id: string) {
 // single-entry matrix submission, prompting for the (never-stored) API key first.
 let pendingRerun: any = null;
 
+function opencodeSummary(c: any): string {
+  if (!c.opencodeVersion) return '—';
+  return c.codemode == null ? c.opencodeVersion : `${c.opencodeVersion} · Code Mode ${c.codemode ? 'on' : 'off'}`;
+}
+
+// Like rerunMcpWarning: a re-run inherits this container's version and Code Mode.
+function rerunOpencodeWarning(cfg: any, live: { opencodeVersion?: string; codemode?: boolean | null } | null): string {
+  if (!live || !cfg.opencodeVersion || !live.opencodeVersion) return '';
+  const diffs: string[] = [];
+  if (cfg.opencodeVersion !== live.opencodeVersion) diffs.push(`opencode ${cfg.opencodeVersion} → ${live.opencodeVersion}`);
+  if (cfg.codemode != null && live.codemode != null && cfg.codemode !== live.codemode) {
+    diffs.push(`Code Mode ${cfg.codemode ? 'on' : 'off'} → ${live.codemode ? 'on' : 'off'} (OPENCODE_CODEMODE)`);
+  }
+  return diffs.length ? `This container differs from the recorded run: ${diffs.join('; ')}.` : '';
+}
+
 // A re-run POSTs into the ALREADY-RUNNING container, so it inherits that container's
 // MCP_CMD_* environment — those are read once at module load and nothing in the request
 // can change them. A run recorded against a locally-built server therefore re-runs
@@ -735,7 +752,8 @@ async function rerunRun(id: string) {
   st.rerunWarn = '';
   try {
     const s = await getJSON('/api/status');
-    st.rerunWarn = rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null);
+    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s)]
+      .filter(Boolean).join(' ');
   } catch { /* leave the warning empty */ }
   update();
   ($('#rerunKey') as any).value = '';

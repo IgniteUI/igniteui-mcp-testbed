@@ -32,11 +32,12 @@ export function waitForPortFree(port: number, timeoutMs: number): Promise<boolea
   });
 }
 
-// Resolve when a TCP port accepts a connection, or reject on timeout.
-export function waitForPort(port: number, timeoutMs: number, emit?: Emit): Promise<void> {
+// Resolve when a TCP port accepts a connection, or reject on timeout or cancel.
+export function waitForPort(port: number, timeoutMs: number, emit?: Emit, isCancelled?: (() => boolean) | null): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const attempt = () => {
+      if (isCancelled && isCancelled()) { reject(new Error(`cancelled while waiting for port ${port}`)); return; }
       const sock = net.connect(port, '127.0.0.1');
       sock.once('connect', () => { sock.destroy(); resolve(); });
       sock.once('error', () => {

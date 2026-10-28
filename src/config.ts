@@ -60,6 +60,9 @@ export const MATRIX_MAX_ENTRIES = Number(process.env.MATRIX_MAX_ENTRIES || 24);
 // unbounded passes array is an easy DoS vector. Override with MATRIX_MAX_PASSES.
 export const MATRIX_MAX_PASSES = Number(process.env.MATRIX_MAX_PASSES || 10);
 export const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 25 * 60 * 1000);
+// 2.x headless agent server (loopback only) and its MCP connect wait.
+export const AGENT_SERVER_PORT = Number(process.env.AGENT_SERVER_PORT || 4097);
+export const MCP_READY_TIMEOUT_MS = Number(process.env.MCP_READY_TIMEOUT_MS || 60 * 1000);
 // How long to wait for the (headless) post-edit dev-server build before giving up
 // and screenshotting anyway. Generous because the first build of an agent-edited
 // app (esp. Blazor) is slow across the bind mount.
