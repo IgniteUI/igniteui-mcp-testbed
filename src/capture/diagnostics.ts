@@ -134,8 +134,7 @@ const TEXT_RULES: Array<{ kind: DiagnosticKind; test: (m: string) => boolean }> 
     || /\bbudget\b[^.]*\b(limit|exceeded)\b/i.test(m) || /\bspend(ing)? limit\b/i.test(m) },
   { kind: 'auth', test: (m) => /\bunauthorized\b/i.test(m) || (AUTH_SUBJECT.test(m) && AUTH_FAILURE.test(m)) },
   { kind: 'provider-down', test: (m) => /\b(service unavailable|internal server error|bad gateway|gateway timeout|overloaded|temporarily unavailable)\b/i.test(m) },
-  // opencode's own wording for an unreachable endpoint (probed against a closed port):
-  // 1.19 `Cannot connect to API: Unable to connect. …`, 2.x `ConnectionRefused: Unable to connect. …`.
+  // 1.19 `Cannot connect to API: …`, 2.x `ConnectionRefused: …`.
   { kind: 'network', test: (m) => /\bcannot connect to api\b|^ConnectionRefused\b|\bis the computer able to access the url\b/i.test(m) },
 ];
 
@@ -343,18 +342,13 @@ const STALL_ID = 'stalled:stall';
 
 const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
 
-// The store may hold the resolved id of an alias (`…-latest` or undated → `…-20250929`),
-// so a date or `-latest` suffix is not a difference. Anything else is (`gpt-6` ≠ `gpt-6-mini`).
+// Aliases resolve to dated ids, so a date or `-latest` suffix is not a difference.
 function sameModel(want: string, got: string): boolean {
   const norm = (m: string) => m.toLowerCase().replace(/-(latest|\d{8}|\d{4}-\d{2}-\d{2})$/, '');
   return norm(want) === norm(got);
 }
 
-/**
- * opencode 2.x silently falls back to a free model when the configured one can't be used
- * (an unknown id, or a provider with no key) and exits 0 — so a typo would otherwise be
- * recorded as a successful run of the configured model. `used` comes from the store.
- */
+// 2.x silently falls back to a free model and exits 0.
 export function modelDiagnostic(expected: string, used: string[], now = new Date().toISOString()): Diagnostic | null {
   const want = expected.split('#')[0];
   if (!used.length || used.every((m) => sameModel(want, m))) return null;
@@ -846,8 +840,6 @@ const STATUS_BY_KIND: Array<[DiagnosticKind, string]> = [
   ['network', 'provider-down'],
   ['unknown-provider-error', 'provider-down'],
   ['timed-out', 'timed-out'],
-  // Not a provider failure: the run's numbers describe a different model than the one
-  // configured, so it can't stand as a result for this entry.
   ['wrong-model', 'error'],
 ];
 

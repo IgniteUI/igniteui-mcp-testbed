@@ -9,9 +9,6 @@ import type { OutputStream } from './exec.ts';
 
 export type WatcherName = 'app' | 'opencode' | 'opencode-agent';
 
-// Long-lived child processes for this session (one app, one interactive opencode, and on
-// 2.x the headless agent's private opencode server — kept apart so /api/status never
-// reports a matrix agent server as an interactive session).
 export const procs: Record<WatcherName, ChildProcess | null> = { app: null, opencode: null, 'opencode-agent': null };
 
 // Spawn a long-running watcher; tee its output to a log file. `detached:true` puts
@@ -39,6 +36,7 @@ export interface WatcherOpts {
    * chunk, which for a model switch means fusing two processes' output into one bogus line.
    */
   onClose?: (() => void) | null;
+  logPath?: string;
 }
 
 export function spawnWatcher(
@@ -49,7 +47,7 @@ export function spawnWatcher(
   extraEnv?: Record<string, string>,
   opts: WatcherOpts = {},
 ): ChildProcess {
-  const logPath = path.join(LOG_DIR, `${name}.log`);
+  const logPath = opts.logPath || path.join(LOG_DIR, `${name}.log`);
   const env = { ...process.env, ...extraEnv, ...(opts.env || {}) };
 
   if (!opts.onOutput) {

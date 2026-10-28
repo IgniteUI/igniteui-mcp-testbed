@@ -12,25 +12,16 @@ export function providerEnvFor(model: string, apiKey?: string): Record<string, s
   return key && apiKey ? { [key]: apiKey } : {};
 }
 
-// Build the opencode.json the agent will read. `mcp` is always the 1.x shape
-// (`{ <name>: { type, command, environment?, enabled } }`, from translate()); on 2.x it is
-// converted to the native shape, because 2.x only honours `codemode` there.
+// `mcp` arrives in the 1.x shape; 2.x needs the native shape to honour `codemode`.
 export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, appDir: string): void {
   const v2 = opencodeMajor() >= 2;
   const doc: Record<string, any> = {
     $schema: 'https://opencode.ai/config.json',
     model: cfg.model,
   };
-  // Auto-approve every permission. Headless `opencode run` (matrix) has stdin =
-  // /dev/null, and opencode BLOCKS on a permission prompt rather than failing on
-  // EOF — e.g. an agent writing scratch files to /tmp triggers `external_directory`
-  // (1.x default: ask) and hangs until AGENT_TIMEOUT_MS. This appliance is an ephemeral
-  // sandbox, so allowing everything (incl. external dirs) is the right default and
-  // also spares the interactive opencode-web user from approval prompts.
+  // Allow everything: headless opencode blocks on a permission prompt instead of failing.
   if (v2) {
-    // Except `websearch`, which always fails in the container ("Web search cancelled") and
-    // makes `opencode run` exit 1 on an otherwise successful session. A deny removes the tool
-    // (the agent falls back to `webfetch`); rules apply in order, so it must come after the allow.
+    // websearch always fails here and fails the run; last match wins, so deny after the allow.
     doc.permissions = [
       { action: '*', resource: '*', effect: 'allow' },
       { action: 'websearch', resource: '*', effect: 'deny' },
@@ -40,9 +31,7 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
     doc.permission = 'allow';
     doc.mcp = mcp;
   }
-  // Custom OpenAI-compatible endpoint -> declare a provider. Kept in the 1.x spelling on
-  // 2.x too: 2.x normalizes it (probed against a closed port), and its normalizer is what
-  // maps `options.apiKey`.
+  // Custom OpenAI-compatible endpoint; 2.x normalizes the 1.x spelling.
   if (cfg.customBaseUrl) {
     const id = 'custom';
     doc.provider = {
@@ -66,7 +55,7 @@ function toV2Servers(mcp: Record<string, any>): Record<string, any> {
   return out;
 }
 
-/** The `mcp` block of an existing opencode.json, in the 1.x shape whichever version wrote it. */
+// Returned in the 1.x shape whichever version wrote it.
 export function readOpencodeMcp(appDir: string): Record<string, any> {
   const p = path.join(appDir, 'opencode.json');
   if (!fs.existsSync(p)) return {};

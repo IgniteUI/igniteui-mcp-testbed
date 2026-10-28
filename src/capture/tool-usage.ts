@@ -13,10 +13,8 @@ import { openStore, readToolCalls } from './opencode-store.ts';
 // one that called it twelve times. Tokens/cost (src/capture/usage.ts) say how much the
 // agent worked; this says *what it worked with*.
 //
-// Source of truth is opencode's own SQLite store at `<dataDir>/opencode/opencode.db`,
-// read through src/capture/opencode-store.ts (which handles both the 1.x `part` and the
-// 2.x `session_message` schema). MCP tools are named `<serverName>_<toolName>`; skills
-// all come through the built-in `skill` tool.
+// Source of truth is opencode's store (opencode-store.ts). MCP tools are named
+// `<serverName>_<toolName>`; skills come through the built-in `skill` tool.
 //
 // Both the schema and the tool naming are opencode-version-dependent, so everything
 // here is defensive: an unreadable/renamed store falls back to parsing the permission
@@ -33,8 +31,7 @@ const BUILTIN_TOOLS = new Set([
   // OpenAI-family models edit through opencode's `apply_patch` built-in instead of
   // `edit`/`patch`; unlisted, the underscore split filed it as MCP server `apply`.
   'apply_patch',
-  // 2.x: `bash` became `shell`, `task` became `subagent`; `execute` is Code Mode's runner
-  // (the MCP calls made inside it are surfaced separately by opencode-store.ts).
+  // 2.x renames; `execute` is Code Mode's runner.
   'shell', 'subagent', 'execute',
 ]);
 

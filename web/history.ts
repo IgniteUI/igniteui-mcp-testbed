@@ -704,8 +704,7 @@ function opencodeSummary(c: any): string {
   return c.codemode == null ? c.opencodeVersion : `${c.opencodeVersion} · Code Mode ${c.codemode ? 'on' : 'off'}`;
 }
 
-// Same reasoning as the MCP binary (rerunMcpWarning below): the version is fixed by the image, the Code Mode
-// switch by the container's env, and a re-run silently inherits both.
+// Like rerunMcpWarning: a re-run inherits this container's version and Code Mode.
 function rerunOpencodeWarning(cfg: any, live: { opencodeVersion?: string; codemode?: boolean | null } | null): string {
   if (!live || !cfg.opencodeVersion || !live.opencodeVersion) return '';
   const diffs: string[] = [];

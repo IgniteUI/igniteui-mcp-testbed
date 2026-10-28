@@ -170,8 +170,7 @@ export class StatsCollector {
     if (this.req) { try { this.req.destroy(); } catch (_) {} this.req = null; }
     if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
     if (this.storeTimer) { clearTimeout(this.storeTimer); this.storeTimer = null; }
-    // 2.x tokens come from the store, so the debounced read just cancelled may hold the
-    // session's last message.
+    // The cancelled debounced read may hold the last message.
     if (isV2()) this._readStore();
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = null; this._writeNow(); }
   }
@@ -354,7 +353,6 @@ export class StatsCollector {
 
   _readStore(): void {
     if (!this.toolCtx) return;
-    // A read requested mid-read runs right after it, rather than waiting for the 30s tick.
     if (this.storeBusy) { this.storeAgain = true; return; }
     const { dataDir, since } = this.toolCtx;
     this.storeBusy = true;
@@ -368,8 +366,7 @@ export class StatsCollector {
           store.close();
         }
         if (!changed) return;
-        // A read that lands after stop() belongs to a replaced collector: stats.json and
-        // the live feed now belong to the next session, so only the run's record is updated.
+        // After stop(): update only this run's record, not the next session's feed.
         if (this.stopped) { if (this._onUpdate) { try { this._onUpdate(this.snapshot()); } catch (_) {} } }
         else this._scheduleWrite();
       })

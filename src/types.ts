@@ -149,9 +149,7 @@ export interface StoredConfig {
    * "no key" means "released", not "unknown".
    */
   mcpCommands?: Record<string, string>;
-  /** opencode CLI version the run used (e.g. `2.0.32`). Absent on records that predate it. */
   opencodeVersion?: string;
-  /** 2.x only: whether MCP tools ran through Code Mode. Absent on 1.x and older records. */
   codemode?: boolean;
 }
 
@@ -431,7 +429,6 @@ export interface ToolContext {
 export interface InteractiveResult {
   appPort: number;
   opencodePort: number;
-  /** Basic-auth password for the 2.x opencode web UI; null on 1.x. */
   opencodePassword: string | null;
 }
 
@@ -441,7 +438,7 @@ export interface HeadlessResult {
   screenshots: Screenshot[];
   routes: string[];
   skipped: SkippedRoute[];
-  /** Absent when the build was never attempted (e.g. the agent ran on the wrong model). */
+  /** Absent when the build was never attempted. */
   appReady?: boolean;
   appError?: string;
   tests?: TestResult | null;

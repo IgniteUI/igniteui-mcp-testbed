@@ -432,21 +432,39 @@ export async function runPipeline(
   if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
-  // 2.x: run against a private server so the prompt can wait for the MCP servers to connect
-  // (see mcp-ready.ts). The server makes the provider calls, so it gets the same env.
+  // 2.x: a private server, so the prompt can wait for MCP (mcp-ready.ts).
   let agentServer: string | null = null;
+  const agentLog = path.join(path.dirname(appDir), 'opencode-agent.log');
+  let agentServerExit: string | null = null;
+  let killingAgentServer = false;
+  const stopAgentServer = async () => { killingAgentServer = true; await killWatcher('opencode-agent'); };
   if (isV2()) {
     await killWatcher('opencode-agent');
-    // A survivor still bound here would answer waitForPort, and the agent would run against
-    // the previous entry's data dir, key and app dir.
+    // A survivor would answer waitForPort with the previous entry's env.
     if (!(await waitForPortFree(AGENT_SERVER_PORT, 15000))) {
       throw new Error(`port ${AGENT_SERVER_PORT} is still in use by a previous agent server`);
     }
-    spawnWatcher('opencode-agent', 'opencode', serverArgv(AGENT_SERVER_PORT, '127.0.0.1'), appDir, ocEnv);
-    await waitForPort(AGENT_SERVER_PORT, 30000, emit, isCancelled);
-    agentServer = `http://127.0.0.1:${AGENT_SERVER_PORT}`;
-    if (mcpServers.length) await waitForMcp(AGENT_SERVER_PORT, appDir, mcpServers, MCP_READY_TIMEOUT_MS, emit, isCancelled);
+    const srv = spawnWatcher('opencode-agent', 'opencode', serverArgv(AGENT_SERVER_PORT, '127.0.0.1'), appDir, ocEnv, { logPath: agentLog });
+    srv.once('exit', (code, signal) => {
+      if (!killingAgentServer) agentServerExit = signal ? `signal ${signal}` : `code ${code}`;
+    });
+    const stopWaiting = () => agentServerExit !== null || !!(isCancelled && isCancelled());
+    try {
+      await waitForPort(AGENT_SERVER_PORT, 30000, emit, stopWaiting);
+      agentServer = `http://127.0.0.1:${AGENT_SERVER_PORT}`;
+      if (mcpServers.length) await waitForMcp(AGENT_SERVER_PORT, appDir, mcpServers, MCP_READY_TIMEOUT_MS, emit, stopWaiting);
+    } catch (e) {
+      if (agentServerExit) throw new Error(`agent server exited (${agentServerExit}) during startup; see ${agentLog}`);
+      throw e;
+    }
   }
+  // Once our server is gone, a ConnectionRefused is ours, not the provider's.
+  const dropLocalNetwork = (ds: Diagnostic[]): Diagnostic[] => {
+    if (!agentServerExit && !(isCancelled && isCancelled())) return ds;
+    const kept = ds.filter((d) => d.kind !== 'network');
+    if (kept.length !== ds.length) emit('diagnostics', { diagnostics: kept });
+    return kept;
+  };
   emit('log', `agent (one-shot): ${prompt}`);
   if (promptImageFiles.length) {
     emit('log', `with ${promptImageFiles.length} image attachment(s): ${promptImageFiles.map((f) => path.basename(f)).join(', ')}`);
@@ -463,7 +481,6 @@ export async function runPipeline(
   const collectRunEvidence = async (): Promise<{ stats: Stats | null; tools: ToolUsage | null; modelDiag: Diagnostic | null }> => {
     let stats: Stats | null = null;
     let modelDiag: Diagnostic | null = null;
-    // 2.x: summed from the store's messages, which also say which model actually answered.
     try {
       const store = await openStore(toolDataDir);
       if (store) {
@@ -481,8 +498,7 @@ export async function runPipeline(
     } catch (e: any) {
       emit('log', `warning: could not read usage from opencode.db (${e.message})`);
     }
-    // 1.x: the store has no per-message cost, so parse `opencode stats`. 2.x's report has
-    // no cost and a layout parseOpencodeStats can't read, so there the store is the only source.
+    // 1.x has no per-message cost in the store.
     if (!stats && !isV2()) {
       try {
         const text = await capture('opencode', statsArgv(), appDir, dataDir ? { XDG_DATA_HOME: dataDir } : null, STATS_TIMEOUT_MS);
@@ -543,11 +559,14 @@ export async function runPipeline(
         diag.noteResume(silentMs);
       },
     });
-    await killWatcher('opencode-agent');
-    diagnostics = await diag.finish({ exitCode: 0 });
+    await stopAgentServer();
+    diagnostics = dropLocalNetwork(await diag.finish({ exitCode: 0 }));
   } catch (err: any) {
-    await killWatcher('opencode-agent');
-    diagnostics = await diag.finish({ exitCode: err.timedOut ? null : 1, timedOut: !!err.timedOut, timeoutMs: AGENT_TIMEOUT_MS });
+    await stopAgentServer();
+    diagnostics = dropLocalNetwork(await diag.finish({ exitCode: err.timedOut ? null : 1, timedOut: !!err.timedOut, timeoutMs: AGENT_TIMEOUT_MS }));
+    if (agentServerExit && !(isCancelled && isCancelled())) {
+      err.message = `agent server exited (${agentServerExit}) while the agent was running; see ${agentLog}`;
+    }
     for (const d of diagnostics) {
       emit('log', `${d.severity === 'fatal' ? 'error' : 'warning'}: ${d.title} — ${d.advice}`);
       emit('log', `  evidence: ${d.detail}`);
@@ -578,10 +597,8 @@ export async function runPipeline(
   if (modelDiag) {
     diagnostics = [...diagnostics, modelDiag];
     emit('diagnostics', { diagnostics });
-    // The run is already an `error`; building and testing the wrong model's output is wasted time.
     if (modelDiag.severity === 'fatal') {
       emit('log', 'skipping build, screenshots and tests: the agent ran on a different model');
-      await killWatcher('opencode-agent');
       emit('step', { step: 'cleanup' });
       await cleanupAppDir(appDir, emit);
       return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], diagnostics };

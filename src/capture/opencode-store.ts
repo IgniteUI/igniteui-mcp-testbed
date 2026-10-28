@@ -4,9 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Stats, Tokens } from '../types.ts';
 
-// opencode's SQLite store, for both schemas it has shipped: 1.x `part` rows, 2.x tool parts
-// inside `session_message.data.content[]`.
-// Always opened read-only: opencode may still hold the db open.
+// opencode's SQLite store (1.x `part`, 2.x `session_message`), always opened read-only.
 
 const DB_REL = path.join('opencode', 'opencode.db');
 
@@ -14,7 +12,6 @@ export interface StoreToolCall {
   at: number;
   tool: string;
   input: unknown;
-  /** Skill name, when `tool` is `skill`. */
   skill: string | null;
   ok: boolean;
   ms: number | null;
@@ -31,7 +28,6 @@ export interface Store {
 // Code Mode's own helpers (`opencode.*` stays in Code Mode even with `codemode:false`).
 const CODEMODE_INTERNAL_NS = new Set(['opencode']);
 
-/** Open the store read-only. Null when there is no db, no `node:sqlite`, or no known schema. */
 export async function openStore(dataDir: string): Promise<Store | null> {
   const dbPath = path.join(dataDir, DB_REL);
   if (!fs.existsSync(dbPath)) return null;
@@ -61,10 +57,6 @@ export async function openStore(dataDir: string): Promise<Store | null> {
 const parse = (s: unknown): any => { try { return JSON.parse(String(s)); } catch (_) { return null; } };
 const num = (v: unknown): number | null => (Number.isFinite(Number(v)) && v != null ? Number(v) : null);
 
-/**
- * Tool calls created at or after `since`, chronological. With `newest`, only roughly the
- * newest N calls (the loop detector's bounded mid-run tail).
- */
 export function readToolCalls(store: Store, since: number, newest?: number): StoreToolCall[] {
   const calls = store.schema === 'part' ? partCalls(store.db, since, newest) : messageCalls(store.db, since, newest);
   calls.sort((a, b) => a.at - b.at);
@@ -87,7 +79,6 @@ function partCalls(db: any, since: number, newest?: number): StoreToolCall[] {
       tool: String(part.tool),
       input: state.input,
       skill: state.input?.name || state.metadata?.name || null,
-      // 'running'/'pending' calls are in flight: the agent did reach for the tool.
       ok: state.status !== 'error',
       ms: start != null && end != null ? end - start : null,
     });
@@ -96,8 +87,7 @@ function partCalls(db: any, since: number, newest?: number): StoreToolCall[] {
 }
 
 function assistantRows(db: any, since: number, newest?: number): Array<{ time_created: number; data: any }> {
-  // N messages is only an approximate tail: a message can hold several tool parts or none
-  // (text-only), so it may yield more or fewer than N calls. Fine for the loop detector.
+  // Approximate tail: a message holds zero or more tool parts.
   const rows = (newest
     ? db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created desc, seq desc limit ?").all(since, newest)
     : db.prepare("select time_created, data from session_message where type = 'assistant' and time_created >= ? order by time_created asc, seq asc").all(since)
@@ -121,7 +111,7 @@ function messageCalls(db: any, since: number, newest?: number): StoreToolCall[] 
         ok: state.status !== 'error',
         ms: ran != null && done != null ? done - ran : null,
       });
-      // Code Mode: count each MCP call inside `execute` under its `<server>_<tool>` name.
+      // Code Mode: surface the MCP calls made inside `execute`.
       if (c.name === 'execute') {
         for (const inner of state.metadata?.toolCalls || []) {
           const name = String(inner?.tool || '');
@@ -144,7 +134,6 @@ function messageCalls(db: any, since: number, newest?: number): StoreToolCall[] 
 
 export interface StoreUsage {
   stats: Stats;
-  /** `provider/model` ids the assistant messages actually ran on. */
   models: string[];
 }
 
@@ -158,7 +147,6 @@ export interface StoreMessage {
   completed: boolean;
 }
 
-/** 2.x user/assistant messages at or after `since` (the live stats collector's source). */
 export function readMessages(store: Store, since: number): StoreMessage[] {
   if (store.schema !== 'session_message') return [];
   const rows = store.db.prepare(
@@ -184,7 +172,6 @@ export function readMessages(store: Store, since: number): StoreMessage[] {
   return out;
 }
 
-/** Tokens, cost and models used, summed from the 2.x messages. Null on 1.x (use `opencode stats`). */
 export function readUsage(store: Store, since: number): StoreUsage | null {
   if (store.schema !== 'session_message') return null;
   const zero = (): Tokens => ({ input: 0, output: 0, reasoning: 0, cache: 0, total: 0 });

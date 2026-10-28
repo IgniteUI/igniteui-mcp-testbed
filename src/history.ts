@@ -71,8 +71,6 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
       }
       return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
     })(),
-    // Also container-level. Runs on different opencode versions (or Code Mode settings)
-    // are not comparable on tokens or tool usage, so the record has to say which it was.
     ...(opencodeVersion() !== 'unknown' ? { opencodeVersion: opencodeVersion() } : {}),
     ...(codemodeEnabled() != null ? { codemode: !!codemodeEnabled() } : {}),
   };
