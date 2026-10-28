@@ -149,7 +149,8 @@ function imageUrl(runId, file) {
 
 const variantOf = (c = {}) => {
   const mcps = (c.enabledMcps || []).length ? c.enabledMcps.join('+') : 'no mcp';
-  return mcps + ' · ' + (c.skills ? 'skills' : 'no skills');
+  const oc = c.opencodeVersion ? ' · oc ' + c.opencodeVersion + (c.codemode ? ' codemode' : '') : '';
+  return mcps + ' · ' + (c.skills ? 'skills' : 'no skills') + oc;
 };
 
 // One column per run. The label is the matrix name (the model, in a model sweep);

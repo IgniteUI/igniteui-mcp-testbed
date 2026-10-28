@@ -68,7 +68,7 @@ with --build-arg. Passing "=latest" does NOT force a refetch (same value, same c
 Examples:
   ./run.sh build --prune
   ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0
-  ./run.sh build --build-arg IGNITEUI_CLI_VERSION=15.6.0 --build-arg OPENCODE_VERSION=1.18.25
+  ./run.sh build --build-arg OPENCODE_PKG=opencode-ai --build-arg OPENCODE_VERSION=1.19.3
   ./run.sh
   ./run.sh --matrix-config ./matrix.example.json
   ./run.sh --matrix-config ./matrix.json --validate
@@ -213,10 +213,13 @@ for v in "${KEY_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 # Non-secret tunables: diagnostics tunables (src/config.ts): forwarded when set so a run can be tuned, and so DIAGNOSTICS_STREAM_DEBUG=1 can be used to answer which stream provider errors actually arrive on. Values are plain numbers/flags, not secrets.
-DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC_AGGREGATE_THRESHOLD AGENT_TIMEOUT_MS SCREENSHOT_NAV_TIMEOUT_MS SCREENSHOT_ROUTE_TIMEOUT_MS)
+DIAG_VARS=(DIAGNOSTICS_STREAM_DEBUG AGENT_STALL_MS AGENT_LOOP_REPEATS DIAGNOSTIC_AGGREGATE_THRESHOLD AGENT_TIMEOUT_MS SCREENSHOT_NAV_TIMEOUT_MS SCREENSHOT_ROUTE_TIMEOUT_MS OPENCODE_CODEMODE OPENCODE_MAJOR MCP_READY_TIMEOUT_MS AGENT_SERVER_PORT)
 for v in "${DIAG_VARS[@]}"; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v=${!v}")
 done
+# The opencode 2.x server password is a secret: forwarded by name so the value stays off
+# the podman command line. Unset means the container generates its own.
+[[ -n "${OPENCODE_SERVER_PASSWORD:-}" ]] && ENVFLAGS+=(-e OPENCODE_SERVER_PASSWORD)
 
 # MCP server tuning, forwarded the same way. MCP_CMD_<CLASS> swaps that class's server
 # for a locally-built one installed in the image (e.g.

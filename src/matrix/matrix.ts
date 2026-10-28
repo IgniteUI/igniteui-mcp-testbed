@@ -5,7 +5,7 @@ import type { ChildProcess } from 'child_process';
 import * as history from '../history.ts';
 import { WORK, ARTIFACT_DIR } from '../config.ts';
 import { killTree } from '../proc/exec.ts';
-import { killWatcher } from '../proc/watcher.ts';
+import { killAllWatchers } from '../proc/watcher.ts';
 import { createSSE } from '../stream/sse.ts';
 import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
@@ -247,7 +247,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       closeStep();
       // runPipeline threw (cancel / timeout / error) before its own cleanup stage —
       // free any watcher and reclaim disk here so the kept entry dir isn't left heavy.
-      await killWatcher('app'); await killWatcher('opencode');
+      await killAllWatchers();
       try { await cleanupAppDir(appDir, emit); } catch (_) {}
       const cancelled = matrixCancelled || cancelledEntries.has(runId);
       // The evidence rides out on the error, since a failed pipeline returns no result.
@@ -277,7 +277,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
     }
     matrixState.done = i + 1;
   }
-  killWatcher('app'); killWatcher('opencode');
+  killAllWatchers();
   // runMatrix job done — runAllPasses handles state reset, report generation, and
   // the matrix-done broadcast so the outer loop can proceed to the next pass (if any).
 }
@@ -408,7 +408,7 @@ export function cancel(): { ok: boolean; error?: string } {
   if (!matrixRunning) return { ok: false, error: 'no matrix run in progress' };
   matrixCancelled = true;
   killTree(currentChild, 'SIGTERM');
-  killWatcher('app'); killWatcher('opencode');
+  killAllWatchers();
   broadcast({ type: 'log', msg: 'cancellation requested — stopping the current step' });
   return { ok: true };
 }
@@ -427,7 +427,7 @@ export function cancelEntry(runId: string): { ok: boolean; error?: string } {
   cancelledEntries.add(runId);
   if (entry.status === 'running') {
     killTree(currentChild, 'SIGTERM');
-    killWatcher('app'); killWatcher('opencode');
+    killAllWatchers();
     broadcast({ type: 'log', index: entry.index, msg: 'entry cancellation requested — stopping this run' });
   }
   return { ok: true };

@@ -149,6 +149,8 @@ export interface StoredConfig {
    * "no key" means "released", not "unknown".
    */
   mcpCommands?: Record<string, string>;
+  opencodeVersion?: string;
+  codemode?: boolean;
 }
 
 // One reference image available under PROMPT_IMAGES_DIR. `name` is the path relative
@@ -289,7 +291,7 @@ export interface Diagnostic {
 
 export type DiagnosticKind =
   | 'rate-limited' | 'no-credits' | 'auth' | 'provider-down'
-  | 'network' | 'stalled' | 'looping' | 'timed-out' | 'unknown-provider-error';
+  | 'network' | 'stalled' | 'looping' | 'timed-out' | 'unknown-provider-error' | 'wrong-model';
 
 /**
  * What a failed agent run carries out with it. A failed pipeline returns no
@@ -427,6 +429,7 @@ export interface ToolContext {
 export interface InteractiveResult {
   appPort: number;
   opencodePort: number;
+  opencodePassword: string | null;
 }
 
 export interface HeadlessResult {
@@ -435,7 +438,8 @@ export interface HeadlessResult {
   screenshots: Screenshot[];
   routes: string[];
   skipped: SkippedRoute[];
-  appReady: boolean;
+  /** Absent when the build was never attempted. */
+  appReady?: boolean;
   appError?: string;
   tests?: TestResult | null;
   tools?: ToolUsage | null;

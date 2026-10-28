@@ -12,9 +12,10 @@
 import { stripAnsi } from '../src/ansi.ts';
 import {
   createLineFramer, classifyAgentLine, classifyNetworkFailure, createDiagnosticsCollector,
-  deriveStatus, isToolFailureLabel,
+  deriveStatus, isToolFailureLabel, modelDiagnostic,
 } from '../src/capture/diagnostics.ts';
 import { fingerprintInput, detectLoop } from '../src/capture/loop.ts';
+import { parseOpencodeStats } from '../src/capture/usage.ts';
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -312,6 +313,25 @@ bothStreams('classify: prose credits', 'Error: Your credit balance is too low',
   ['no-credits', 'fatal', 'confirmed', 'no-credits:text']);
 bothStreams('classify: prose overload', 'Error: Overloaded',
   ['provider-down', 'fatal', 'confirmed', 'provider-down:text']);
+
+// Observed by scripts/probe-opencode.sh against opencode 1.19.3 (anthropic bad key;
+// customBaseUrl on a closed port).
+bothStreams('classify: prose auth, 1.19 wording', '\x1b[91m\x1b[1mError: \x1b[0minvalid x-api-key',
+  ['auth', 'fatal', 'confirmed', 'auth:text']);
+bothStreams('classify: prose unreachable endpoint, 1.19 wording',
+  '\x1b[91m\x1b[1mError: \x1b[0mCannot connect to API: Unable to connect. Is the computer able to access the url?',
+  ['network', 'fatal', 'confirmed', 'network:text']);
+bothStreams('classify: prose unreachable endpoint, 2.x wording',
+  '\x1b[91m\x1b[1mError: \x1b[0mConnectionRefused: Unable to connect. Is the computer able to access the url?',
+  ['network', 'fatal', 'confirmed', 'network:text']);
+check('classify: unreachable endpoint title, 1.19 wording',
+  classifyAgentLine('\x1b[91m\x1b[1mError: \x1b[0mCannot connect to API: Unable to connect. Is the computer able to access the url?', 'stderr')?.title,
+  'Provider endpoint unreachable');
+check('classify: unreachable endpoint title, 2.x wording',
+  classifyAgentLine('\x1b[91m\x1b[1mError: \x1b[0mConnectionRefused: Unable to connect. Is the computer able to access the url?', 'stderr')?.title,
+  'Provider endpoint unreachable');
+check('classify: unrelated "unable to connect" prose stays unclassified',
+  classifyAgentLine('Error: Unable to connect to database', 'stderr'), null);
 
 // Observed live (2026-09-03, openrouter): the account's weekly spend cap refuses the
 // request before the model sees it. Both entries settled as a bare `error` with no
@@ -924,6 +944,105 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   c.onOutput('stderr', PAYLOAD_429);
   c.flushOutput();
   check('flush: is a no-op once the collector is closed', c.list().length, 0);
+}
+
+// `opencode stats` report (verbatim excerpt, opencode 1.19.3): Cache Read + Cache Write
+// both count, and `Avg Cost/Day` must not overwrite `Total Cost`.
+{
+  const report = [
+    '│Total Cost                                        $0.42 │',
+    '│Avg Cost/Day                                      $0.21 │',
+    '│Avg Tokens/Session                                35.7K │',
+    '│Input                                             14.1K │',
+    '│Output                                              113 │',
+    '│Cache Read                                        20.9K │',
+    '│Cache Write                                         500 │',
+  ].join('\n');
+  const s = parseOpencodeStats(report);
+  check('stats: cache is read + write', s.tokens.cache, 21400);
+  check('stats: total cost wins over avg/day', s.cost.amount, 0.42);
+}
+
+// opencode CLI shapes: 2.x needs --standalone AFTER the subcommand, and
+// --file stays after the message on both lines.
+{
+  const cli = await import('../src/pipeline/opencode-cli.ts');
+  const saved = process.env.OPENCODE_MAJOR;
+  process.env.OPENCODE_MAJOR = '1';
+  check('cli 1.x: run argv', cli.agentRunArgv('hi', ['a.png']), ['run', 'hi', '--file', 'a.png']);
+  check('cli 1.x: server argv', cli.serverArgv(4096), ['web', '--hostname', '0.0.0.0', '--port', '4096']);
+  check('cli 1.x: no password', cli.serverPassword(), null);
+  process.env.OPENCODE_MAJOR = '2';
+  check('cli 2.x: run argv', cli.agentRunArgv('hi', ['a.png', 'b.png'], ['--x']),
+    ['run', '--standalone', '--x', 'hi', '--file', 'a.png', '--file', 'b.png']);
+  check('cli 2.x: stats argv', cli.statsArgv(), ['stats', '--standalone']);
+  check('cli 2.x: server argv', cli.serverArgv(4096), ['serve', '--hostname', '0.0.0.0', '--port', '4096']);
+  check('cli 2.x: server env carries the password',
+    cli.serverEnv().OPENCODE_SERVER_PASSWORD === cli.serverPassword() && !!cli.serverPassword(), true);
+  if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
+}
+
+// Model guard: 2.x silently answers an unusable model with a free one and exits 0
+// (probed: `anthropic/no-such-model` ran on `opencode/minimax-m3.1-flash-free`).
+{
+  check('model: same model is no diagnostic', modelDiagnostic('openrouter/openai/gpt-6-luna', ['openrouter/openai/gpt-6-luna']), null);
+  check('model: variant suffix is ignored', modelDiagnostic('openrouter/openai/gpt-6-luna#high', ['openrouter/openai/gpt-6-luna']), null);
+  check('model: no messages means no verdict', modelDiagnostic('a/b', []), null);
+  check('model: a dated id for the configured one is the same model',
+    modelDiagnostic('anthropic/claude-sonnet-4-5', ['anthropic/claude-sonnet-4-5-20250929']), null);
+  check('model: so is the resolved id of a -latest alias',
+    modelDiagnostic('anthropic/claude-3-5-sonnet-latest', ['anthropic/claude-3-5-sonnet-20241022']), null);
+  check('model: provider case is not a difference', modelDiagnostic('OpenRouter/a/b', ['openrouter/a/b']), null);
+  check('model: a sibling that merely shares a prefix is not', modelDiagnostic('a/gpt-6', ['a/gpt-6-mini'])?.severity, 'fatal');
+  const fb = modelDiagnostic('anthropic/no-such-model', ['opencode/minimax-m3.1-flash-free']);
+  check('model: full fallback is fatal', [fb?.kind, fb?.severity], ['wrong-model', 'fatal']);
+  check('model: and fails the run', deriveStatus([fb]), 'error');
+  check('model: but a build failure still reads as one', deriveStatus([fb], { buildFailed: true }), 'build-error');
+  const mixed = modelDiagnostic('a/b', ['a/b', 'c/d']);
+  check('model: an extra model alongside the right one is a warning', mixed?.severity, 'warning');
+  check('model: which does not change the status', deriveStatus([mixed]), 'success');
+}
+
+// opencode.json writer: 2.x only honours `codemode` under `mcp.servers` (a flat-shape
+// `codemode:false` was probed and silently ignored), and /api/model must read back
+// either shape as the 1.x block it rewrites from.
+{
+  const os = await import('os');
+  const fsx = await import('fs');
+  const pathx = await import('path');
+  const { writeOpencodeConfig, readOpencodeMcp } = await import('../src/pipeline/opencode-config.ts');
+  const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'occfg-'));
+  const block = {
+    'igniteui-cli': { type: 'local', command: ['ig', 'mcp'], enabled: true },
+    'igniteui-theming': { type: 'local', command: ['igniteui-theming-mcp'], environment: { A: '1' }, enabled: false },
+  };
+  const cfg = { framework: 'react', model: 'custom/m', customBaseUrl: 'http://x/v1' };
+  const saved = process.env.OPENCODE_MAJOR;
+  const read = () => JSON.parse(fsx.readFileSync(pathx.join(dir, 'opencode.json'), 'utf8'));
+
+  process.env.OPENCODE_MAJOR = '2';
+  writeOpencodeConfig(cfg, block, dir);
+  const v2 = read();
+  check('config 2.x: native permissions', v2.permissions, [
+    { action: '*', resource: '*', effect: 'allow' },
+    { action: 'websearch', resource: '*', effect: 'deny' },
+  ]);
+  check('config 2.x: no 1.x permission key', v2.permission, undefined);
+  check('config 2.x: servers carry disabled + codemode:false', v2.mcp.servers['igniteui-theming'],
+    { type: 'local', command: ['igniteui-theming-mcp'], environment: { A: '1' }, disabled: true, codemode: false });
+  check('config 2.x: enabled server', v2.mcp.servers['igniteui-cli'].disabled, false);
+  check('config 2.x: custom provider kept in the normalized 1.x spelling', v2.provider.custom.options.apiKey, '{env:CUSTOM_API_KEY}');
+  check('config 2.x: reads back as the 1.x block', readOpencodeMcp(dir), block);
+
+  process.env.OPENCODE_MAJOR = '1';
+  writeOpencodeConfig(cfg, block, dir);
+  const v1 = read();
+  check('config 1.x: permission string', v1.permission, 'allow');
+  check('config 1.x: flat mcp block', v1.mcp, block);
+  check('config 1.x: reads back unchanged', readOpencodeMcp(dir), block);
+
+  if (saved === undefined) delete process.env.OPENCODE_MAJOR; else process.env.OPENCODE_MAJOR = saved;
+  fsx.rmSync(dir, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------------------

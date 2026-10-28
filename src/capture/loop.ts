@@ -1,8 +1,7 @@
 'use strict';
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { createHash } from 'crypto';
+import { openStore, readToolCalls, type Store } from './opencode-store.ts';
 
 // Detector C's store reader.
 //
@@ -16,8 +15,6 @@ import { createHash } from 'crypto';
 //  - `tool-usage.ts` retains the FIRST 500 events and discards the rest, so a detector
 //    reading "the tail" would get a frozen prefix once a run passes 500 calls — exactly
 //    when a loop becomes worth detecting.
-
-const DB_REL = path.join('opencode', 'opencode.db');
 
 /** How many of the newest calls to pull. Bounded: this runs on a timer, mid-run. */
 export const LOOP_TAIL = 200;
@@ -73,40 +70,16 @@ export function fingerprintInput(input: unknown): string {
 export async function recentCalls(
   dataDir: string, since: number, limit: number = LOOP_TAIL,
 ): Promise<RecentCall[] | null> {
-  const dbPath = path.join(dataDir, DB_REL);
-  if (!fs.existsSync(dbPath)) return null;
-  let DatabaseSync: any;
-  try { ({ DatabaseSync } = await import('node:sqlite')); } catch (_) { return null; }
-  let db: any;
+  let store: Store | null;
+  try { store = await openStore(dataDir); } catch (_) { return null; }
+  if (!store) return null;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
-  } catch (_) {
-    return null;
-  }
-  try {
-    const rows = db
-      .prepare('select time_created, data from part where time_created >= ? order by time_created desc limit ?')
-      .all(since, limit) as Array<{ time_created: number; data: string }>;
-
-    const calls: RecentCall[] = [];
-    for (const row of rows) {
-      let part: any;
-      try { part = JSON.parse(String(row.data)); } catch (_) { continue; }
-      if (!part || part.type !== 'tool' || !part.tool) continue;
-      const state = part.state || {};
-      const start = state.time && state.time.start;
-      calls.push({
-        at: Number(start) || Number(row.time_created) || 0,
-        tool: String(part.tool),
-        fingerprint: fingerprintInput(state.input),
-      });
-    }
-    // Stable sort, so ties keep the store's own insertion order.
-    return calls.sort((a, b) => a.at - b.at);
+    return readToolCalls(store, since, limit)
+      .map((c) => ({ at: c.at, tool: c.tool, fingerprint: fingerprintInput(c.input) }));
   } catch (_) {
     return null;
   } finally {
-    try { db.close(); } catch (_) {}
+    store.close();
   }
 }
 

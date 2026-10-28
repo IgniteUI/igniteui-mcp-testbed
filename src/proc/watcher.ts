@@ -7,10 +7,9 @@ import { LOG_DIR } from '../config.ts';
 import { terminateTree } from './exec.ts';
 import type { OutputStream } from './exec.ts';
 
-export type WatcherName = 'app' | 'opencode';
+export type WatcherName = 'app' | 'opencode' | 'opencode-agent';
 
-// Long-lived child processes for this session (one app, one opencode).
-export const procs: Record<WatcherName, ChildProcess | null> = { app: null, opencode: null };
+export const procs: Record<WatcherName, ChildProcess | null> = { app: null, opencode: null, 'opencode-agent': null };
 
 // Spawn a long-running watcher; tee its output to a log file. `detached:true` puts
 // it in its own process group so killWatcher can take down the WHOLE tree — `npm run
@@ -37,6 +36,7 @@ export interface WatcherOpts {
    * chunk, which for a model switch means fusing two processes' output into one bogus line.
    */
   onClose?: (() => void) | null;
+  logPath?: string;
 }
 
 export function spawnWatcher(
@@ -47,7 +47,7 @@ export function spawnWatcher(
   extraEnv?: Record<string, string>,
   opts: WatcherOpts = {},
 ): ChildProcess {
-  const logPath = path.join(LOG_DIR, `${name}.log`);
+  const logPath = opts.logPath || path.join(LOG_DIR, `${name}.log`);
   const env = { ...process.env, ...extraEnv, ...(opts.env || {}) };
 
   if (!opts.onOutput) {
@@ -94,4 +94,8 @@ export async function killWatcher(name: WatcherName): Promise<void> {
   procs[name] = null;
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   await terminateTree(child);
+}
+
+export async function killAllWatchers(): Promise<void> {
+  await Promise.all((Object.keys(procs) as WatcherName[]).map(killWatcher));
 }
