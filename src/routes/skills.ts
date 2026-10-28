@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
 import { LOCAL_SKILLS_DIR } from '../config.ts';
-import { FRAMEWORKS } from '../frameworks.ts';
+import { getFramework, frameworkIds } from '../provider-registry.ts';
 
 // List the SKILL.md-bearing subfolders of one platform's local-skills dir.
 function listPlatform(platform: string): { name: string; valid: boolean }[] {
@@ -26,11 +26,11 @@ export default function registerSkillsRoutes(app: Express): void {
   app.get('/api/local-skills', (req, res) => {
     const platform = typeof req.query.platform === 'string' ? req.query.platform : '';
     if (platform) {
-      if (!FRAMEWORKS[platform]) return res.status(400).json({ ok: false, error: `unknown platform: ${platform}` });
+      if (!getFramework(platform)) return res.status(400).json({ ok: false, error: `unknown platform: ${platform}` });
       return res.json({ ok: true, dir: path.join(LOCAL_SKILLS_DIR, platform), platform, skills: listPlatform(platform) });
     }
     const byPlatform: Record<string, { name: string; valid: boolean }[]> = {};
-    for (const fw of Object.keys(FRAMEWORKS)) byPlatform[fw] = listPlatform(fw);
+    for (const fw of frameworkIds()) byPlatform[fw] = listPlatform(fw);
     res.json({ ok: true, dir: LOCAL_SKILLS_DIR, byPlatform });
   });
 }

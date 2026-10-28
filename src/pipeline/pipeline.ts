@@ -174,13 +174,20 @@ export async function runPipeline(
         const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
         emit('log', `cloning skills from github.com/${githubRef}`);
         await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
+        // The default branch moves, so record which commit this run actually tested — the
+        // entry log is persisted into the history record, so the run stays attributable.
+        const head = (await capture('git', ['-C', tmpDir, 'log', '-1', '--format=%h %cs'], appDir).catch(() => '')).trim();
+        // Repos that ship more than skills keep them under skills/ (the Agent Skills
+        // convention); only a folder holding a SKILL.md is a skill opencode can load.
+        const skillsRoot = fs.existsSync(path.join(tmpDir, 'skills')) ? path.join(tmpDir, 'skills') : tmpDir;
         let count = 0;
-        for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+        for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
           if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-          fs.cpSync(path.join(tmpDir, entry.name), path.join(skillsDir, entry.name), { recursive: true });
+          if (!fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))) continue;
+          fs.cpSync(path.join(skillsRoot, entry.name), path.join(skillsDir, entry.name), { recursive: true });
           count++;
         }
-        emit('log', `installed ${count} skill(s) from github.com/${githubRef}`);
+        emit('log', `installed ${count} skill(s) from github.com/${githubRef}${head ? ` @ ${head}` : ''}`);
         await rmrf(tmpDir);
       } else if (skillsConf?.installCommand?.length) {
         const [cmd, ...args] = skillsConf.installCommand;

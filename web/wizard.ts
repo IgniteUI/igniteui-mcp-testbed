@@ -161,9 +161,8 @@ async function refreshLocalSkills() {
 }
 
 // Populate the tests combo, grouped by framework: the group is the active framework
-// and its items are the specs that run for it — its own overlay plus the shared set.
-// External provider frameworks aren't in /api/tests' per-platform map, so they get the
-// shared set only (same as the matrix view). All discovered specs start selected;
+// and its items are the specs that run for it — its own overlay plus the shared set
+// (provider-pack frameworks included). All discovered specs start selected;
 // clearing the selection skips verification. Selection is preserved across framework
 // switches for specs that still exist.
 const testsKnownIds = new Set<string>();
@@ -173,13 +172,10 @@ async function refreshTestFiles() {
   const combo = $('#testsCombo');
   const fw = activeFramework();
   try {
-    const ig = st.provider === 'igniteui';
-    const j = ig
-      ? await getJSON(`/api/tests?platform=${encodeURIComponent(fw)}`)
-      : await getJSON('/api/tests');
+    const j = await getJSON(`/api/tests?platform=${encodeURIComponent(fw)}`);
     if (seq !== testsRefreshSeq) return;
     const shared = j.shared || [];
-    const overlay = ig ? (j.framework || []) : [];
+    const overlay = j.framework || [];
     const data = [
       ...shared.map((f: string) => ({ id: `${fw}::shared/${f}`, file: f, category: fw })),
       ...overlay.map((f: string) => ({ id: `${fw}::${fw}/${f}`, file: f, category: fw })),

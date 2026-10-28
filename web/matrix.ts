@@ -159,8 +159,8 @@ const testsNoteFor = (sel: number, total: number) =>
 
 // Populate the tests combo, grouped by framework: one group per selected platform, whose
 // items are the specs that run for it — its own overlay plus the shared set (a shared spec
-// is listed under each platform, so it can be toggled per framework; external provider
-// platforms aren't in the per-platform map and get the shared set only). All discovered
+// is listed under each platform, so it can be toggled per framework; provider-pack
+// platforms are in the per-platform map too). All discovered
 // specs start selected; each entry runs only its own group's selected specs. Selection is
 // preserved as platforms are toggled.
 const mxTestsKnownIds = new Set<string>();
