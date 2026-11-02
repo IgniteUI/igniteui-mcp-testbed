@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic } from './types.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord } from './types.ts';
 import { mcpOverrideFor } from './config.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
 
@@ -193,6 +193,12 @@ export function updateStats(id: string | null, snapshot: Stats | null): HistoryR
 export function updateTools(id: string | null, usage: ToolUsage | null): HistoryRecord | null {
   if (!id || !usage) return null;
   return update(id, (r) => { r.tools = usage; });
+}
+
+// Set by the pipeline once a pack's skills are installed, which is after the record exists.
+export function updateSkillSources(id: string | null, sources: SkillSourceRecord[] | null): HistoryRecord | null {
+  if (!id || !Array.isArray(sources)) return null;
+  return update(id, (r) => { r.config.skillSources = sources.map((x) => ({ ...x, skills: x.skills.slice() })); });
 }
 
 // Diagnostics accrue while an interactive session runs — a provider 429 can land on the

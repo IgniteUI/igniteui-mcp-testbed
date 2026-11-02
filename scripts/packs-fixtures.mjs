@@ -178,6 +178,83 @@ const v2 = {
   throws('built-in framework id clash', () => reg.registerPack(reg.validatePack({ ...structuredClone(v2), name: 'x2', frameworks: [fw('angular')] })), /built-in/);
 }
 
+// ── skill sources (1b) ──────────────────────────────────────────────────────
+{
+  const { matchesInclude, hashSkills, installPackSkills, describeSkillSource } = await import('../src/pipeline/pack-skills.ts');
+  const { pruneSkills } = await import('../src/pipeline/skills.ts');
+  const { execFileSync } = await import('child_process');
+
+  const withSources = (sources, origin = 'inline', dir) =>
+    reg.validatePack({ ...structuredClone(v2), skills: { label: 's', sources } }, { origin, dir });
+
+  check('github: ref/path/include kept',
+    withSources([{ github: 'o/r', ref: 'v1.2.0', path: 'pkg/skills', include: ['ig-*'] }]).skills.sources,
+    [{ github: 'o/r', ref: 'v1.2.0', path: 'pkg/skills', include: ['ig-*'] }]);
+  check('github: sha ref ok', withSources([{ github: 'o/r', ref: '0123abcd' }]).skills.sources[0].ref, '0123abcd');
+  throws('github: ref starting with -', () => withSources([{ github: 'o/r', ref: '--upload-pack=x' }]), /ref must be/);
+  throws('github: ref with ..', () => withSources([{ github: 'o/r', ref: 'a..b' }]), /ref must be/);
+  throws('github: ref with space', () => withSources([{ github: 'o/r', ref: 'a b' }]), /ref must be/);
+  throws('github: path climb', () => withSources([{ github: 'o/r', path: '../x' }]), /must not leave/);
+  throws('github: bad include glob', () => withSources([{ github: 'o/r', include: ['../x'] }]), /include must be/);
+  throws('github: empty include', () => withSources([{ github: 'o/r', include: [] }]), /include must be/);
+  throws('command: include not allowed', () => withSources([{ command: ['x'], include: ['a'] }]), /not valid on a "command"/);
+  throws('dir: needs a folder pack', () => withSources([{ dir: 'skills' }]), /needs a folder pack/);
+  throws('dir: needs a folder pack (file)', () => withSources([{ dir: 'skills' }], 'file'), /needs a folder pack/);
+  throws('dir: climb', () => withSources([{ dir: '../x' }], 'folder', root), /must not leave/);
+  throws('dir: ref not allowed', () => withSources([{ dir: 'skills', ref: 'main' }], 'folder', root), /not valid on a "dir"/);
+
+  check('describe github', describeSkillSource({ github: 'o/r', ref: 'main', path: 'skills' }), 'github:o/r@main/skills');
+  check('describe github default ref', describeSkillSource({ github: 'o/r' }), 'github:o/r@HEAD');
+  check('include: glob', [matchesInclude('ig-grid', ['ig-*']), matchesInclude('other', ['ig-*']), matchesInclude('x', undefined)], [true, false, true]);
+  check('include: dot is literal', matchesInclude('igXgrid', ['ig.grid']), false);
+
+  // A folder pack with two dir sources and a command source.
+  const packDir = path.join(root, 'skillpack');
+  const mk = (rel, body) => { fs.mkdirSync(path.dirname(path.join(packDir, rel)), { recursive: true }); fs.writeFileSync(path.join(packDir, rel), body); };
+  mk('pack.json', '{}');
+  mk('skills/ig-grid/SKILL.md', 'grid v1');
+  mk('skills/ig-chart/SKILL.md', 'chart');
+  mk('skills/ig-chart/ref/a.md', 'ref');
+  mk('skills/other/SKILL.md', 'other');
+  mk('skills/no-manifest/README.md', 'not a skill');
+  mk('extra/ig-grid/SKILL.md', 'grid v2');
+  const pack = reg.validatePack({ ...structuredClone(v2), skills: { label: 's', sources: [
+    { dir: 'skills', include: ['ig-*'] },
+    { dir: 'extra' },
+    { command: [process.execPath, '-e', "require('fs').mkdirSync('from-cmd')"] },
+  ] } }, { origin: 'folder', dir: packDir });
+
+  const appSkills = path.join(root, 'app', '.agents', 'skills');
+  const logs = [], records = [];
+  const runStep = async (cmd, argv, cwd) => execFileSync(cmd, argv, { cwd });
+  await installPackSkills(pack, appSkills, (_t, m) => logs.push(m), runStep, records);
+  check('install: records per source', records.map((r) => [r.source, r.skills]),
+    [['dir:skills', ['ig-chart', 'ig-grid']], ['dir:extra', ['ig-grid']], [`command:${process.execPath} -e require('fs').mkdirSync('from-cmd')`, ['from-cmd']]]);
+  check('install: dir sources hashed, command not', records.map((r) => typeof r.hash), ['string', 'string', 'undefined']);
+  check('install: later source replaces same-named skill', fs.readFileSync(path.join(appSkills, 'ig-grid', 'SKILL.md'), 'utf8'), 'grid v2');
+  check('install: replacement is logged', logs.some((l) => /"ig-grid".*replaces/.test(l)), true);
+  check('install: excluded and manifest-less folders skipped', fs.readdirSync(appSkills).sort(), ['from-cmd', 'ig-chart', 'ig-grid']);
+
+  const copy = path.join(root, 'copy');
+  fs.cpSync(appSkills, copy, { recursive: true });
+  check('hash: location-independent', hashSkills(copy, ['ig-chart']), hashSkills(appSkills, ['ig-chart']));
+  fs.writeFileSync(path.join(copy, 'ig-chart', 'ref', 'a.md'), 'changed');
+  check('hash: content-sensitive', hashSkills(copy, ['ig-chart']) === hashSkills(appSkills, ['ig-chart']), false);
+
+  const failing = reg.validatePack({ ...structuredClone(v2), skills: { label: 's', sources: [{ dir: 'skills', include: ['other'] }, { dir: 'missing' }] } }, { origin: 'folder', dir: packDir });
+  const rec2 = [];
+  let threw = false;
+  try { await installPackSkills(failing, path.join(root, 'app2'), () => {}, runStep, rec2); } catch { threw = true; }
+  check('install: a missing source fails the install', threw, true);
+  check('install: records survive the failure', rec2.map((r) => [r.source, r.skills, !!r.error]), [['dir:skills', ['other'], false], ['dir:missing', [], true]]);
+
+  const pruneLogs = [];
+  pruneSkills(['ig-chart', '../../app2', 'a/b'], (_t, m) => pruneLogs.push(m), path.join(root, 'app'));
+  check('prune: removes a named skill', fs.existsSync(path.join(appSkills, 'ig-chart')), false);
+  check('prune: refuses path-like names', pruneLogs.filter((l) => /ignored excluded skill/.test(l)).length, 2);
+  check('prune: climb target untouched', fs.existsSync(path.join(root, 'app2')), true);
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));

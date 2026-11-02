@@ -198,6 +198,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       const result = await runPipeline(cfg, {
         emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir,
         isCancelled: () => matrixCancelled || cancelledEntries.has(runId),
+        onSkillSources: (s) => history.updateSkillSources(runId, s),
       });
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);

@@ -319,6 +319,7 @@ function renderDetail(r){
     '<dt>Theme</dt><dd>'+esc(c.theme||'\u2014')+'</dd>'+
     '<dt>Skills</dt><dd>'+esc(skillSummary(c))+'</dd>'+
     (c.excludedSkills?.length?'<dt>Excl. skills</dt><dd>'+esc(c.excludedSkills.join(', '))+'</dd>':'')+
+    (c.skillSources||[]).map(s=>'<dt>Skill source</dt><dd>'+esc(s.source+(s.commit?' @ '+s.commit.slice(0,12):s.hash?' #'+s.hash:'')+' · '+(s.skills||[]).length+' skills'+(s.error?' · failed: '+s.error:''))+'</dd>').join('')+
     '<dt>MCPs</dt><dd>'+esc(mcpSummary(c))+'</dd>'+
     '<dt>Run id</dt><dd style="font-size:.68rem">'+esc(r.id)+'</dd>'+
     '</dl></div>'+

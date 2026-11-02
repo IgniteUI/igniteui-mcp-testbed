@@ -9,6 +9,11 @@ export function pruneSkills(excluded: string[], emit: Emit, appDir: string): voi
   const base = path.join(appDir, '.agents', 'skills');
   if (!fs.existsSync(base)) return;
   for (const name of excluded) {
+    // Names come from the request and reach rmSync, so only a plain folder name is accepted.
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+      emit('log', `warning: ignored excluded skill "${name.replace(/[\r\n]/g, ' ')}" (not a folder name)`);
+      continue;
+    }
     const dir = path.join(base, name);
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });

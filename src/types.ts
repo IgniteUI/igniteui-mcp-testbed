@@ -73,10 +73,31 @@ export interface PackMcpServer {
   args?: string[];
 }
 
-// One of `github` ('owner/repo', shallow-cloned) or `command` (run in .agents/skills/).
+// Exactly one of:
+//   github  'owner/repo', fetched at `ref` (branch, tag or commit; default HEAD). `path` is
+//           the skills folder inside the repo (default: skills/ if present, else root).
+//   dir     a folder inside the pack (folder packs only).
+//   command run in .agents/skills/ (no provenance beyond the command line).
+// `include` filters skill folder names with `*` globs (github and dir only).
 export interface PackSkillSource {
   github?: string;
+  ref?: string;
+  path?: string;
+  dir?: string;
+  include?: string[];
   command?: string[];
+}
+
+// What a run's skill sources resolved to, stored as `config.skillSources`.
+export interface SkillSourceRecord {
+  /** `github:owner/repo@ref/path`, `dir:<path>` or `command:<argv>`. */
+  source: string;
+  /** Full commit sha (github sources). */
+  commit?: string;
+  /** sha256 over the installed skill files (github and dir sources). */
+  hash?: string;
+  skills: string[];
+  error?: string;
 }
 
 export interface PackSkills {
@@ -159,6 +180,8 @@ export interface StoredConfig {
    * "no key" means "released", not "unknown".
    */
   mcpCommands?: Record<string, string>;
+  /** Where the run's pack skills came from. Absent on Ignite UI runs and older records. */
+  skillSources?: SkillSourceRecord[];
   opencodeVersion?: string;
   codemode?: boolean;
 }

@@ -117,6 +117,17 @@ The header switches between four views:
   v1 packs (`configure.mcpServers` / `configure.skills`) still load and are upgraded
   in memory. A matrix config file can also name packs, or carry them inline, via its
   `providers` field — see below.
+
+  A pack's `skills.sources` are installed in order, and a later source replaces a
+  same-named skill from an earlier one:
+  `{ "github": "owner/repo", "ref": "v1.2.0", "path": "skills", "include": ["ig-*"] }`
+  (`ref` is a branch, tag or commit; `path` defaults to `skills/` if the repo has one),
+  `{ "dir": "skills", "include": [...] }` (a folder inside a folder pack), or
+  `{ "command": [...] }` (run in `.agents/skills/`). Each run records what every source
+  resolved to (the commit for GitHub, a content hash for `dir`) as
+  `config.skillSources`, shown in the History detail, so two runs of the same pack can
+  be checked for using the same skills. The wizard's "Exclude skills" field works for
+  every provider.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.
@@ -256,7 +267,7 @@ is `--rm`.
 - **Skills** — `--agents generic` writes them to `.agents/skills/`, which opencode
   auto-discovers. The master checkbox switches `--agents generic` vs `--agents none`; the
   "Exclude skills" field deletes individual skill folders after generation (granular
-  on/off). The flag is passed to **both** `ig new` and `ig ai-config`: `ig new` runs its
+  on/off; this works for provider packs too). The flag is passed to **both** `ig new` and `ig ai-config`: `ig new` runs its
   own `ai-config` pass and, without the flag, falls back to the CLI's interactive
   defaults — so the scaffold would install the full skill set before the configure stage
   could say no. With the toggle off, stage 4 also sweeps `.agents/skills/`, `AGENTS.md`

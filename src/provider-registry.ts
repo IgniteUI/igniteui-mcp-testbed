@@ -126,23 +126,56 @@ function validateContainerDeps(cd: unknown): ProviderPack['containerDeps'] {
   return cd.npmGlobal ? { npmGlobal: [...cd.npmGlobal] } : {};
 }
 
-function validateSkillSource(src: any, label: string): PackSkillSource {
+// A git ref reaches a command line, so: no leading dash (option injection), no `..`,
+// nothing outside what branch/tag names and shas use.
+const GIT_REF = /^(?!-)(?!.*\.\.)[A-Za-z0-9._\/-]{1,200}$/;
+const SKILL_GLOB = /^[A-Za-z0-9._*-]+$/;
+
+function validateSkillSource(src: any, label: string, origin: PackOrigin): PackSkillSource {
   if (!isObj(src)) throw new Error(`${label} must be an object`);
-  const keys = Object.keys(src);
-  if (keys.length !== 1 || !['github', 'command'].includes(keys[0])) {
-    throw new Error(`${label} must have exactly one of "github" or "command"`);
+  const kinds = ['github', 'dir', 'command'].filter((k) => src[k] !== undefined);
+  if (kinds.length !== 1) throw new Error(`${label} must have exactly one of "github", "dir" or "command"`);
+  const allowed: Record<string, string[]> = {
+    github: ['github', 'ref', 'path', 'include'],
+    dir: ['dir', 'include'],
+    command: ['command'],
+  };
+  for (const k of Object.keys(src)) {
+    if (!allowed[kinds[0]].includes(k)) throw new Error(`${label}.${k} is not valid on a "${kinds[0]}" source`);
   }
-  if (src.github !== undefined) {
+  const include = (): Pick<PackSkillSource, 'include'> => {
+    if (src.include === undefined) return {};
+    if (!isStrArray(src.include) || !src.include.length || !src.include.every((g: string) => SKILL_GLOB.test(g))) {
+      throw new Error(`${label}.include must be a non-empty array of skill-name globs (letters, digits, . _ - and *)`);
+    }
+    return { include: [...src.include] };
+  };
+  if (kinds[0] === 'github') {
     if (typeof src.github !== 'string' || !GITHUB_REPO.test(src.github)) {
       throw new Error(`${label}.github must be "owner/repo" with only safe characters`);
     }
-    return { github: src.github };
+    if (src.ref !== undefined && (typeof src.ref !== 'string' || !GIT_REF.test(src.ref))) {
+      throw new Error(`${label}.ref must be a branch, tag or commit name`);
+    }
+    if (src.path !== undefined) assertRelativeInside(src.path, `${label}.path`);
+    return {
+      github: src.github,
+      ...(src.ref !== undefined ? { ref: src.ref } : {}),
+      ...(src.path !== undefined ? { path: src.path } : {}),
+      ...include(),
+    };
+  }
+  if (kinds[0] === 'dir') {
+    assertRelativeInside(src.dir, `${label}.dir`);
+    // Only a folder pack has somewhere for `dir` to point.
+    if (origin !== 'folder') throw new Error(`${label}.dir needs a folder pack (<name>/pack.json)`);
+    return { dir: src.dir, ...include() };
   }
   if (!isStrArray(src.command) || !src.command.length) throw new Error(`${label}.command must be a non-empty array of strings`);
   return { command: [...src.command] };
 }
 
-function upgradeV1(body: any): Omit<ProviderPack, 'origin' | 'dir'> {
+function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir'> {
   if (!isObj(body.configure) || !Array.isArray(body.configure.mcpServers)) {
     throw new Error('configure.mcpServers must be an array');
   }
@@ -164,8 +197,8 @@ function upgradeV1(body: any): Omit<ProviderPack, 'origin' | 'dir'> {
   if (sk !== undefined) {
     if (!isObj(sk) || !isStr(sk.label)) throw new Error('configure.skills.label is required');
     const sources: PackSkillSource[] = [];
-    if (sk.github !== undefined) sources.push(validateSkillSource({ github: sk.github }, 'configure.skills'));
-    else if (sk.installCommand !== undefined) sources.push(validateSkillSource({ command: sk.installCommand }, 'configure.skills'));
+    if (sk.github !== undefined) sources.push(validateSkillSource({ github: sk.github }, 'configure.skills', origin));
+    else if (sk.installCommand !== undefined) sources.push(validateSkillSource({ command: sk.installCommand }, 'configure.skills', origin));
     skills = { label: sk.label, sources };
   }
   return {
@@ -186,7 +219,7 @@ const V2_KEYS = new Set([
   'frameworks', 'mcp', 'skills', 'containerDeps',
 ]);
 
-function parseV2(body: any): Omit<ProviderPack, 'origin' | 'dir'> {
+function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir'> {
   for (const k of Object.keys(body)) {
     if (!V2_KEYS.has(k)) throw new Error(`unknown field "${k}"`);
   }
@@ -227,7 +260,7 @@ function parseV2(body: any): Omit<ProviderPack, 'origin' | 'dir'> {
     if (!Array.isArray(body.skills.sources)) throw new Error('skills.sources must be an array');
     skills = {
       label: body.skills.label,
-      sources: body.skills.sources.map((s: any, i: number) => validateSkillSource(s, `skills.sources[${i}]`)),
+      sources: body.skills.sources.map((s: any, i: number) => validateSkillSource(s, `skills.sources[${i}]`, origin)),
     };
   }
   return {
@@ -259,9 +292,10 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
   assertSafeId(body.name, 'pack name');
   if (!isStr(body.displayName)) throw new Error('displayName is required and must be a non-empty string');
 
+  const origin = src.origin ?? 'inline';
   let parsed: Omit<ProviderPack, 'origin' | 'dir'>;
-  if (body.schemaVersion === 2) parsed = parseV2(body);
-  else if (body.schemaVersion === undefined || body.schemaVersion === 1) parsed = upgradeV1(body);
+  if (body.schemaVersion === 2) parsed = parseV2(body, origin);
+  else if (body.schemaVersion === undefined || body.schemaVersion === 1) parsed = upgradeV1(body, origin);
   else throw new Error(`unsupported schemaVersion ${JSON.stringify(body.schemaVersion)} (expected 1 or 2)`);
 
   const q = (c: string) => qualifyMcpClass(parsed.name, c);
@@ -271,7 +305,7 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
       classes: parsed.mcp.classes.map((c) => ({ ...c, id: q(c.id) })),
       servers: parsed.mcp.servers.map((s) => ({ ...s, class: q(s.class) })),
     },
-    origin: src.origin ?? 'inline',
+    origin,
     ...(src.dir ? { dir: path.resolve(src.dir) } : {}),
   };
 }

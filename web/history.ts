@@ -118,6 +118,14 @@ function fmtFramework(fw: string | undefined): string {
 }
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
+// `github:owner/repo@main` → `… @ 1a2b3c4d5e6f · 3 skills`; the commit/hash is what makes
+// two runs of the same pack comparable.
+function skillSourceSummary(s: { source: string; commit?: string; hash?: string; skills?: string[]; error?: string }): string {
+  const id = s.commit ? `@ ${s.commit.slice(0, 12)}` : s.hash ? `#${s.hash}` : '';
+  const n = (s.skills || []).length;
+  return [s.source, id, `${n} skill${n === 1 ? '' : 's'}`, s.error ? `failed: ${s.error}` : ''].filter(Boolean).join(' · ');
+}
+
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
   const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
@@ -362,6 +370,8 @@ function bindGridTemplates() {
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          ${(c.skillSources || []).map((s: any) =>
+            gridHtml`<dt>Skill source</dt><dd>${skillSourceSummary(s)}</dd>`)}
           ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
             gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
           <dt>opencode</dt><dd>${opencodeSummary(c)}</dd>

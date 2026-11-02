@@ -10,6 +10,7 @@
     "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$", "not": { "enum": ["constructor", "prototype"] } },
     "argv": { "type": "array", "items": { "type": "string" } },
     "env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "include": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[A-Za-z0-9._*-]+$" }, "description": "Skill folder names to keep; * is a wildcard." },
     "relPath": { "type": "string", "minLength": 1, "not": { "pattern": "(^[\\\\/]|^[a-zA-Z]:|(^|[\\\\/])\\.\\.([\\\\/]|$))" } }
   },
   "properties": {
@@ -100,12 +101,21 @@
         "label": { "type": "string", "minLength": 1, "description": "Wizard checkbox label." },
         "sources": {
           "type": "array",
+          "description": "Installed in order; a later source replaces a same-named skill from an earlier one.",
           "items": {
             "oneOf": [
               { "type": "object", "additionalProperties": false, "required": ["github"],
-                "properties": { "github": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$" } } },
+                "properties": {
+                  "github": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", "description": "owner/repo" },
+                  "ref": { "type": "string", "pattern": "^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]{1,200}$", "description": "Branch, tag or commit sha. Default: the default branch." },
+                  "path": { "$ref": "#/$defs/relPath", "description": "Skills folder inside the repo. Default: skills/ if present, else the root." },
+                  "include": { "$ref": "#/$defs/include" } } },
+              { "type": "object", "additionalProperties": false, "required": ["dir"],
+                "properties": {
+                  "dir": { "$ref": "#/$defs/relPath", "description": "Folder inside the pack (folder packs only)." },
+                  "include": { "$ref": "#/$defs/include" } } },
               { "type": "object", "additionalProperties": false, "required": ["command"],
-                "properties": { "command": { "type": "array", "minItems": 1, "items": { "type": "string" } } } }
+                "properties": { "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Run in .agents/skills/." } } }
             ]
           }
         }

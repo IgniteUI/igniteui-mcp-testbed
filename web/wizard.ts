@@ -121,9 +121,7 @@ function collect() {
     ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
     : [];
   if ($('#customMcpEnable').checked) mcps.push('custom');
-  const excl = ig
-    ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
-    : [];
+  const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
   return {
     framework: activeFramework(),
     projectType: ig ? $('#ptype').value.trim() : '',
@@ -548,8 +546,7 @@ function tpl() {
       <fieldset>
         <legend>Agent skills</legend>
         <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.agents/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
-        <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
-        <igc-input outlined id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
+        <igc-input outlined id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
         <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.agents/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>

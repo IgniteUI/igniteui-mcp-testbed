@@ -28,7 +28,8 @@ import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
-import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage } from '../types.ts';
+import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord } from '../types.ts';
+import { installPackSkills } from './pack-skills.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
@@ -62,6 +63,8 @@ export interface PipelineOpts {
    * passes the same closure `onChild` already evaluates. Interactive runs pass nothing.
    */
   isCancelled?: (() => boolean) | null;
+  /** What a pack's skill sources resolved to (commit / hash per source), for the history record. */
+  onSkillSources?: ((sources: SkillSourceRecord[]) => void) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
@@ -78,7 +81,7 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null }: PipelineOpts,
+  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
@@ -159,39 +162,14 @@ export async function runPipeline(
     fs.writeFileSync(path.join(appDir, '.mcp.json'), JSON.stringify({ mcpServers: packServers }, null, 2));
     emit('log', `wrote .mcp.json (${Object.keys(packServers).length} server(s) from pack "${pack.name}")`);
 
-    // Optionally install skills.
-    if (cfg.skills) {
-      const skillsDir = path.join(appDir, '.agents', 'skills');
-      fs.mkdirSync(skillsDir, { recursive: true });
-      for (const src of pack.skills?.sources || []) {
-        if (src.github) {
-          // Validated as owner/repo at load; re-checked here because it reaches a git argument.
-          const githubRef = src.github;
-          if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
-            throw new Error(`invalid skills github value "${githubRef}" — expected "owner/repo" with only safe characters`);
-          }
-          const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
-          emit('log', `cloning skills from github.com/${githubRef}`);
-          await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
-          // The default branch moves, so record which commit this run actually tested.
-          const head = (await capture('git', ['-C', tmpDir, 'log', '-1', '--format=%h %cs'], appDir).catch(() => '')).trim();
-          // Repos that ship more than skills keep them under skills/; only a folder
-          // holding a SKILL.md is a skill opencode can load.
-          const skillsRoot = fs.existsSync(path.join(tmpDir, 'skills')) ? path.join(tmpDir, 'skills') : tmpDir;
-          let count = 0;
-          for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
-            if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-            if (!fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))) continue;
-            fs.cpSync(path.join(skillsRoot, entry.name), path.join(skillsDir, entry.name), { recursive: true });
-            count++;
-          }
-          emit('log', `installed ${count} skill(s) from github.com/${githubRef}${head ? ` @ ${head}` : ''}`);
-          await rmrf(tmpDir);
-        } else if (src.command?.length) {
-          const [cmd, ...args] = src.command;
-          emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
-          await runStep(cmd, args, skillsDir, emit);
-        }
+    if (cfg.skills && pack.skills?.sources.length) {
+      const records: SkillSourceRecord[] = [];
+      try {
+        await installPackSkills(pack, path.join(appDir, '.agents', 'skills'),
+          emit, (cmd, argv, cwd) => runStep(cmd, argv, cwd, emit), records);
+      } finally {
+        // Reported even when a source failed, so the record shows what did resolve.
+        onSkillSources?.(records);
       }
     }
 
@@ -359,7 +337,7 @@ export async function runPipeline(
   // the mechanism). With it on, drop just the folders the caller deselected.
   if (!cfg.skills) {
     stripGeneratedAgentConfig(appDir, emit);
-  } else if (configureStrategy === 'igniteui' && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
+  } else if (Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
   }
