@@ -369,6 +369,8 @@ function bindGridTemplates() {
           <dt>Theme</dt><dd>${c.theme || '—'}</dd>
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
+          ${c.pack ? gridHtml`<dt>Pack</dt><dd>${c.pack.name}${c.pack.version ? ` v${c.pack.version}` : ''} · #${c.pack.hash}</dd>` : gridHtml``}
+          ${Object.entries(c.toolVersions || {}).map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${v}</dd>`)}
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
           ${(c.skillSources || []).map((s: any) =>
             gridHtml`<dt>Skill source</dt><dd>${skillSourceSummary(s)}</dd>`)}
@@ -748,6 +750,20 @@ function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string 
     : '';
 }
 
+// A re-run uses whatever pack this container loaded. The hash covers the whole pack, so
+// a matching version with a different hash means the pack was edited without a bump.
+function rerunPackWarning(cfg: any, live: Record<string, { version: string | null; hash: string }> | null): string {
+  const p = cfg.pack;
+  if (!p || !live) return '';
+  const now = live[p.name];
+  if (!now) return `Pack "${p.name}" is not loaded in this container.`;
+  if (now.hash === p.hash) return '';
+  const ver = (v: string | null | undefined) => (v ? `v${v}` : 'no version');
+  return now.version === (p.version ?? null)
+    ? `Pack "${p.name}" changed since the recorded run (same ${ver(now.version)}, different content).`
+    : `Pack "${p.name}" differs: recorded run used ${ver(p.version)}, this container has ${ver(now.version)}.`;
+}
+
 async function rerunRun(id: string) {
   const r = runById.get(id);
   if (!r || !r.matrixId) return;
@@ -762,7 +778,8 @@ async function rerunRun(id: string) {
   st.rerunWarn = '';
   try {
     const s = await getJSON('/api/status');
-    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s)]
+    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s),
+      rerunPackWarning(c, s && s.packs ? s.packs : null)]
       .filter(Boolean).join(' ');
   } catch { /* leave the warning empty */ }
   update();

@@ -8,13 +8,14 @@
 // Two schema versions are accepted. v1 (`configure.mcpServers` + `configure.skills`) is
 // upgraded to v2 in memory, so everything past validatePack sees one shape.
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PROVIDERS_DIR } from './config.ts';
 import { FRAMEWORKS } from './frameworks.ts';
 import { bareMcpClass, qualifyMcpClass } from './mcp-class.ts';
 import { secretStatus, type SecretStatus } from './secrets.ts';
-import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOrigin, PackSecretDecl, PackSkillSource, ProviderPack } from './types.ts';
+import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOrigin, PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack } from './types.ts';
 
 const packs = new Map<string, ProviderPack>();
 
@@ -84,7 +85,57 @@ export function resolvePackPath(pack: ProviderPack, rel: string): string {
   return abs;
 }
 
-function validateFrameworks(list: unknown): ProviderPack['frameworks'] {
+// A pattern goes into a RegExp run over every poll of the dev-server log, so it must
+// compile and stay short.
+function validateBuildFailed(v: unknown, label: string): void {
+  if (v === undefined) return;
+  if (!isStrArray(v) || !v.length) throw new Error(`${label} must be a non-empty array of regex strings`);
+  for (const src of v) {
+    if (!src || src.length > 200) throw new Error(`${label} entries must be 1–200 characters`);
+    try { new RegExp(src, 'i'); } catch (e: any) { throw new Error(`${label} "${src}" is not a valid regex (${e.message})`); }
+  }
+}
+
+const ROUTE_KINDS = ['route-config', 'razor', 'state-nav', 'static'];
+
+function validateRoutes(r: any, label: string): void {
+  if (r === undefined) return;
+  if (!isObj(r) || !ROUTE_KINDS.includes(r.kind)) throw new Error(`${label}.kind must be one of ${ROUTE_KINDS.join(', ')}`);
+  for (const k of Object.keys(r)) {
+    if (!['kind', 'fallback', 'paths'].includes(k)) throw new Error(`${label}.${k} is not a valid field`);
+  }
+  if (r.fallback !== undefined && r.fallback !== 'state-nav') throw new Error(`${label}.fallback must be "state-nav"`);
+  if (r.kind === 'static') {
+    if (!isStrArray(r.paths) || !r.paths.length || !r.paths.every((p: string) => /^\/[^\s]*$/.test(p))) {
+      throw new Error(`${label}.paths must be a non-empty array of paths starting with "/"`);
+    }
+  } else if (r.paths !== undefined) {
+    throw new Error(`${label}.paths is only valid with kind "static"`);
+  }
+}
+
+function validateScaffold(sc: any, label: string, origin: PackOrigin): void {
+  if (!isObj(sc)) throw new Error(`${label} is required`);
+  if (sc.kind === 'template') {
+    // Only a folder pack has a template folder to copy.
+    if (origin !== 'folder') throw new Error(`${label}.kind "template" needs a folder pack (<name>/pack.json)`);
+    assertRelativeInside(sc.from, `${label}.from`);
+    for (const k of Object.keys(sc)) {
+      if (!['kind', 'from', 'env'].includes(k)) throw new Error(`${label}.${k} is not valid on a template scaffold`);
+    }
+  } else if (sc.kind === undefined || sc.kind === 'command') {
+    if (typeof sc.cmd !== 'string') throw new Error(`${label}.cmd is required`);
+    if (!isStrArray(sc.argv)) throw new Error(`${label}.argv must be an array of strings`);
+    if (sc.argv.some((a: string) => a.includes('{{secret:'))) {
+      throw new Error(`${label}.argv must not reference a secret — pass it through env instead`);
+    }
+  } else {
+    throw new Error(`${label}.kind must be "command" or "template"`);
+  }
+  validateEnv(sc.env, `${label}.env`);
+}
+
+function validateFrameworks(list: unknown, origin: PackOrigin): ProviderPack['frameworks'] {
   if (!Array.isArray(list) || list.length === 0) throw new Error('frameworks must be a non-empty array');
   const seen = new Set<string>();
   list.forEach((fw: any, i) => {
@@ -93,18 +144,16 @@ function validateFrameworks(list: unknown): ProviderPack['frameworks'] {
     if (seen.has(fw.id)) throw new Error(`frameworks[${i}].id "${fw.id}" is declared twice`);
     seen.add(fw.id);
     if (!isStr(fw.label)) throw new Error(`frameworks[${i}].label is required`);
-    if (!fw.scaffold || typeof fw.scaffold.cmd !== 'string') throw new Error(`frameworks[${i}].scaffold.cmd is required`);
-    if (!isStrArray(fw.scaffold.argv)) throw new Error(`frameworks[${i}].scaffold.argv must be an array of strings`);
-    validateEnv(fw.scaffold.env, `frameworks[${i}].scaffold.env`);
+    validateScaffold(fw.scaffold, `frameworks[${i}].scaffold`, origin);
     if (!fw.dev || typeof fw.dev.cmd !== 'string') throw new Error(`frameworks[${i}].dev.cmd is required`);
     if (!isStrArray(fw.dev.argv)) throw new Error(`frameworks[${i}].dev.argv must be an array of strings`);
     validateEnv(fw.dev.env, `frameworks[${i}].dev.env`);
     // Command lines are logged into history, so a secret may only be passed through env.
-    for (const [label, argv] of [['scaffold', fw.scaffold.argv], ['dev', fw.dev.argv]] as const) {
-      if (argv.some((a: string) => a.includes('{{secret:'))) {
-        throw new Error(`frameworks[${i}].${label}.argv must not reference a secret — pass it through env instead`);
-      }
+    if (fw.dev.argv.some((a: string) => a.includes('{{secret:'))) {
+      throw new Error(`frameworks[${i}].dev.argv must not reference a secret — pass it through env instead`);
     }
+    validateBuildFailed(fw.buildFailed, `frameworks[${i}].buildFailed`);
+    validateRoutes(fw.routes, `frameworks[${i}].routes`);
     if (fw.install !== undefined && !isStrArray(fw.install)) throw new Error(`frameworks[${i}].install must be an array of strings`);
     if (fw.prepare !== undefined) {
       if (!isObj(fw.prepare)) throw new Error(`frameworks[${i}].prepare must be an object of { relativePath: contents }`);
@@ -166,6 +215,29 @@ function checkSecretRefs(frameworks: ProviderPack['frameworks'], secrets: PackSe
         }
       }
     }
+  });
+}
+
+function validateVersions(list: unknown, frameworkIds: string[]): PackVersionProbe[] {
+  if (!Array.isArray(list)) throw new Error('versions must be an array');
+  const seen = new Set<string>();
+  return list.map((v: any, i: number) => {
+    const label = `versions[${i}]`;
+    if (!isObj(v) || !isStr(v.name)) throw new Error(`${label}.name is required`);
+    if (seen.has(v.name)) throw new Error(`${label}.name "${v.name}" is declared twice`);
+    seen.add(v.name);
+    if (!isStr(v.cmd)) throw new Error(`${label}.cmd is required`);
+    if (!isStrArray(v.argv)) throw new Error(`${label}.argv must be an array of strings`);
+    if (v.argv.some((a: string) => a.includes('{{secret:'))) throw new Error(`${label}.argv must not reference a secret`);
+    if (v.frameworks !== undefined) {
+      if (!isStrArray(v.frameworks) || !v.frameworks.every((f: string) => frameworkIds.includes(f))) {
+        throw new Error(`${label}.frameworks must list this pack's framework ids`);
+      }
+    }
+    for (const k of Object.keys(v)) {
+      if (!['name', 'cmd', 'argv', 'frameworks'].includes(k)) throw new Error(`${label}.${k} is not a valid field`);
+    }
+    return { name: v.name, cmd: v.cmd, argv: [...v.argv], ...(v.frameworks ? { frameworks: [...v.frameworks] } : {}) };
   });
 }
 
@@ -235,7 +307,7 @@ function validateSkillSource(src: any, label: string, origin: PackOrigin): PackS
   return { command: [...src.command] };
 }
 
-function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir'> {
+function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir' | 'hash'> {
   if (!isObj(body.configure) || !Array.isArray(body.configure.mcpServers)) {
     throw new Error('configure.mcpServers must be an array');
   }
@@ -267,7 +339,7 @@ function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' |
     displayName: body.displayName,
     ...(isStr(body.description) ? { description: body.description } : {}),
     ...(isStr(body.version) ? { version: body.version } : {}),
-    frameworks: validateFrameworks(body.frameworks),
+    frameworks: validateFrameworks(body.frameworks, origin),
     mcp: { classes, servers },
     ...(skills ? { skills } : {}),
     ...(body.containerDeps !== undefined ? { containerDeps: validateContainerDeps(body.containerDeps) } : {}),
@@ -276,10 +348,10 @@ function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' |
 
 const V2_KEYS = new Set([
   '$schema', 'schemaVersion', 'name', 'displayName', 'description', 'version',
-  'frameworks', 'mcp', 'skills', 'secrets', 'containerDeps',
+  'frameworks', 'mcp', 'skills', 'secrets', 'versions', 'containerDeps',
 ]);
 
-function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir'> {
+function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir' | 'hash'> {
   for (const k of Object.keys(body)) {
     if (!V2_KEYS.has(k)) throw new Error(`unknown field "${k}"`);
   }
@@ -329,10 +401,12 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
     displayName: body.displayName,
     ...(isStr(body.description) ? { description: body.description } : {}),
     ...(isStr(body.version) ? { version: body.version } : {}),
-    frameworks: validateFrameworks(body.frameworks),
+    frameworks: validateFrameworks(body.frameworks, origin),
     mcp: { classes, servers },
     ...(skills ? { skills } : {}),
     ...(body.secrets !== undefined ? { secrets: validateSecrets(body.secrets) } : {}),
+    ...(body.versions !== undefined
+      ? { versions: validateVersions(body.versions, (body.frameworks || []).map((f: any) => f?.id)) } : {}),
     ...(body.containerDeps !== undefined ? { containerDeps: validateContainerDeps(body.containerDeps) } : {}),
   };
 }
@@ -354,7 +428,7 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
   if (!isStr(body.displayName)) throw new Error('displayName is required and must be a non-empty string');
 
   const origin = src.origin ?? 'inline';
-  let parsed: Omit<ProviderPack, 'origin' | 'dir'>;
+  let parsed: Omit<ProviderPack, 'origin' | 'dir' | 'hash'>;
   if (body.schemaVersion === 2) parsed = parseV2(body, origin);
   else if (body.schemaVersion === undefined || body.schemaVersion === 1) parsed = upgradeV1(body, origin);
   else throw new Error(`unsupported schemaVersion ${JSON.stringify(body.schemaVersion)} (expected 1 or 2)`);
@@ -368,8 +442,42 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
       servers: parsed.mcp.servers.map((s) => ({ ...s, class: q(s.class) })),
     },
     origin,
+    hash: src.dir ? hashPackFolder(src.dir) : hashJson(body),
     ...(src.dir ? { dir: path.resolve(src.dir) } : {}),
   };
+}
+
+const canonical = (v: any): any =>
+  Array.isArray(v) ? v.map(canonical)
+    : isObj(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]))
+      : v;
+
+// Key order and whitespace don't change what a pack does, so they don't change its hash.
+export function hashJson(body: unknown): string {
+  return crypto.createHash('sha256').update(JSON.stringify(canonical(body))).digest('hex').slice(0, 16);
+}
+
+// Every file under the pack folder (template, tests and skills included), by relative
+// path + content. Dot-entries and node_modules are skipped; symlinks aren't followed.
+export function hashPackFolder(dir: string): string {
+  const h = crypto.createHash('sha256');
+  const files: string[] = [];
+  const walk = (d: string) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile()) files.push(full);
+    }
+  };
+  walk(dir);
+  for (const f of files.sort()) {
+    h.update(path.relative(dir, f).split(path.sep).join('/'));
+    h.update('\0');
+    h.update(fs.readFileSync(f));
+    h.update('\0');
+  }
+  return h.digest('hex').slice(0, 16);
 }
 
 /** The pack as the browser sees it: no container paths, and secret status (set /
@@ -379,6 +487,10 @@ export function publicPack(p: ProviderPack): Omit<ProviderPack, 'dir' | 'secrets
   return { ...rest, secrets: secretStatus(p) };
 }
 
+// Without `routes`, a pack gets route-config with the state-nav fallback: the fallback
+// only runs when route-config finds nothing, so it can't lose a page.
+export const DEFAULT_PACK_ROUTES = { kind: 'route-config', fallback: 'state-nav' } as const;
+
 function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
   return {
     scaffold: fw.scaffold,
@@ -387,6 +499,8 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
     aiFramework: fw.id,
     dev: fw.dev,
     prepare: fw.prepare,
+    buildFailed: fw.buildFailed,
+    routes: fw.routes ?? { ...DEFAULT_PACK_ROUTES },
   };
 }
 

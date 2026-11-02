@@ -318,6 +318,8 @@ function renderDetail(r){
     '<dt>Project type</dt><dd>'+esc(c.projectType||'\u2014')+'</dd>'+
     '<dt>Theme</dt><dd>'+esc(c.theme||'\u2014')+'</dd>'+
     '<dt>Skills</dt><dd>'+esc(skillSummary(c))+'</dd>'+
+    (c.pack?'<dt>Pack</dt><dd>'+esc(c.pack.name+(c.pack.version?' v'+c.pack.version:'')+' #'+c.pack.hash)+'</dd>':'')+
+    Object.entries(c.toolVersions||{}).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+
     (c.excludedSkills?.length?'<dt>Excl. skills</dt><dd>'+esc(c.excludedSkills.join(', '))+'</dd>':'')+
     (c.skillSources||[]).map(s=>'<dt>Skill source</dt><dd>'+esc(s.source+(s.commit?' @ '+s.commit.slice(0,12):s.hash?' #'+s.hash:'')+' · '+(s.skills||[]).length+' skills'+(s.error?' · failed: '+s.error:''))+'</dd>').join('')+
     '<dt>MCPs</dt><dd>'+esc(mcpSummary(c))+'</dd>'+

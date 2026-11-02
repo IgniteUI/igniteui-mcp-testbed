@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RouteDiscovery } from '../types.ts';
+import type { RouteDiscovery, RouteSpec } from '../types.ts';
 
 type Classified = { keep: string } | { skip: string };
 
@@ -155,14 +155,19 @@ function fromReactStateNav(appDir: string): RouteDiscovery {
   return res;
 }
 
-// discoverRoutes(appDir, framework) -> { routes: string[], skipped: [{path,reason}], sources: string[] }
-export function discoverRoutes(appDir: string, framework: string): RouteDiscovery {
-  if (framework === 'blazor') return fromRazor(appDir);
-  const res = fromRouteConfigs(appDir);
-  // If a React / WC app has no URL routes (AI agent replaced the router with state-
-  // based navigation), fall back to state-navigation discovery so we can still
-  // capture per-page screenshots via sidebar clicks.
-  if (res.routes.length === 0 && (framework.startsWith('react') || framework.startsWith('webcomponents'))) {
+// What the framework's RouteSpec asks for. The fallback runs only when the primary kind
+// found nothing (an agent replaced the router with state-based navigation).
+export function discoverRoutes(appDir: string, spec: RouteSpec): RouteDiscovery {
+  const primary = (kind: RouteSpec['kind']): RouteDiscovery => {
+    switch (kind) {
+      case 'razor': return fromRazor(appDir);
+      case 'state-nav': return fromReactStateNav(appDir);
+      case 'static': return { routes: [...new Set(spec.paths || ['/'])], skipped: [], sources: [] };
+      default: return fromRouteConfigs(appDir);
+    }
+  };
+  const res = primary(spec.kind);
+  if (res.routes.length === 0 && spec.fallback === 'state-nav' && spec.kind !== 'state-nav') {
     const stateRes = fromReactStateNav(appDir);
     if (stateRes.routes.length > 0) return stateRes;
   }

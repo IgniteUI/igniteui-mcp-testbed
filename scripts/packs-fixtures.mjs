@@ -14,6 +14,7 @@ process.env.WORK_DIR = path.join(root, 'work');
 process.env.HISTORY_DIR = path.join(root, 'history');
 // Must be set before the first import: src/secrets.ts scrubs SECRET_* when it loads.
 process.env.SECRETS_DIR = path.join(root, 'secrets');
+process.env.TESTS_DIR = path.join(root, 'tests');
 process.env.SECRET_REVEAL_KEY = 'sk-reveal-0123456789';
 process.env.SECRET_SHORT = 'abc';
 
@@ -356,6 +357,106 @@ const v2 = {
   reg.unregisterPack('lic');
 }
 
+// ── scaffold / tests / builds / routes / provenance (1d) ────────────────────
+{
+  const { fillVars, copyTemplate } = await import('../src/pipeline/template.ts');
+  const { discoverRoutes } = await import('../src/capture/route-discovery.ts');
+  const { buildFailedRe, BUILD_FAILED_RE } = await import('../src/proc/ports.ts');
+  const { frameworkTests } = await import('../src/verify/tests.ts');
+  const history = await import('../src/history.ts');
+
+  const withFw = (over, origin = 'inline', dir) =>
+    reg.validatePack({ ...structuredClone(v2), name: 'tp', frameworks: [{ ...fw('tp-fw'), ...over }] }, { origin, dir });
+  const tmpl = { scaffold: { kind: 'template', from: 'template/node' } };
+
+  check('template: ok on a folder pack', withFw(tmpl, 'folder', root).frameworks[0].scaffold, { kind: 'template', from: 'template/node' });
+  throws('template: needs a folder pack', () => withFw(tmpl), /needs a folder pack/);
+  throws('template: from climb', () => withFw({ scaffold: { kind: 'template', from: '../x' } }, 'folder', root), /must not leave/);
+  throws('template: cmd not allowed', () => withFw({ scaffold: { kind: 'template', from: 't', cmd: 'x' } }, 'folder', root), /not valid on a template/);
+  throws('scaffold: unknown kind', () => withFw({ scaffold: { kind: 'git', from: 't' } }), /"command" or "template"/);
+  throws('scaffold: command still needs cmd', () => withFw({ scaffold: { argv: [] } }), /scaffold\.cmd is required/);
+
+  check('buildFailed: kept', withFw({ buildFailed: ['error TS\\d+', 'Build failed'] }).frameworks[0].buildFailed, ['error TS\\d+', 'Build failed']);
+  throws('buildFailed: bad regex', () => withFw({ buildFailed: ['(unclosed'] }), /not a valid regex/);
+  throws('buildFailed: too long', () => withFw({ buildFailed: ['x'.repeat(201)] }), /1–200/);
+  throws('buildFailed: empty', () => withFw({ buildFailed: [] }), /non-empty/);
+  const re = buildFailedRe(['error TS\\d+', 'Build failed']);
+  check('buildFailedRe: matches either, case-insensitive', [re.test('src/a.ts: ERROR TS2322'), re.test('build FAILED'), re.test('compiled ok')], [true, true, false]);
+  check('buildFailedRe: none ⇒ null', buildFailedRe(undefined), null);
+  check('built-in markers unchanged', BUILD_FAILED_RE.test('Application bundle generation failed'), true);
+
+  check('routes: static', withFw({ routes: { kind: 'static', paths: ['/', '/dash'] } }).frameworks[0].routes, { kind: 'static', paths: ['/', '/dash'] });
+  throws('routes: bad kind', () => withFw({ routes: { kind: 'sitemap' } }), /kind must be one of/);
+  throws('routes: static path without /', () => withFw({ routes: { kind: 'static', paths: ['dash'] } }), /starting with "\/"/);
+  throws('routes: paths only for static', () => withFw({ routes: { kind: 'razor', paths: ['/'] } }), /only valid with kind "static"/);
+  throws('routes: bad fallback', () => withFw({ routes: { kind: 'razor', fallback: 'razor' } }), /fallback must be/);
+  check('routes: pack default', reg.getFramework('reveal-node').routes, { kind: 'route-config', fallback: 'state-nav' });
+  check('routes: built-ins explicit', ['angular', 'react', 'webcomponents', 'blazor'].map((f) => reg.getFramework(f).routes), [
+    { kind: 'route-config' }, { kind: 'route-config', fallback: 'state-nav' }, { kind: 'route-config', fallback: 'state-nav' }, { kind: 'razor' }]);
+
+  const emptyApp = path.join(root, 'routes-app');
+  fs.mkdirSync(emptyApp);
+  check('discoverRoutes: static', discoverRoutes(emptyApp, { kind: 'static', paths: ['/', '/a', '/a'] }).routes, ['/', '/a']);
+  check('discoverRoutes: nothing found, no fallback', discoverRoutes(emptyApp, { kind: 'route-config' }).routes, []);
+  fs.mkdirSync(path.join(emptyApp, 'src'));
+  fs.writeFileSync(path.join(emptyApp, 'src', 'app.routes.ts'), "export const routes = [{ path: '' }, { path: 'grid' }];");
+  check('discoverRoutes: route-config', discoverRoutes(emptyApp, { kind: 'route-config', fallback: 'state-nav' }).routes, ['/grid']);
+
+  check('fillVars: known filled, unknown and spaced left alone',
+    fillVars('{{name}}:{{port}} {{title}} {{ name }}', { name: 'app', port: 5000 }), 'app:5000 {{title}} {{ name }}');
+  const tsrc = path.join(root, 'tmpl-src');
+  fs.mkdirSync(path.join(tsrc, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tsrc, 'package.json'), '{"name":"{{name}}","scripts":{"dev":"vite --port {{port}}"}}');
+  fs.writeFileSync(path.join(tsrc, 'src', 'app.html'), '<h1>{{title}}</h1>');
+  fs.writeFileSync(path.join(tsrc, '{{name}}.config'), 'x');
+  const bin = Buffer.from([0x89, 0x50, 0x00, 0x7b, 0x7b, 0x6e, 0x61, 0x6d, 0x65, 0x7d, 0x7d]);
+  fs.writeFileSync(path.join(tsrc, 'logo.png'), bin);
+  let tlinked = false;
+  try { fs.symlinkSync(path.join(root, 'secrets-outside'), path.join(tsrc, 'escape'), 'junction'); tlinked = true; } catch { /* no symlink rights */ }
+  const tdest = path.join(root, 'tmpl-dest');
+  const tlogs = [];
+  const n = copyTemplate(tsrc, tdest, { name: 'app', port: 5000 }, (_t, m) => tlogs.push(m));
+  check('copyTemplate: file count', n, 4);
+  check('copyTemplate: vars filled', JSON.parse(fs.readFileSync(path.join(tdest, 'package.json'), 'utf8')), { name: 'app', scripts: { dev: 'vite --port 5000' } });
+  check('copyTemplate: app bindings kept', fs.readFileSync(path.join(tdest, 'src', 'app.html'), 'utf8'), '<h1>{{title}}</h1>');
+  check('copyTemplate: names filled', fs.existsSync(path.join(tdest, 'app.config')), true);
+  check('copyTemplate: binary untouched', fs.readFileSync(path.join(tdest, 'logo.png')).equals(bin), true);
+  if (tlinked) check('copyTemplate: symlink skipped', [fs.existsSync(path.join(tdest, 'escape')), tlogs.some((l) => /symlink skipped/.test(l))], [false, true]);
+  throws('copyTemplate: var turning a name into a path', () => copyTemplate(tsrc, path.join(root, 'tmpl-dest2'), { name: '../x', port: 1 }, () => {}), /expands to/);
+
+  fs.mkdirSync(path.join(root, 'tests', 'reveal-node'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'tests', 'reveal-node', 'a.spec.ts'), '');
+  fs.mkdirSync(path.join(providersDir, 'reveal', 'tests', 'reveal-node', 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(providersDir, 'reveal', 'tests', 'reveal-node', 'a.spec.ts'), '');
+  fs.writeFileSync(path.join(providersDir, 'reveal', 'tests', 'reveal-node', 'sub', 'b.spec.ts'), '');
+  fs.writeFileSync(path.join(providersDir, 'reveal', 'tests', 'reveal-node', 'notes.md'), '');
+  check('tests: host and pack specs side by side', frameworkTests('reveal-node').map((f) => f.split(path.sep).join('/')).sort(),
+    ['@reveal/a.spec.ts', '@reveal/sub/b.spec.ts', 'a.spec.ts']);
+  check('tests: file pack has none of its own', frameworkTests('mat-ng'), []);
+
+  throws('versions: unknown framework', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: [], frameworks: ['nope'] }] }), /framework ids/);
+  throws('versions: secret in argv', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: ['{{secret:A}}'] }] }), /must not reference a secret/);
+  throws('versions: duplicate', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'a', argv: [] }, { name: 'x', cmd: 'b', argv: [] }] }), /declared twice/);
+
+  const reordered = Object.fromEntries(Object.entries(structuredClone(v2)).reverse());
+  check('hash: JSON key order irrelevant', reg.validatePack(reordered).hash, reg.validatePack(structuredClone(v2)).hash);
+  check('hash: JSON content sensitive', reg.validatePack({ ...structuredClone(v2), version: '2' }).hash === reg.validatePack(structuredClone(v2)).hash, false);
+  const revealDir = path.join(providersDir, 'reveal');
+  const h1 = reg.hashPackFolder(revealDir);
+  fs.writeFileSync(path.join(revealDir, 'tests', 'reveal-node', 'a.spec.ts'), 'changed');
+  check('hash: any file in the pack folder counts', reg.hashPackFolder(revealDir) === h1, false);
+  fs.mkdirSync(path.join(revealDir, 'node_modules'));
+  fs.writeFileSync(path.join(revealDir, 'node_modules', 'x'), 'y');
+  fs.writeFileSync(path.join(revealDir, '.DS_Store'), 'y');
+  const h2 = reg.hashPackFolder(revealDir);
+  fs.rmSync(path.join(revealDir, 'node_modules'), { recursive: true });
+  check('hash: node_modules and dot files ignored', reg.hashPackFolder(revealDir), h2);
+
+  const stored = history.redact({ framework: 'reveal-node', enabledMcps: [] });
+  check('redact: pack provenance', stored.pack, { name: 'reveal', hash: reg.getPack('reveal').hash, origin: 'folder' });
+  check('redact: built-in has no pack', 'pack' in history.redact({ framework: 'angular' }), false);
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));
@@ -363,7 +464,7 @@ const v2 = {
   const schema = JSON.parse(fs.readFileSync(new URL('../provider.schema.json', import.meta.url), 'utf8'));
   // validatePack's v2 top-level keys and the schema's must not drift apart.
   check('schema top-level keys', Object.keys(schema.properties).sort(),
-    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'schemaVersion', 'secrets', 'skills', 'version']);
+    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'schemaVersion', 'secrets', 'skills', 'version', 'versions']);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

@@ -1,5 +1,6 @@
 'use strict';
 
+import { listPacks } from '../provider-registry.ts';
 import * as fs from 'fs';
 import type { Express } from 'express';
 import { APP_PORT } from '../frameworks.ts';
@@ -62,6 +63,8 @@ export default function registerStatsRoutes(app: Express): void {
       mcpOverrides: Object.fromEntries(
         Object.entries(MCP_COMMAND_OVERRIDES).map(([cls, argv]) => [cls, argv.join(' ')]),
       ),
+      // Same purpose for packs: the re-run check compares the record's config.pack.
+      packs: Object.fromEntries(listPacks().map((p) => [p.name, { version: p.version ?? null, hash: p.hash }])),
     });
   });
 }

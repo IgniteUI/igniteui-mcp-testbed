@@ -17,7 +17,7 @@ import {
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher, killAllWatchers } from '../proc/watcher.ts';
-import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts';
+import { waitForPort, waitForPortFree, waitForAppReady, buildFailedRe } from '../proc/ports.ts';
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
@@ -27,9 +27,10 @@ import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
-import { getPackForFramework, getFramework } from '../provider-registry.ts';
+import { getPackForFramework, getFramework, resolvePackPath } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord } from '../types.ts';
 import { installPackSkills } from './pack-skills.ts';
+import { copyTemplate } from './template.ts';
 import { maskingEmit, missingSecrets, secretEnv } from '../secrets.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
@@ -66,10 +67,14 @@ export interface PipelineOpts {
   isCancelled?: (() => boolean) | null;
   /** What a pack's skill sources resolved to (commit / hash per source), for the history record. */
   onSkillSources?: ((sources: SkillSourceRecord[]) => void) | null;
+  /** Output of the pack's `versions` probes, by name, for the history record. */
+  onToolVersions?: ((versions: Record<string, string>) => void) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
 // servers in the block with `enabled:false`, and those tools never reach the agent.
+const VERSION_PROBE_TIMEOUT_MS = 30_000;
+
 const activeMcpServers = (block: Record<string, any>): string[] =>
   Object.entries(block).filter(([, def]) => !def || def.enabled !== false).map(([name]) => name);
 
@@ -82,7 +87,7 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null }: PipelineOpts,
+  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
@@ -125,7 +130,14 @@ export async function runPipeline(
     name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '',
     port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
   };
-  await runStep(fw.scaffold.cmd, subst(fw.scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(fw.scaffold.env) });
+  const scaffold = fw.scaffold;
+  if (scaffold.kind === 'template') {
+    if (!secretsPack) throw new Error(`framework "${cfg.framework}" has a template scaffold but no pack`);
+    const n = copyTemplate(resolvePackPath(secretsPack, scaffold.from), appDir, vars, emit);
+    emit('log', `scaffolded from template ${scaffold.from} (${n} file(s))`);
+  } else {
+    await runStep(scaffold.cmd, subst(scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(scaffold.env) });
+  }
 
   // Drop any framework-specific files into the fresh project (e.g. Blazor's
   // Directory.Build.props that relocates obj/bin off the bind mount).
@@ -133,10 +145,29 @@ export async function runPipeline(
     writePrepareFile(path.join(appDir, rel), subst([body], vars)[0], emit, appDir);
   }
 
-  // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project).
-  if (fw.install && fw.install.length) {
-    emit('log', `installing packages: ${fw.install.join(' ')}`);
-    await runStep('npm', ['install', ...fw.install], appDir, emit, { env: stepEnv() });
+  // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project). A template
+  // ships a package.json but not its node_modules, so it always gets an install.
+  const templateDeps = scaffold.kind === 'template' && fs.existsSync(path.join(appDir, 'package.json'));
+  if ((fw.install && fw.install.length) || templateDeps) {
+    emit('log', `installing packages${fw.install?.length ? `: ${fw.install.join(' ')}` : ' from package.json'}`);
+    await runStep('npm', ['install', ...(fw.install || [])], appDir, emit, { env: stepEnv(scaffold.env) });
+  }
+
+  // 1c. What the pack's tools actually resolved to, since a pack's `version` is only what
+  // its author typed. A probe that fails is recorded as such rather than failing the run.
+  if (secretsPack?.versions?.length) {
+    const found: Record<string, string> = {};
+    for (const v of secretsPack.versions) {
+      if (v.frameworks && !v.frameworks.includes(cfg.framework)) continue;
+      try {
+        const out = await capture(v.cmd, v.argv, appDir, null, VERSION_PROBE_TIMEOUT_MS);
+        found[v.name] = (out.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '(no output)').slice(0, 200);
+      } catch (e: any) {
+        found[v.name] = `error: ${String(e?.message ?? e).split('\n')[0].slice(0, 160)}`;
+      }
+    }
+    emit('log', `tool versions: ${Object.entries(found).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+    onToolVersions?.(found);
   }
 
   // 2. AI config — branches on the framework's configure strategy.
@@ -619,7 +650,7 @@ export async function runPipeline(
   const appLog = path.join(LOG_DIR, 'app.log');
   const logOffset = fs.existsSync(appLog) ? fs.statSync(appLog).size : 0;
   const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env));
-  const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit);
+  const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit, buildFailedRe(fw.buildFailed));
   if (ready.ready) {
     emit('log', `app is serving on :${APP_PORT}`);
   } else {
@@ -634,7 +665,7 @@ export async function runPipeline(
     return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason, diagnostics };
   }
   await sleep(Number(process.env.SCREENSHOT_SETTLE_MS || 5000));
-  const disc = discoverRoutes(appDir, cfg.framework);
+  const disc = discoverRoutes(appDir, fw.routes);
   emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}${disc.stateNav ? ' (state-nav, will click through)' : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
   // When no routes are discovered (e.g. a plain Vite React app with no router, or an

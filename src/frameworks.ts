@@ -58,6 +58,7 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
     // must poll or edits never trigger a rebuild (stale routes / no hot reload).
     // `CI=1` skips Vite prebundling, which never finishes under `--poll` on the bind mount.
     dev: { cmd: 'npx', argv: ['ng', 'serve', '--host', '0.0.0.0', '--port', '{{port}}', '--poll', '1500'], env: { CI: '1' } },
+    routes: { kind: 'route-config' },
   },
 
   react: {
@@ -73,6 +74,8 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
       cmd: 'npm', argv: ['run', 'start', '--', '--host', '0.0.0.0', '--port', '{{port}}', '--strictPort'],
       env: { CHOKIDAR_USEPOLLING: 'true', CHOKIDAR_INTERVAL: '1500' },
     },
+    // An agent sometimes swaps the router for state-based navigation.
+    routes: { kind: 'route-config', fallback: 'state-nav' },
   },
 
   webcomponents: {
@@ -84,6 +87,8 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
       cmd: 'npm', argv: ['run', 'start', '--', '--host', '0.0.0.0', '--port', '{{port}}', '--strictPort'],
       env: { CHOKIDAR_USEPOLLING: 'true', CHOKIDAR_INTERVAL: '1500' },
     },
+    // An agent sometimes swaps the router for state-based navigation.
+    routes: { kind: 'route-config', fallback: 'state-nav' },
   },
 
   blazor: {
@@ -122,6 +127,7 @@ export const FRAMEWORKS: Record<string, FrameworkDef> = {
       cmd: 'dotnet', argv: ['watch', '--no-hot-reload', 'run', '--urls', 'http://0.0.0.0:{{port}}'],
       env: { DOTNET_USE_POLLING_FILE_WATCHER: 'true' },
     },
+    routes: { kind: 'razor' },
   },
 };
 

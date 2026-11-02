@@ -25,11 +25,33 @@ export interface RunConfig {
   customBaseUrl?: string | null;
 }
 
-export interface ScaffoldDef {
+export interface CommandScaffold {
+  kind?: 'command';
   cmd: string;
   argv: string[];
   cwdIsParent?: boolean;
   env?: Record<string, string>;
+}
+
+// Copies a folder of a folder pack into the app dir, filling in the known {{vars}}.
+export interface TemplateScaffold {
+  kind: 'template';
+  from: string;
+  env?: Record<string, string>;
+}
+
+export type ScaffoldDef = CommandScaffold | TemplateScaffold;
+
+// How the screenshot stage finds the app's pages.
+//   route-config  string-literal `path:` entries in *rout* source files (Angular/React/WC)
+//   razor         `@page` directives in .razor files (Blazor)
+//   state-nav     click through the app's nav items (apps without URL routes)
+//   static        exactly `paths`
+// `fallback: 'state-nav'` is tried when the primary kind finds no routes.
+export interface RouteSpec {
+  kind: 'route-config' | 'razor' | 'state-nav' | 'static';
+  fallback?: 'state-nav';
+  paths?: string[];
 }
 
 export interface DevDef {
@@ -55,6 +77,9 @@ export interface ProviderPackFramework {
   install?: string[];
   dev: DevDef;
   prepare?: Record<string, string>;
+  /** Regex sources; a match in the fresh dev-server log means the build failed. */
+  buildFailed?: string[];
+  routes?: RouteSpec;
 }
 
 // The in-memory shape is always schema v2; v1 bodies are upgraded on load
@@ -116,6 +141,26 @@ export interface PackSecretDecl {
   description?: string;
 }
 
+// A command whose first output line is the installed version of a tool the pack uses,
+// e.g. { "name": "reveal-sdk", "cmd": "npm", "argv": ["ls", "reveal-sdk", "--depth=0"] }.
+// Run in the app dir after install; `frameworks` limits it to some of the pack's frameworks.
+export interface PackVersionProbe {
+  name: string;
+  cmd: string;
+  argv: string[];
+  frameworks?: string[];
+}
+
+// Which pack a run used, stored as `config.pack`. `version` is whatever the author typed;
+// `hash` covers the whole pack (the folder, template included), so it is what tells two
+// runs apart.
+export interface PackProvenance {
+  name: string;
+  version?: string;
+  hash: string;
+  origin: PackOrigin;
+}
+
 export type PackOrigin = 'file' | 'folder' | 'inline';
 
 export interface ProviderPack {
@@ -128,8 +173,11 @@ export interface ProviderPack {
   mcp: { classes: PackMcpClass[]; servers: PackMcpServer[] };
   skills?: PackSkills;
   secrets?: PackSecretDecl[];
+  versions?: PackVersionProbe[];
   containerDeps?: { npmGlobal?: string[] };
   origin: PackOrigin;
+  /** sha256 (16 hex) of the pack folder, or of the pack JSON for a file/inline pack. */
+  hash: string;
   /** Absolute pack folder (folder packs only). Never sent to the browser. */
   dir?: string;
 }
@@ -143,6 +191,9 @@ export interface FrameworkDef {
   aiFramework: string;
   dev: DevDef;
   prepare?: Record<string, string>;
+  /** Added to BUILD_FAILED_RE for this framework's runs. */
+  buildFailed?: string[];
+  routes: RouteSpec;
 }
 
 export interface Tokens {
@@ -194,6 +245,10 @@ export interface StoredConfig {
   mcpCommands?: Record<string, string>;
   /** Where the run's pack skills came from. Absent on Ignite UI runs and older records. */
   skillSources?: SkillSourceRecord[];
+  /** Absent on built-in (Ignite UI) runs and on records from before packs were recorded. */
+  pack?: PackProvenance;
+  /** Output of the pack's `versions` probes, by name. */
+  toolVersions?: Record<string, string>;
   opencodeVersion?: string;
   codemode?: boolean;
 }

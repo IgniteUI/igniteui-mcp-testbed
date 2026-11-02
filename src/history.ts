@@ -5,6 +5,7 @@ import * as path from 'path';
 import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord } from './types.ts';
 import { mcpOverrideFor } from './config.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
+import { getPackForFramework } from './provider-registry.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -70,6 +71,11 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
         if (cmd) cmds[cls] = cmd;
       }
       return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
+    })(),
+    // Packs are loaded at startup, so this is the pack the run will actually use.
+    ...(() => {
+      const p = c.framework ? getPackForFramework(c.framework) : undefined;
+      return p ? { pack: { name: p.name, ...(p.version ? { version: p.version } : {}), hash: p.hash, origin: p.origin } } : {};
     })(),
     ...(opencodeVersion() !== 'unknown' ? { opencodeVersion: opencodeVersion() } : {}),
     ...(codemodeEnabled() != null ? { codemode: !!codemodeEnabled() } : {}),
@@ -199,6 +205,13 @@ export function updateTools(id: string | null, usage: ToolUsage | null): History
 export function updateSkillSources(id: string | null, sources: SkillSourceRecord[] | null): HistoryRecord | null {
   if (!id || !Array.isArray(sources)) return null;
   return update(id, (r) => { r.config.skillSources = sources.map((x) => ({ ...x, skills: x.skills.slice() })); });
+}
+
+// The pack's `versions` probes run after install, so (like skill sources) they land on a
+// record that already exists.
+export function updateToolVersions(id: string | null, versions: Record<string, string> | null): HistoryRecord | null {
+  if (!id || !versions || !Object.keys(versions).length) return null;
+  return update(id, (r) => { r.config.toolVersions = { ...versions }; });
 }
 
 // Diagnostics accrue while an interactive session runs — a provider 429 can land on the

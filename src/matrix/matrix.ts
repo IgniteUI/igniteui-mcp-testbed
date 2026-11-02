@@ -199,6 +199,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
         emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir,
         isCancelled: () => matrixCancelled || cancelledEntries.has(runId),
         onSkillSources: (s) => history.updateSkillSources(runId, s),
+        onToolVersions: (v) => history.updateToolVersions(runId, v),
       });
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);

@@ -129,6 +129,29 @@ The header switches between four views:
   be checked for using the same skills. The wizard's "Exclude skills" field works for
   every provider.
 
+  A pack framework can also:
+  - scaffold from a folder instead of a command —
+    `"scaffold": { "kind": "template", "from": "template/node" }` (folder packs only)
+    copies that folder into the project, fills in `{{name}}`, `{{dir}}`, `{{port}}` and
+    `{{agents}}` in text files and file names (any other `{{…}}`, such as an Angular
+    binding, is left alone), then runs `npm install` if there is a `package.json`;
+  - ship its own verification specs in `<pack>/tests/<framework>/`, listed next to
+    `./tests/<framework>/` with an `@<pack>/` prefix (specs also get `APP_DIR`, the
+    generated project's path, besides `APP_BASE_URL`);
+  - add build-failure markers — `"buildFailed": ["error TS\\d+"]`, case-insensitive
+    regexes checked against the dev-server log along with the built-in ones;
+  - say how screenshots find its pages — `"routes": { "kind": "route-config" | "razor" |
+    "state-nav" | "static", "fallback": "state-nav", "paths": [...] }` (default:
+    `route-config` with the `state-nav` fallback).
+
+  A pack may list `versions` probes (`{ "name", "cmd", "argv", "frameworks"? }`): each
+  runs in the project after install and its first output line is stored as
+  `config.toolVersions`, since a pack's `version` field is only what its author typed.
+  Every run on a pack also records `config.pack` (name, version and a content hash of the
+  whole pack folder, template and tests included). Both show in the History detail, and
+  the re-run dialog warns when this container's copy of the pack differs from the
+  recorded one.
+
   **Pack secrets** (license keys and the like) are declared in the pack's `secrets`
   array: `{ "name": "REVEAL_LICENSE", "file": "license.key" }` reads
   `./secrets/reveal/license.key` (mounted read-only at `/secrets`), and
