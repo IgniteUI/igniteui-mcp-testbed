@@ -47,7 +47,8 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 ./run.sh --validate-pack ./providers-data/reveal    # check a provider pack and exit
 ```
 
-Adding your own library? See [ADDING-A-LIBRARY.md](ADDING-A-LIBRARY.md).
+Adding your own library? See [ADDING-A-LIBRARY.md](ADDING-A-LIBRARY.md) for a walkthrough
+and [PROVIDER-PACKS.md](PROVIDER-PACKS.md) for every pack field.
 
 Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
 each). The `-Prune` / `--prune` flag runs `podman image prune -f` after a successful

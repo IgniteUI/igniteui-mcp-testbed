@@ -3,9 +3,9 @@
 The testbed runs any UI library through a **provider pack**: a folder that says how to
 scaffold a project, which MCP servers and skills the agent gets, and how to tell whether
 the result built. Ignite UI itself is one (`packs/igniteui/pack.json`). This guide adds
-**Reveal SDK** as a worked example. The full field reference is
-[`provider.schema.json`](provider.schema.json); point your editor at it and you get
-autocomplete.
+**Reveal SDK** as a worked example. Every field is described in
+[PROVIDER-PACKS.md](PROVIDER-PACKS.md); [`provider.schema.json`](provider.schema.json)
+gives your editor autocomplete.
 
 > Package names below come from the Reveal docs: `reveal-sdk-node` is the Express server
 > SDK ([install server sdk](https://help.revealbi.io/web/install-server-sdk)), `reveal-sdk`
