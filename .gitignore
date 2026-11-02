@@ -9,6 +9,8 @@ sessions/
 
 # User-loaded provider packs (bind-mounted at /providers; created by run.sh/run.ps1)
 providers-data/
+# Provider-pack secrets (bind-mounted read-only at /secrets) — never commit.
+secrets/
 
 # User-supplied local skills (bind-mounted at /local-skills) — preserve the per-platform
 # skeleton (README + empty angular/react/webcomponents/blazor dirs) but ignore the actual

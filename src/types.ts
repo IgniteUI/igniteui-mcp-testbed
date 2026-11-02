@@ -29,6 +29,7 @@ export interface ScaffoldDef {
   cmd: string;
   argv: string[];
   cwdIsParent?: boolean;
+  env?: Record<string, string>;
 }
 
 export interface DevDef {
@@ -105,6 +106,16 @@ export interface PackSkills {
   sources: PackSkillSource[];
 }
 
+// A license key or similar. `file` is relative to ./secrets/<pack>/ (mounted read-only at
+// /secrets/<pack>/); without it the value comes from SECRET_<name>. See src/secrets.ts.
+export interface PackSecretDecl {
+  name: string;
+  file?: string;
+  /** Default true: the run fails before it starts when the secret is missing. */
+  required?: boolean;
+  description?: string;
+}
+
 export type PackOrigin = 'file' | 'folder' | 'inline';
 
 export interface ProviderPack {
@@ -116,6 +127,7 @@ export interface ProviderPack {
   frameworks: ProviderPackFramework[];
   mcp: { classes: PackMcpClass[]; servers: PackMcpServer[] };
   skills?: PackSkills;
+  secrets?: PackSecretDecl[];
   containerDeps?: { npmGlobal?: string[] };
   origin: PackOrigin;
   /** Absolute pack folder (folder packs only). Never sent to the browser. */

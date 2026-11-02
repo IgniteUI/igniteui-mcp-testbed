@@ -58,6 +58,12 @@ const packCard = (pack: ProviderPack) => html`
       Frameworks: ${pack.frameworks.map((f) => f.label).join(', ')} ·
       MCPs: ${pack.mcp.classes.map((c) => c.label).join(', ') || '—'}
     </p>
+    ${(pack.secrets || []).length ? html`
+      <p class="note" style="margin:.25rem 0 0">Secrets:
+        ${pack.secrets.map((s, i) => html`${i ? ', ' : ''}<span class=${s.set ? '' : s.required ? 'warn' : ''}
+          title=${`${s.description ? s.description + ' — ' : ''}${s.source}`}>${s.name}
+          ${s.set ? '✓ set' : s.required ? '✗ missing' : '— not set (optional)'}</span>`)}
+      </p>` : nothing}
     ${pack.containerDeps?.npmGlobal?.length ? html`
       <p class="note warn" style="margin:.25rem 0 0">
         ⚠ <strong>Container rebuild required.</strong> This pack needs global npm packages that must be baked into the image.<br>

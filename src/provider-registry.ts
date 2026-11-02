@@ -13,7 +13,8 @@ import * as path from 'path';
 import { PROVIDERS_DIR } from './config.ts';
 import { FRAMEWORKS } from './frameworks.ts';
 import { bareMcpClass, qualifyMcpClass } from './mcp-class.ts';
-import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOrigin, PackSkillSource, ProviderPack } from './types.ts';
+import { secretStatus, type SecretStatus } from './secrets.ts';
+import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOrigin, PackSecretDecl, PackSkillSource, ProviderPack } from './types.ts';
 
 const packs = new Map<string, ProviderPack>();
 
@@ -94,8 +95,16 @@ function validateFrameworks(list: unknown): ProviderPack['frameworks'] {
     if (!isStr(fw.label)) throw new Error(`frameworks[${i}].label is required`);
     if (!fw.scaffold || typeof fw.scaffold.cmd !== 'string') throw new Error(`frameworks[${i}].scaffold.cmd is required`);
     if (!isStrArray(fw.scaffold.argv)) throw new Error(`frameworks[${i}].scaffold.argv must be an array of strings`);
+    validateEnv(fw.scaffold.env, `frameworks[${i}].scaffold.env`);
     if (!fw.dev || typeof fw.dev.cmd !== 'string') throw new Error(`frameworks[${i}].dev.cmd is required`);
     if (!isStrArray(fw.dev.argv)) throw new Error(`frameworks[${i}].dev.argv must be an array of strings`);
+    validateEnv(fw.dev.env, `frameworks[${i}].dev.env`);
+    // Command lines are logged into history, so a secret may only be passed through env.
+    for (const [label, argv] of [['scaffold', fw.scaffold.argv], ['dev', fw.dev.argv]] as const) {
+      if (argv.some((a: string) => a.includes('{{secret:'))) {
+        throw new Error(`frameworks[${i}].${label}.argv must not reference a secret — pass it through env instead`);
+      }
+    }
     if (fw.install !== undefined && !isStrArray(fw.install)) throw new Error(`frameworks[${i}].install must be an array of strings`);
     if (fw.prepare !== undefined) {
       if (!isObj(fw.prepare)) throw new Error(`frameworks[${i}].prepare must be an object of { relativePath: contents }`);
@@ -107,6 +116,57 @@ function validateFrameworks(list: unknown): ProviderPack['frameworks'] {
     }
   });
   return list as ProviderPack['frameworks'];
+}
+
+function validateEnv(env: unknown, label: string): void {
+  if (env === undefined) return;
+  if (!isObj(env) || !Object.values(env).every((v) => typeof v === 'string')) {
+    throw new Error(`${label} must be an object of string values`);
+  }
+}
+
+// Names a secret is exported under in a step's env, so they mustn't clobber the basics.
+const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+const RESERVED_ENV = new Set(['PATH', 'HOME', 'USER', 'SHELL', 'NODE_OPTIONS', 'NODE_PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH']);
+
+function validateSecrets(list: unknown): PackSecretDecl[] {
+  if (!Array.isArray(list)) throw new Error('secrets must be an array');
+  const seen = new Set<string>();
+  return list.map((s: any, i: number) => {
+    const label = `secrets[${i}]`;
+    if (!isObj(s) || typeof s.name !== 'string' || !SECRET_NAME.test(s.name)) {
+      throw new Error(`${label}.name must be an UPPER_SNAKE_CASE env var name`);
+    }
+    if (RESERVED_ENV.has(s.name)) throw new Error(`${label}.name "${s.name}" is a reserved env var`);
+    if (seen.has(s.name)) throw new Error(`${label}.name "${s.name}" is declared twice`);
+    seen.add(s.name);
+    for (const k of Object.keys(s)) {
+      if (!['name', 'file', 'required', 'description'].includes(k)) throw new Error(`${label}.${k} is not a valid field`);
+    }
+    if (s.file !== undefined) assertRelativeInside(s.file, `${label}.file`);
+    if (s.required !== undefined && typeof s.required !== 'boolean') throw new Error(`${label}.required must be a boolean`);
+    if (s.description !== undefined && typeof s.description !== 'string') throw new Error(`${label}.description must be a string`);
+    return {
+      name: s.name,
+      ...(s.file !== undefined ? { file: s.file } : {}),
+      ...(s.required !== undefined ? { required: s.required } : {}),
+      ...(s.description !== undefined ? { description: s.description } : {}),
+    };
+  });
+}
+
+// Every `{{secret:NAME}}` in a step's env must name a declared secret.
+function checkSecretRefs(frameworks: ProviderPack['frameworks'], secrets: PackSecretDecl[]): void {
+  const names = new Set(secrets.map((s) => s.name));
+  frameworks.forEach((fw, i) => {
+    for (const [label, env] of [['scaffold', fw.scaffold.env], ['dev', fw.dev.env]] as const) {
+      for (const v of Object.values(env || {})) {
+        for (const m of String(v).matchAll(/\{\{secret:([^}]*)\}\}/g)) {
+          if (!names.has(m[1])) throw new Error(`frameworks[${i}].${label}.env references undeclared secret "${m[1]}"`);
+        }
+      }
+    }
+  });
 }
 
 function validateServer(s: any, label: string): void {
@@ -216,7 +276,7 @@ function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' |
 
 const V2_KEYS = new Set([
   '$schema', 'schemaVersion', 'name', 'displayName', 'description', 'version',
-  'frameworks', 'mcp', 'skills', 'containerDeps',
+  'frameworks', 'mcp', 'skills', 'secrets', 'containerDeps',
 ]);
 
 function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir'> {
@@ -272,6 +332,7 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
     frameworks: validateFrameworks(body.frameworks),
     mcp: { classes, servers },
     ...(skills ? { skills } : {}),
+    ...(body.secrets !== undefined ? { secrets: validateSecrets(body.secrets) } : {}),
     ...(body.containerDeps !== undefined ? { containerDeps: validateContainerDeps(body.containerDeps) } : {}),
   };
 }
@@ -298,6 +359,7 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
   else if (body.schemaVersion === undefined || body.schemaVersion === 1) parsed = upgradeV1(body, origin);
   else throw new Error(`unsupported schemaVersion ${JSON.stringify(body.schemaVersion)} (expected 1 or 2)`);
 
+  checkSecretRefs(parsed.frameworks, parsed.secrets || []);
   const q = (c: string) => qualifyMcpClass(parsed.name, c);
   return {
     ...parsed,
@@ -310,10 +372,11 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
   };
 }
 
-/** The pack as the browser sees it: no host/container paths. */
-export function publicPack(p: ProviderPack): Omit<ProviderPack, 'dir'> {
-  const { dir: _dir, ...rest } = p;
-  return rest;
+/** The pack as the browser sees it: no container paths, and secret status (set /
+ * missing) in place of the declarations. Never a value. */
+export function publicPack(p: ProviderPack): Omit<ProviderPack, 'dir' | 'secrets'> & { secrets: SecretStatus[] } {
+  const { dir: _dir, secrets: _s, ...rest } = p;
+  return { ...rest, secrets: secretStatus(p) };
 }
 
 function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {

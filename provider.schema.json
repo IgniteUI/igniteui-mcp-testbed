@@ -36,7 +36,8 @@
             "properties": {
               "cmd": { "type": "string" },
               "argv": { "$ref": "#/$defs/argv", "description": "Placeholders: {{name}} {{dir}} {{port}} {{agents}}." },
-              "cwdIsParent": { "type": "boolean", "description": "Run from the parent of the app dir (the command creates ./{{name}})." }
+              "cwdIsParent": { "type": "boolean", "description": "Run from the parent of the app dir (the command creates ./{{name}})." },
+              "env": { "$ref": "#/$defs/env" }
             }
           },
           "install": { "type": "array", "items": { "type": "string" }, "description": "npm packages installed into the project after scaffold." },
@@ -118,6 +119,22 @@
                 "properties": { "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Run in .agents/skills/." } } }
             ]
           }
+        }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "description": "License keys and the like. Given only to this pack's scaffold / install / dev-server steps, under their own name (an env secret's value, a file secret's path) or via {{secret:NAME}} in those steps' env — never argv, never the agent.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "not": { "enum": ["PATH", "HOME", "USER", "SHELL", "NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH"] },
+            "description": "Without `file`, read from SECRET_<name> (environment or .env)." },
+          "file": { "$ref": "#/$defs/relPath", "description": "Relative to ./secrets/<pack>/ on the host (/secrets/<pack>/ in the container)." },
+          "required": { "type": "boolean", "default": true, "description": "A missing required secret fails the run before it starts." },
+          "description": { "type": "string" }
         }
       }
     },

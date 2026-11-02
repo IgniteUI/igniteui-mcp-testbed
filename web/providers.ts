@@ -18,6 +18,8 @@ export interface ProviderPack {
   skills?: { label: string; sources: { github?: string; command?: string[] }[] };
   containerDeps?: { npmGlobal?: string[] };
   origin: 'file' | 'folder' | 'inline';
+  // Status only; values never leave the server.
+  secrets: { name: string; kind: 'env' | 'file'; required: boolean; description?: string; set: boolean; source: string }[];
 }
 
 let cachedPacks: ProviderPack[] = [];

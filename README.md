@@ -128,6 +128,23 @@ The header switches between four views:
   `config.skillSources`, shown in the History detail, so two runs of the same pack can
   be checked for using the same skills. The wizard's "Exclude skills" field works for
   every provider.
+
+  **Pack secrets** (license keys and the like) are declared in the pack's `secrets`
+  array: `{ "name": "REVEAL_LICENSE", "file": "license.key" }` reads
+  `./secrets/reveal/license.key` (mounted read-only at `/secrets`), and
+  `{ "name": "REVEAL_KEY" }` reads `SECRET_REVEAL_KEY` from your environment or `.env`.
+  A secret is passed only to that pack's scaffold, install and dev-server steps, as an
+  env var named after it (the value, or the file's path), or through
+  `{{secret:NAME}}` in those steps' `env` — never on a command line, since those are
+  logged into history. The wizard removes `SECRET_*` from its own environment at
+  startup, so the agent's opencode process doesn't inherit them; nothing is copied into
+  the project; `opencode.json` denies read/edit access to `/secrets`; and a secret value
+  a step prints is masked in the log. A missing required secret fails the run before it
+  starts, and the Configuration tab shows each secret as set or missing (never the
+  value). **This stops accidental reads, not a determined agent**: the agent runs as the
+  same user in the same container with shell access, and could, for instance, read the
+  dev server's environment from `/proc`. Real isolation would need the secret-consuming
+  steps to run as a different user, which the testbed doesn't do.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.

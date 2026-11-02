@@ -39,9 +39,13 @@ MCP_CMD_IGNITEUI.
 Session artifacts land in .\sessions\<timestamp>\; run history, matrix reports, and
 screenshots persist in .\sessions\history\ across containers.
 
-Host folders bind-mounted in: .\local-skills (ro), .\tests (ro), .\providers-data, and
-.\prompt-images (read-write — reference images attached to the agent's prompt; the UI's
-image uploads land here).
+Host folders bind-mounted in: .\local-skills (ro), .\tests (ro), .\secrets (ro, pack
+secret files as .\secrets\<pack>\<file>), .\providers-data, and .\prompt-images
+(read-write — reference images attached to the agent's prompt; the UI's image uploads
+land here).
+
+SECRET_<NAME> (any name, also read from .env) holds a provider-pack secret. It is handed
+only to that pack's scaffold / install / dev-server steps, never to the agent.
 
 .PARAMETER Command
 'build' to build the image; 'help' to show this help; omit to run a session container.
@@ -244,6 +248,14 @@ foreach ($v in (& $mcpNames)) {
   if ((Get-Item "env:$v" -ErrorAction SilentlyContinue).Value) { $envFlags += @('-e', $v) }
 }
 
+# Provider-pack secrets: any SECRET_<NAME>, from the environment or .env. Forwarded by
+# name so the value stays off the podman command line; the wizard takes them out of its
+# own env at startup and hands them only to the pack's scaffold/install/dev steps.
+Read-EnvKeys @('SECRET_[A-Za-z0-9_]+')
+foreach ($v in (Get-ChildItem env: | Where-Object { $_.Name -like 'SECRET_*' -and $_.Value } | ForEach-Object Name)) {
+  $envFlags += @('-e', $v)
+}
+
 if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
 if ($Validate) { $envFlags += @('-e', 'MATRIX_VALIDATE=1') }
 
@@ -269,7 +281,10 @@ $Tests = Join-Path $PSScriptRoot 'tests'
 # wizard's "Prompt images" picker uploads into this same folder, so browser-attached
 # images persist on the host and can be reused by a terminal-driven matrix config.
 $Images = Join-Path $PSScriptRoot 'prompt-images'
-New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests, $Images | Out-Null
+# Provider-pack secret files (license keys), .\secrets\<pack>\<file>, mounted read-only
+# at /secrets — outside the app dir, so the agent's project never contains them.
+$Secrets = Join-Path $PSScriptRoot 'secrets'
+New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests, $Images, $Secrets | Out-Null
 
 if ($Validate) {
   Write-Host "Validating matrix config: $mcAbs"
@@ -300,7 +315,7 @@ $HostBind = '127.0.0.1:'
 
 if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
-  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z", '-v', "${Images}:/prompt-images:Z")
+  $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z", '-v', "${Images}:/prompt-images:Z", '-v', "${Secrets}:/secrets:ro,Z")
   if ($mcAbs) { $vol += @('-v', "${mcAbs}:/matrix-config.json:ro,Z") }
   $userns = @('--userns=keep-id')
 }
@@ -312,7 +327,8 @@ else {
   $providersHost = $Providers -replace '\\', '/'
   $testsHost     = $Tests     -replace '\\', '/'
   $imagesHost    = $Images    -replace '\\', '/'
-  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro", '-v', "${imagesHost}:/prompt-images")
+  $secretsHost   = $Secrets   -replace '\\', '/'
+  $vol    = @('-v', "${outHost}:/work", '-v', "${histHost}:/history", '-v', "${skillsHost}:/local-skills:ro", '-v', "${providersHost}:/providers", '-v', "${testsHost}:/tests:ro", '-v', "${imagesHost}:/prompt-images", '-v', "${secretsHost}:/secrets:ro")
   if ($mcAbs) {
     $mcHost = $mcAbs -replace '\\', '/'
     $vol += @('-v', "${mcHost}:/matrix-config.json:ro")

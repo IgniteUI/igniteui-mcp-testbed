@@ -41,6 +41,8 @@ Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app 
   - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
   - MCP_CMD_<CLASS> (any class) / IGNITEUI_MCP_DOCS_BACKEND_URL / IGNITEUI_MCP_DEBUG
     (an already-exported value wins)
+  - SECRET_<NAME> (any name): provider-pack secrets, handed only to that pack's
+    scaffold / install / dev-server steps, never to the agent
 
 MCP_CMD_<CLASS> swaps that class's MCP server for a locally-built one packed into
 ./local-mcp/ and installed at build time, e.g.
@@ -54,9 +56,10 @@ accepted as an alias for MCP_CMD_IGNITEUI.
 Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
 screenshots persist in ./sessions/history/ across containers.
 
-Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./providers-data ·
-./prompt-images (read-write — reference images attached to the agent's prompt; the UI's
-image uploads land here).
+Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./secrets (ro, pack
+secret files as ./secrets/<pack>/<file>) · ./providers-data · ./prompt-images
+(read-write — reference images attached to the agent's prompt; the UI's image uploads
+land here).
 
 Package versions are PINNED in the Containerfile (IGNITEUI_CLI_VERSION,
 IGNITEUI_THEMING_VERSION, OPENCODE_VERSION) rather than tracking "latest", because the
@@ -254,6 +257,14 @@ for v in "${MCP_FIXED[@]}" ${!MCP_CMD_@}; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 
+# Provider-pack secrets: any SECRET_<NAME>, from the environment or .env. Forwarded by
+# name so the value stays off the podman command line; the wizard takes them out of its
+# own env at startup and hands them only to the pack's scaffold/install/dev steps.
+read_env_keys "SECRET_[A-Za-z0-9_]+"
+for v in ${!SECRET_@}; do
+  [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
+done
+
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
 [[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
 
@@ -283,6 +294,10 @@ mkdir -p "$TESTS"
 # images persist on the host and can be reused by a terminal-driven matrix config.
 IMAGES="$PWD/prompt-images"
 mkdir -p "$IMAGES"
+# Provider-pack secret files (license keys), ./secrets/<pack>/<file>, mounted read-only
+# at /secrets — outside the app dir, so the agent's project never contains them.
+SECRETS="$PWD/secrets"
+mkdir -p "$SECRETS"
 if [[ "$VALIDATE" == 1 ]]; then
   echo "Validating matrix config: $MATRIX_CONFIG_FILE"
 else
@@ -325,7 +340,8 @@ case "$(uname -s)" in
     PROV_HOST="$(cygpath -m "$PROVIDERS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
     IMAGES_HOST="$(cygpath -m "$IMAGES")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro" "-v" "${IMAGES_HOST}:/prompt-images")
+    SECRETS_HOST="$(cygpath -m "$SECRETS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro" "-v" "${IMAGES_HOST}:/prompt-images" "-v" "${SECRETS_HOST}:/secrets:ro")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
       VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
@@ -334,7 +350,7 @@ case "$(uname -s)" in
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z" "-v" "${SECRETS}:/secrets:ro,Z")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
     fi

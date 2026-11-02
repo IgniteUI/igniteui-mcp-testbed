@@ -12,6 +12,10 @@ fs.mkdirSync(providersDir);
 process.env.PROVIDERS_DIR = providersDir;
 process.env.WORK_DIR = path.join(root, 'work');
 process.env.HISTORY_DIR = path.join(root, 'history');
+// Must be set before the first import: src/secrets.ts scrubs SECRET_* when it loads.
+process.env.SECRETS_DIR = path.join(root, 'secrets');
+process.env.SECRET_REVEAL_KEY = 'sk-reveal-0123456789';
+process.env.SECRET_SHORT = 'abc';
 
 const reg = await import('../src/provider-registry.ts');
 const { normMcpClass } = await import('../src/mcp-class.ts');
@@ -94,7 +98,7 @@ const v2 = {
   check('v2: no mcp block ⇒ empty', reg.validatePack({ ...structuredClone(v2), mcp: undefined }).mcp, { classes: [], servers: [] });
 
   const mut = (f) => { const b = structuredClone(v2); f(b); return b; };
-  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.secrets = []; })), /unknown field "secrets"/);
+  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.options = []; })), /unknown field "options"/);
   throws('v2: unsupported schemaVersion', () => reg.validatePack(mut((b) => { b.schemaVersion = 3; })), /unsupported schemaVersion/);
   throws('v2: server class must be declared', () => reg.validatePack(mut((b) => { b.mcp.servers[0].class = 'other'; })), /not declared in mcp\.classes/);
   throws('v2: duplicate class', () => reg.validatePack(mut((b) => { b.mcp.classes.push({ id: 'docs', label: 'again' }); })), /declared twice/);
@@ -255,6 +259,103 @@ const v2 = {
   check('prune: climb target untouched', fs.existsSync(path.join(root, 'app2')), true);
 }
 
+// ── secrets (1c) ────────────────────────────────────────────────────────────
+{
+  const sec = await import('../src/secrets.ts');
+  const { writeOpencodeConfig } = await import('../src/pipeline/opencode-config.ts');
+
+  check('scrub: SECRET_* gone from process.env', ['SECRET_REVEAL_KEY', 'SECRET_SHORT'].map((k) => k in process.env), [false, false]);
+  check('scrub: kept privately', sec.envSecretNames().sort(), ['REVEAL_KEY', 'SHORT']);
+
+  const secretsPack = (secrets, fwOverride = {}) => ({
+    ...structuredClone(v2), name: 'lic', frameworks: [{ ...fw('lic-fw'), ...fwOverride }], secrets,
+  });
+  const ok = reg.validatePack(secretsPack(
+    [{ name: 'REVEAL_KEY' }, { name: 'REVEAL_LICENSE', file: 'license.key', description: 'license' }, { name: 'OPTIONAL_TOKEN', required: false }],
+    { dev: { cmd: 'npm', argv: ['run', 'dev'], env: { LICENSE_PATH: '{{secret:REVEAL_LICENSE}}', MODE: 'x' } } }));
+  check('validate: secrets kept', ok.secrets.map((s) => s.name), ['REVEAL_KEY', 'REVEAL_LICENSE', 'OPTIONAL_TOKEN']);
+  throws('validate: lowercase name', () => reg.validatePack(secretsPack([{ name: 'key' }])), /UPPER_SNAKE_CASE/);
+  throws('validate: reserved name', () => reg.validatePack(secretsPack([{ name: 'NODE_OPTIONS' }])), /reserved/);
+  throws('validate: duplicate', () => reg.validatePack(secretsPack([{ name: 'A' }, { name: 'A' }])), /declared twice/);
+  throws('validate: file climb', () => reg.validatePack(secretsPack([{ name: 'A', file: '../other/x' }])), /must not leave/);
+  throws('validate: unknown field', () => reg.validatePack(secretsPack([{ name: 'A', value: 'x' }])), /not a valid field/);
+  throws('validate: secret in argv', () => reg.validatePack(secretsPack([{ name: 'A' }],
+    { scaffold: { cmd: 'x', argv: ['--key={{secret:A}}'] } })), /must not reference a secret/);
+  throws('validate: undeclared reference', () => reg.validatePack(secretsPack([{ name: 'A' }],
+    { scaffold: { cmd: 'x', argv: [], env: { K: '{{secret:B}}' } } })), /undeclared secret "B"/);
+  throws('validate: env must be strings', () => reg.validatePack(secretsPack([],
+    { dev: { cmd: 'x', argv: [], env: { K: 1 } } })), /string values/);
+
+  const status = () => Object.fromEntries(sec.secretStatus(ok).map((s) => [s.name, [s.kind, s.set, s.required]]));
+  check('status: file absent', status(), { REVEAL_KEY: ['env', true, true], REVEAL_LICENSE: ['file', false, true], OPTIONAL_TOKEN: ['env', false, false] });
+  check('missing: only required', sec.missingSecrets(ok).map((m) => [m.name, m.source]), [['REVEAL_LICENSE', './secrets/lic/license.key']]);
+
+  const secDir = path.join(root, 'secrets', 'lic');
+  fs.mkdirSync(secDir, { recursive: true });
+  fs.writeFileSync(path.join(secDir, 'license.key'), '');
+  check('status: empty file counts as missing', status().REVEAL_LICENSE[1], false);
+  fs.writeFileSync(path.join(secDir, 'license.key'), 'LICENSE-BODY');
+  check('status: file present', status().REVEAL_LICENSE[1], true);
+  check('missing: none', sec.missingSecrets(ok).length, 0);
+
+  const env = sec.secretEnv(ok, ok.frameworks[0].dev.env);
+  check('env: env secret by value, file secret by path, refs expanded', env, {
+    REVEAL_KEY: 'sk-reveal-0123456789', REVEAL_LICENSE: path.join(secDir, 'license.key'),
+    LICENSE_PATH: path.join(secDir, 'license.key'), MODE: 'x',
+  });
+  check('env: no pack ⇒ extra only', sec.secretEnv(undefined, { A: '1' }), { A: '1' });
+  check('env: unset optional ref ⇒ empty', sec.secretEnv(
+    reg.validatePack(secretsPack([{ name: 'OPTIONAL_TOKEN', required: false }])), { T: 'x{{secret:OPTIONAL_TOKEN}}y' }).T, 'xy');
+
+  const outside = path.join(root, 'secrets-outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'k'), 'stolen');
+  let linked = false;
+  try { fs.symlinkSync(outside, path.join(secDir, 'link'), 'junction'); linked = true; } catch { /* no symlink rights */ }
+  if (linked) {
+    const viaLink = reg.validatePack(secretsPack([{ name: 'VIA_LINK', file: 'link/k' }]));
+    check('status: symlink out of the pack folder is not set', sec.secretStatus(viaLink)[0].set, false);
+  }
+
+  check('mask: long value', sec.maskSecrets('key=sk-reveal-0123456789!'), 'key=***!');
+  check('mask: short value left alone', sec.maskSecrets('abc abc'), 'abc abc');
+  const seen = [];
+  const masked = sec.maskingEmit((t, p) => seen.push([t, p]));
+  masked('log', 'echo sk-reveal-0123456789');
+  masked('error', { msg: 'sk-reveal-0123456789' });
+  masked('done', { v: 'sk-reveal-0123456789' });
+  check('maskingEmit: log/error masked, others untouched', seen,
+    [['log', 'echo ***'], ['error', { msg: '***' }], ['done', { v: 'sk-reveal-0123456789' }]]);
+
+  // Registered so writeOpencodeConfig and publicPack find it by framework.
+  reg.registerPack(ok);
+  const pub = JSON.stringify(reg.publicPack(reg.getPack('lic')));
+  check('publicPack: no secret value or file body', [pub.includes('sk-reveal'), pub.includes('LICENSE-BODY')], [false, false]);
+  check('publicPack: status shape', reg.publicPack(reg.getPack('lic')).secrets[0], {
+    name: 'REVEAL_KEY', kind: 'env', required: true, set: true, source: 'SECRET_REVEAL_KEY' });
+
+  const app = path.join(root, 'oc-app');
+  fs.mkdirSync(app);
+  const cfgFor = (framework) => ({ framework, model: 'anthropic/x' });
+  const read = () => JSON.parse(fs.readFileSync(path.join(app, 'opencode.json'), 'utf8'));
+  const sd = process.env.SECRETS_DIR;
+  process.env.OPENCODE_MAJOR = '2';
+  writeOpencodeConfig(cfgFor('lic-fw'), {}, app);
+  const denies = read().permissions.filter((r) => r.effect === 'deny' && r.action !== 'websearch');
+  check('opencode 2.x: secrets denied', denies.map((r) => `${r.action} ${r.resource}`).sort(),
+    ['edit', 'external_directory', 'read'].flatMap((a) => [`${a} ${sd}/*`, `${a} ${sd}/**`]).sort());
+  check('opencode 2.x: allow-all stays first', read().permissions[0], { action: '*', resource: '*', effect: 'allow' });
+  writeOpencodeConfig(cfgFor('angular'), {}, app);
+  check('opencode 2.x: no secrets ⇒ unchanged rules', read().permissions.length, 2);
+  process.env.OPENCODE_MAJOR = '1';
+  writeOpencodeConfig(cfgFor('lic-fw'), {}, app);
+  check('opencode 1.x: pattern maps', read().permission.read, { '*': 'allow', [`${sd}/*`]: 'deny', [`${sd}/**`]: 'deny' });
+  writeOpencodeConfig(cfgFor('angular'), {}, app);
+  check('opencode 1.x: no secrets ⇒ plain allow', read().permission, 'allow');
+  delete process.env.OPENCODE_MAJOR;
+  reg.unregisterPack('lic');
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));
@@ -262,7 +363,7 @@ const v2 = {
   const schema = JSON.parse(fs.readFileSync(new URL('../provider.schema.json', import.meta.url), 'utf8'));
   // validatePack's v2 top-level keys and the schema's must not drift apart.
   check('schema top-level keys', Object.keys(schema.properties).sort(),
-    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'schemaVersion', 'skills', 'version']);
+    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'schemaVersion', 'secrets', 'skills', 'version']);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

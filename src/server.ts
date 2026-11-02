@@ -1,5 +1,7 @@
 'use strict';
 
+// First: takes SECRET_* out of process.env before any other module can copy it.
+import './secrets.ts';
 import { MATRIX_CONFIG, WIZARD_PORT } from './config.ts';
 import { ensureDirs } from './proc/fsutil.ts';
 import * as history from './history.ts';

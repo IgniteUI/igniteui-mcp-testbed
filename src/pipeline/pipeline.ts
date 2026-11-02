@@ -30,6 +30,7 @@ import { cleanupAppDir } from '../matrix/cleanup.ts';
 import { getPackForFramework, getFramework } from '../provider-registry.ts';
 import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord } from '../types.ts';
 import { installPackSkills } from './pack-skills.ts';
+import { maskingEmit, missingSecrets, secretEnv } from '../secrets.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
@@ -81,10 +82,23 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null }: PipelineOpts,
+  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
+
+  // A step that prints a secret must not get it into the log or the history record.
+  const emit = maskingEmit(rawEmit);
+  // Pack secrets reach only the pack's scaffold / install / dev-server steps (src/secrets.ts).
+  const secretsPack = getPackForFramework(cfg.framework);
+  if (secretsPack) {
+    const missing = missingSecrets(secretsPack);
+    if (missing.length) {
+      throw new Error(`missing required secret(s) for "${secretsPack.name}": ` +
+        missing.map((m) => `${m.name} (${m.source})`).join(', '));
+    }
+  }
+  const stepEnv = (extra?: Record<string, string>) => secretEnv(secretsPack, extra || {});
 
   // MCP servers the agent will actually be offered, recorded so the tool-usage report
   // can say which of them were never called. Filled in by whichever configure branch runs.
@@ -111,7 +125,7 @@ export async function runPipeline(
     name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '',
     port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
   };
-  await runStep(fw.scaffold.cmd, subst(fw.scaffold.argv, vars), path.dirname(appDir), emit);
+  await runStep(fw.scaffold.cmd, subst(fw.scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(fw.scaffold.env) });
 
   // Drop any framework-specific files into the fresh project (e.g. Blazor's
   // Directory.Build.props that relocates obj/bin off the bind mount).
@@ -122,7 +136,7 @@ export async function runPipeline(
   // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project).
   if (fw.install && fw.install.length) {
     emit('log', `installing packages: ${fw.install.join(' ')}`);
-    await runStep('npm', ['install', ...fw.install], appDir, emit);
+    await runStep('npm', ['install', ...fw.install], appDir, emit, { env: stepEnv() });
   }
 
   // 2. AI config — branches on the framework's configure strategy.
@@ -391,7 +405,7 @@ export async function runPipeline(
   // the slow bind mount. We build the app once, after the agent, just to screenshot.
   if (!headless) {
     emit('step', { step: 'launch-app' });
-    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, fw.dev.env || {});
+    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env));
     try {
       await waitForPort(APP_PORT, 180000, emit);
       emit('log', `app is serving on :${APP_PORT}`);
@@ -604,7 +618,7 @@ export async function runPipeline(
   }
   const appLog = path.join(LOG_DIR, 'app.log');
   const logOffset = fs.existsSync(appLog) ? fs.statSync(appLog).size : 0;
-  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, fw.dev.env || {});
+  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env));
   const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit);
   if (ready.ready) {
     emit('log', `app is serving on :${APP_PORT}`);
