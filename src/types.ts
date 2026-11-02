@@ -6,6 +6,8 @@ export type Emit = (type: string, payload?: any) => void;
 
 export interface RunConfig {
   framework: string;
+  /** The provider's option values, by option id (see PackOption). */
+  options?: Record<string, string>;
   projectType?: string;
   theme?: string;
   enabledMcps?: string[];
@@ -90,6 +92,19 @@ export interface PackMcpClass {
   description?: string;
   /** Checked by default in the wizard and the matrix seed row (default true). */
   default?: boolean;
+  /** Only offered for these framework ids (default: all of the pack's). */
+  frameworks?: string[];
+}
+
+// A wizard input whose value becomes the {{id}} placeholder in the pack's argv.
+// `choices` renders a select; without it the input is free text.
+export interface PackOption {
+  id: string;
+  label: string;
+  description?: string;
+  placeholder?: string;
+  choices?: string[];
+  default?: string;
 }
 
 export interface PackMcpServer {
@@ -161,7 +176,9 @@ export interface PackProvenance {
   origin: PackOrigin;
 }
 
-export type PackOrigin = 'file' | 'folder' | 'inline';
+// 'builtin' is Ignite UI's metadata-only description (src/builtin-pack.ts) until it
+// becomes a real pack.
+export type PackOrigin = 'file' | 'folder' | 'inline' | 'builtin';
 
 export interface ProviderPack {
   schemaVersion: 2;
@@ -172,6 +189,7 @@ export interface ProviderPack {
   frameworks: ProviderPackFramework[];
   mcp: { classes: PackMcpClass[]; servers: PackMcpServer[] };
   skills?: PackSkills;
+  options?: PackOption[];
   secrets?: PackSecretDecl[];
   versions?: PackVersionProbe[];
   containerDeps?: { npmGlobal?: string[] };
@@ -247,6 +265,10 @@ export interface StoredConfig {
   skillSources?: SkillSourceRecord[];
   /** Absent on built-in (Ignite UI) runs and on records from before packs were recorded. */
   pack?: PackProvenance;
+  /** The provider's name. Absent on older records, which readers treat as Ignite UI
+   * unless `pack` says otherwise (src/provider-meta.ts providerOf). */
+  provider?: string;
+  options?: Record<string, string>;
   /** Output of the pack's `versions` probes, by name. */
   toolVersions?: Record<string, string>;
   opencodeVersion?: string;
@@ -441,6 +463,7 @@ export interface Variant {
 export interface MatrixFixed {
   projectType?: string;
   theme?: string;
+  options?: Record<string, string>;
   model: string;
   apiKey?: string;
   customBaseUrl?: string;

@@ -45,13 +45,15 @@ async function removePack(pack: ProviderPack) {
 }
 
 const packCard = (pack: ProviderPack) => html`
-  <div class="provider-card">
+  <div class="provider-card ${pack.origin === 'builtin' ? 'builtin' : ''}">
     <div class="provider-card-head">
       <strong>${pack.displayName}</strong>
       ${pack.version ? html`<span class="note">v${pack.version}</span>` : nothing}
-      ${pack.origin === 'folder'
-        ? html`<span class="note" title="Folder packs are managed on the host">folder</span>`
-        : html`<button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>`}
+      ${pack.origin === 'builtin'
+        ? html`<span class="pill success">built-in</span>`
+        : pack.origin === 'folder'
+          ? html`<span class="note" title="Folder packs are managed on the host">folder</span>`
+          : html`<button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>`}
     </div>
     ${pack.description ? html`<p class="note" style="margin:.2rem 0 0">${pack.description}</p>` : nothing}
     <p class="note" style="margin:.25rem 0 0">
@@ -81,14 +83,6 @@ function tpl() {
     <p class="note">Ignite UI is built-in and always available. Load a provider pack to enable an additional
     library (frameworks + MCP server + skills) in the Interactive and Matrix tabs.</p>
     <div id="providerList">
-      <div class="provider-card builtin">
-        <div class="provider-card-head">
-          <strong>Ignite UI</strong>
-          <span class="pill success">built-in</span>
-        </div>
-        <p class="note" style="margin:.2rem 0 0">Frameworks: Angular · Blazor · React · Web Components<br>
-        MCPs: Ignite UI CLI · Theming</p>
-      </div>
       ${repeat(st.packs, (p) => p.name, packCard)}
     </div>
     <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">

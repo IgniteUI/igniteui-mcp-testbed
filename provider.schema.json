@@ -107,7 +107,8 @@
               "id": { "$ref": "#/$defs/id", "not": { "const": "custom" } },
               "label": { "type": "string", "minLength": 1 },
               "description": { "type": "string" },
-              "default": { "type": "boolean", "default": true }
+              "default": { "type": "boolean", "default": true },
+              "frameworks": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Only offered for these of the pack's framework ids." }
             }
           }
         },
@@ -152,6 +153,23 @@
                 "properties": { "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Run in .agents/skills/." } } }
             ]
           }
+        }
+      }
+    },
+    "options": {
+      "type": "array",
+      "description": "Wizard / matrix inputs; each value becomes the {{id}} placeholder in scaffold, dev and versions argv.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "not": { "enum": ["name", "dir", "port", "agents"] } },
+          "label": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "placeholder": { "type": "string" },
+          "choices": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Renders a select; the value must be one of these (or empty)." },
+          "default": { "type": "string" }
         }
       }
     },

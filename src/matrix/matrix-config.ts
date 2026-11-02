@@ -7,6 +7,7 @@ import { FRAMEWORKS } from '../frameworks.ts';
 import { registerPack, validatePack, getPackForFramework, getPack, readPackFrom } from '../provider-registry.ts';
 import { bareMcpClass } from '../mcp-class.ts';
 import { missingSecrets } from '../secrets.ts';
+import { IGNITEUI_META } from '../builtin-pack.ts';
 import type { ProviderPack } from '../types.ts';
 import { sharedTests, frameworkTests } from '../verify/tests.ts';
 import * as matrix from './matrix.ts';
@@ -127,7 +128,7 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
   const knownClasses = new Set(['custom']);
   for (const p of r.req.platforms) {
     if (FRAMEWORKS[p]) {
-      for (const c of ['igniteui', 'theming', 'angular']) knownClasses.add(c);
+      for (const c of IGNITEUI_META.mcp.classes) knownClasses.add(c.id);
       continue;
     }
     // Qualified `<pack>/<class>` is canonical; the bare form still selects the pack's

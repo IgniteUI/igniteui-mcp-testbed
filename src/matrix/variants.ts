@@ -2,12 +2,6 @@
 
 import type { Variant } from '../types.ts';
 
-// Known MCP classes for the built-in IgniteUI provider. External providers add their own
-// qualified `<pack>/<class>` ids via ProviderPack.mcp.classes — those flow through parseVariants
-// without a whitelist check. 'custom' toggles the shared custom MCP JSON blob.
-// No longer used for strict whitelist validation — kept for reference.
-export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'custom'];
-
 // The four skill modes a variant can express, from {skills, localSkills}:
 //   skills  local  → mode
 //     ✗      ✗     → no-skills

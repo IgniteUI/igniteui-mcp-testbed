@@ -15,7 +15,8 @@ import { PROVIDERS_DIR } from './config.ts';
 import { FRAMEWORKS } from './frameworks.ts';
 import { bareMcpClass, qualifyMcpClass } from './mcp-class.ts';
 import { secretStatus, type SecretStatus } from './secrets.ts';
-import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOrigin, PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack } from './types.ts';
+import { IGNITEUI_META, BUILTIN_PROVIDER, isBuiltinFramework } from './builtin-pack.ts';
+import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOption, PackOrigin, PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack } from './types.ts';
 
 const packs = new Map<string, ProviderPack>();
 
@@ -241,6 +242,43 @@ function validateVersions(list: unknown, frameworkIds: string[]): PackVersionPro
   });
 }
 
+// {{id}} placeholders are matched by \w+, and these names are the run's own vars.
+const OPTION_ID = /^[A-Za-z][A-Za-z0-9_]*$/;
+const RESERVED_OPTION_IDS = new Set(['name', 'dir', 'port', 'agents']);
+const MAX_OPTION_VALUE = 200;
+
+function validateOptions(list: unknown): PackOption[] {
+  if (!Array.isArray(list)) throw new Error('options must be an array');
+  const seen = new Set<string>();
+  return list.map((o: any, i: number) => {
+    const label = `options[${i}]`;
+    if (!isObj(o) || typeof o.id !== 'string' || !OPTION_ID.test(o.id)) {
+      throw new Error(`${label}.id must be letters, digits and underscores, starting with a letter`);
+    }
+    if (RESERVED_OPTION_IDS.has(o.id)) throw new Error(`${label}.id "${o.id}" is reserved`);
+    if (seen.has(o.id)) throw new Error(`${label}.id "${o.id}" is declared twice`);
+    seen.add(o.id);
+    for (const k of Object.keys(o)) {
+      if (!['id', 'label', 'description', 'placeholder', 'choices', 'default'].includes(k)) throw new Error(`${label}.${k} is not a valid field`);
+    }
+    if (!isStr(o.label)) throw new Error(`${label}.label is required`);
+    for (const k of ['description', 'placeholder', 'default']) {
+      if (o[k] !== undefined && typeof o[k] !== 'string') throw new Error(`${label}.${k} must be a string`);
+    }
+    if (o.choices !== undefined) {
+      if (!isStrArray(o.choices) || !o.choices.length) throw new Error(`${label}.choices must be a non-empty array of strings`);
+      if (o.default !== undefined && !o.choices.includes(o.default)) throw new Error(`${label}.default must be one of its choices`);
+    }
+    return {
+      id: o.id, label: o.label,
+      ...(o.description !== undefined ? { description: o.description } : {}),
+      ...(o.placeholder !== undefined ? { placeholder: o.placeholder } : {}),
+      ...(o.choices !== undefined ? { choices: [...o.choices] } : {}),
+      ...(o.default !== undefined ? { default: o.default } : {}),
+    };
+  });
+}
+
 function validateServer(s: any, label: string): void {
   if (!s || typeof s.name !== 'string') throw new Error(`${label}.name is required and must be a string`);
   assertSafeId(s.name, `${label}.name`);
@@ -348,7 +386,7 @@ function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' |
 
 const V2_KEYS = new Set([
   '$schema', 'schemaVersion', 'name', 'displayName', 'description', 'version',
-  'frameworks', 'mcp', 'skills', 'secrets', 'versions', 'containerDeps',
+  'frameworks', 'mcp', 'skills', 'options', 'secrets', 'versions', 'containerDeps',
 ]);
 
 function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir' | 'hash'> {
@@ -370,10 +408,15 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
       if (classes.some((x) => x.id === c.id)) throw new Error(`mcp.classes[${i}].id "${c.id}" is declared twice`);
       if (!isStr(c.label)) throw new Error(`mcp.classes[${i}].label is required`);
       if (c.default !== undefined && typeof c.default !== 'boolean') throw new Error(`mcp.classes[${i}].default must be a boolean`);
+      const fwIds = (Array.isArray(body.frameworks) ? body.frameworks : []).map((f: any) => f?.id);
+      if (c.frameworks !== undefined && (!isStrArray(c.frameworks) || !c.frameworks.length || !c.frameworks.every((f: string) => fwIds.includes(f)))) {
+        throw new Error(`mcp.classes[${i}].frameworks must list this pack's framework ids`);
+      }
       classes.push({
         id: c.id, label: c.label,
         ...(isStr(c.description) ? { description: c.description } : {}),
         ...(c.default !== undefined ? { default: c.default } : {}),
+        ...(c.frameworks !== undefined ? { frameworks: [...c.frameworks] } : {}),
       });
     });
     const names = new Set<string>();
@@ -404,6 +447,7 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
     frameworks: validateFrameworks(body.frameworks, origin),
     mcp: { classes, servers },
     ...(skills ? { skills } : {}),
+    ...(body.options !== undefined ? { options: validateOptions(body.options) } : {}),
     ...(body.secrets !== undefined ? { secrets: validateSecrets(body.secrets) } : {}),
     ...(body.versions !== undefined
       ? { versions: validateVersions(body.versions, (body.frameworks || []).map((f: any) => f?.id)) } : {}),
@@ -644,4 +688,42 @@ export function canonicalMcpClasses(frameworkId: string, classes: string[]): str
   if (!pack) return classes.slice();
   return classes.map((c) =>
     pack.mcp.classes.find((k) => bareMcpClass(k.id).toLowerCase() === c.toLowerCase())?.id ?? c);
+}
+
+/** The provider that owns a framework id: a loaded pack's name, the built-in one, or
+ * undefined for an unknown id. */
+export function providerFor(frameworkId: string): string | undefined {
+  if (isBuiltinFramework(frameworkId)) return BUILTIN_PROVIDER;
+  return getPackForFramework(frameworkId)?.name;
+}
+
+export function optionsFor(frameworkId: string): PackOption[] {
+  if (isBuiltinFramework(frameworkId)) return IGNITEUI_META.options || [];
+  return getPackForFramework(frameworkId)?.options || [];
+}
+
+/** A run's option values checked against its provider's declarations, with defaults
+ * filled in. Values reach argv (never a shell), but they are logged and stored, so they
+ * stay short single-line strings. Throws on an undeclared id or an invalid value. */
+export function resolveRunOptions(frameworkId: string, raw: unknown): Record<string, string> {
+  const decls = optionsFor(frameworkId);
+  const given: Record<string, unknown> = raw == null ? {} : (isObj(raw) ? raw : (() => { throw new Error('options must be an object'); })());
+  for (const k of Object.keys(given)) {
+    if (!decls.some((d) => d.id === k)) throw new Error(`option "${k}" is not declared for framework "${frameworkId}"`);
+  }
+  const out: Record<string, string> = {};
+  for (const d of decls) {
+    const v = given[d.id] ?? d.default ?? '';
+    if (typeof v !== 'string' || v.length > MAX_OPTION_VALUE || /[\u0000-\u001f\u007f]/.test(v)) {
+      throw new Error(`option "${d.id}" must be a single-line string of at most ${MAX_OPTION_VALUE} characters`);
+    }
+    if (d.choices && v !== '' && !d.choices.includes(v)) throw new Error(`option "${d.id}" must be one of ${d.choices.join(', ')}`);
+    out[d.id] = v;
+  }
+  return out;
+}
+
+/** Every provider as the browser sees it: the built-in Ignite UI first, then the packs. */
+export function listProvidersForUi(): unknown[] {
+  return [{ ...IGNITEUI_META, secrets: [] }, ...listPacks().map(publicPack)];
 }

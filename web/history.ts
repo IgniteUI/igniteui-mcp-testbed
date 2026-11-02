@@ -8,6 +8,8 @@ import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
 import { pillClass } from '../src/status-meta.ts';
 import { normMcpClass } from '../src/mcp-class.ts';
+import { providerOf } from '../src/provider-of.ts';
+import { getPacks } from './providers.ts';
 import type { Diagnostic } from '../src/types.ts';
 
 interface HistoryGridRow {
@@ -111,10 +113,21 @@ const gridHtml = (...args: any[]) => {
 // artifact store) — a thumbnail simply breaks if the file was later removed there.
 const promptImageUrl = (name: string) => `/api/prompt-images/file?name=${encodeURIComponent(name)}`;
 
-const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
-function fmtFramework(fw: string | undefined): string {
-  if (!fw) return '—';
-  return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
+// A provider's display name when it is loaded here, else its id (a run recorded against
+// a pack this container doesn't have).
+const providerLabel = (c: any): string => {
+  const name = providerOf(c);
+  return getPacks().find((p) => p.name === name)?.displayName || name;
+};
+
+function fmtFramework(c: any): string {
+  return c?.framework ? `${c.framework} - ${providerLabel(c)}` : '—';
+}
+
+// Old records carry projectType/theme; newer ones the provider's options map.
+function optionRows(c: any): Array<[string, string]> {
+  if (c.options && Object.keys(c.options).length) return Object.entries(c.options) as Array<[string, string]>;
+  return [['type', c.projectType || ''], ['theme', c.theme || '']];
 }
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
@@ -290,7 +303,7 @@ function rowVals(r: any): HistoryGridRow {
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
     matrixName: r.matrixName || '',
-    framework: fmtFramework(r.config.framework),
+    framework: fmtFramework(r.config),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
     mcps: mcpSummary(r.config),
@@ -365,8 +378,8 @@ function bindGridTemplates() {
       <div class="detail" data-run-id=${row.id}>
         <div><h4>Config</h4><dl>
           <dt>Mode</dt><dd>${r.mode || 'interactive'}</dd>
-          <dt>Project type</dt><dd>${c.projectType || '—'}</dd>
-          <dt>Theme</dt><dd>${c.theme || '—'}</dd>
+          <dt>Provider</dt><dd>${providerLabel(c)}</dd>
+          ${optionRows(c).map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${v || '—'}</dd>`)}
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
           ${c.pack ? gridHtml`<dt>Pack</dt><dd>${c.pack.name}${c.pack.version ? ` v${c.pack.version}` : ''} · #${c.pack.hash}</dd>` : gridHtml``}
@@ -795,6 +808,8 @@ async function confirmRerun() {
   const body = {
     platforms: [c.framework],
     variants: [{ mcps: c.enabledMcps || [], skills: !!c.skills, localSkills: !!c.overrideSkills }],
+    // Older records stored the Ignite UI options as projectType/theme.
+    options: c.options || (c.projectType || c.theme ? { type: c.projectType || '', theme: c.theme || '' } : undefined),
     model: (c.models || [])[0],
     prompt: r.prompt,
     apiKey,

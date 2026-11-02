@@ -1,5 +1,6 @@
-// Shared provider-pack state for the frontend.  Fetches the list of loaded
-// external packs from /api/providers and broadcasts changes to registered callbacks.
+// Shared provider state for the frontend. Fetches every provider from /api/providers
+// (the built-in Ignite UI first, then the loaded packs) and broadcasts changes to
+// registered callbacks.
 // Imported by wizard.ts, matrix.ts, and config-view.ts.
 import { getJSON } from './api.ts';
 
@@ -11,13 +12,15 @@ export interface ProviderPack {
   schemaVersion: 2;
   frameworks: { id: string; label: string; [k: string]: any }[];
   // Class ids arrive qualified as `<pack>/<class>`.
+  options?: { id: string; label: string; description?: string; placeholder?: string; choices?: string[]; default?: string }[];
   mcp: {
-    classes: { id: string; label: string; description?: string; default?: boolean }[];
+    classes: { id: string; label: string; description?: string; default?: boolean; frameworks?: string[] }[];
     servers: { name: string; class: string; command: string; args?: string[] }[];
   };
   skills?: { label: string; sources: { github?: string; command?: string[] }[] };
   containerDeps?: { npmGlobal?: string[] };
-  origin: 'file' | 'folder' | 'inline';
+  // 'builtin' = Ignite UI, always first in the list and never removable.
+  origin: 'file' | 'folder' | 'inline' | 'builtin';
   // Status only; values never leave the server.
   secrets: { name: string; kind: 'env' | 'file'; required: boolean; description?: string; set: boolean; source: string }[];
 }
@@ -43,4 +46,14 @@ export async function refreshProviders(): Promise<ProviderPack[]> {
   }
   for (const cb of callbacks) cb(cachedPacks);
   return cachedPacks;
+}
+
+/** The provider that owns a framework id. */
+export function packForFramework(fw: string): ProviderPack | undefined {
+  return cachedPacks.find((p) => p.frameworks.some((f) => f.id === fw));
+}
+
+/** A provider's MCP classes that apply to one of its frameworks. */
+export function classesFor(pack: ProviderPack | undefined, fw?: string) {
+  return (pack?.mcp.classes || []).filter((c) => !c.frameworks || !fw || c.frameworks.includes(fw));
 }

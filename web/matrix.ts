@@ -4,7 +4,7 @@ import { html, render, repeat, classMap } from './lit.ts';
 import { $, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
 import { setMatrixLock } from './wizard.ts';
-import { getPacks, type ProviderPack } from './providers.ts';
+import { getPacks, packForFramework, type ProviderPack } from './providers.ts';
 import { createImagePicker, refreshPromptImages } from './prompt-images.ts';
 import { statusLabel, KIND_CHIP, pillClass } from '../src/status-meta.ts';
 import { bareMcpClass } from '../src/mcp-class.ts';
@@ -24,13 +24,6 @@ function flagsFromMode(mode: string): { skills: boolean; localSkills: boolean } 
     default: return { skills: false, localSkills: false };
   }
 }
-
-const BUILTIN_PLATFORMS: Array<[string, string]> = [
-  ['angular', 'Angular'],
-  ['blazor', 'Blazor'],
-  ['react', 'React'],
-  ['webcomponents', 'Web Comps'],
-];
 
 interface VariantRow { key: number; mcps: string[]; mode: string }
 interface EntryVm {
@@ -54,8 +47,8 @@ const newExtraPass = (): ExtraPass => ({ key: ++extraPassKey, sameAsPass1: true 
 const imgPicker = createImagePicker('mx', () => update());
 
 const st = {
-  provider: 'igniteui', // currently selected provider name
-  variants: [newRow(['igniteui', 'theming'], 'default')] as VariantRow[],
+  provider: '', // selected provider name; set once /api/providers loads
+  variants: [] as VariantRow[],
   countText: '',
   customMcpErr: null as string | null,
   localSkillsNote: null as string | null,
@@ -78,19 +71,20 @@ const st = {
 const activePack = (): ProviderPack | undefined =>
   getPacks().find((p) => p.name === st.provider);
 
-// The MCP classes a variant row can toggle for the active provider: the built-in
-// wizard classes for Ignite UI, the pack's declared server classes otherwise;
-// 'custom' (the shared custom-MCP JSON) is available everywhere.
+// The MCP classes a variant row can toggle: the active provider's classes that apply to
+// at least one checked platform (a class limited to Angular only shows with Angular
+// checked), plus 'custom' (the shared custom-MCP JSON), available everywhere.
 function mcpDefsForProvider(): Array<[string, string]> {
-  const defs: Array<[string, string]> = st.provider === 'igniteui'
-    ? [['igniteui', 'Ignite UI CLI MCP'], ['theming', 'Theming MCP']]
-    : (activePack()?.mcp.classes || []).map((c): [string, string] => [c.id, c.label]);
+  const checked = mxPlatforms();
+  const defs = (activePack()?.mcp.classes || [])
+    .filter((c) => !c.frameworks || c.frameworks.some((f) => checked.includes(f)))
+    .map((c): [string, string] => [c.id, c.label]);
   return [...defs, ['custom', 'Custom MCP']];
 }
 
 function defaultVariantPreset(): VariantRow {
-  if (st.provider === 'igniteui') return newRow(['igniteui', 'theming'], 'default');
-  const classes = (activePack()?.mcp.classes || []).filter((c) => c.default !== false).map((c) => c.id);
+  const classes = (activePack()?.mcp.classes || [])
+    .filter((c) => c.default !== false && !c.frameworks).map((c) => c.id);
   return newRow(classes, classes.length ? 'default' : 'off');
 }
 
@@ -98,8 +92,7 @@ const anyCustomMcp = () => st.variants.some((v) => v.mcps.includes('custom'));
 
 // igc-checkbox exposes `.checked` as a property (not the CSS :checked pseudo).
 // Read only from the active provider's platform group so hidden groups are excluded.
-const platformGroupSel = () =>
-  st.provider === 'igniteui' ? '#mxPlatformsIg' : `#mxPlatforms-${st.provider}`;
+const platformGroupSel = () => `#mxPlatforms-${st.provider}`;
 const mxPlatforms = () =>
   [...document.querySelectorAll<any>(`${platformGroupSel()} igc-checkbox`)].filter((c) => c.checked).map((c) => c.value);
 
@@ -211,11 +204,12 @@ function applyMxProvider(p: string) {
   updateMxCount();
 }
 
-/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+/** Called by main.ts whenever the provider list changes (pack loaded / removed). */
 export function applyExternalProvidersMatrix(packs: ProviderPack[]): void {
-  // If the currently selected provider was removed, revert to igniteui.
-  if (st.provider !== 'igniteui' && !packs.some((p) => p.name === st.provider)) {
-    applyMxProvider('igniteui');
+  // First load, or the selected provider was removed: fall back to the first one (the
+  // server lists the built-in provider first).
+  if (!packs.some((p) => p.name === st.provider) && packs.length) {
+    applyMxProvider(packs[0].name);
     return;
   }
   update();
@@ -416,14 +410,11 @@ export async function applyServerMatrixConfig() {
   if (!cfg) return;
   const platforms: string[] = cfg.platforms || [];
 
-  // The form shows one provider at a time, so pick the provider that owns the
-  // config's platforms: the pack owning the first external platform, else the
-  // built-in Ignite UI. (main.ts awaits refreshProviders() before calling this,
-  // so the pack list — and the platform groups rendered from it — are current.)
-  const ownerPack = platforms
-    .map((fw) => getPacks().find((p) => p.frameworks.some((f) => f.id === fw)))
-    .find(Boolean);
-  st.provider = ownerPack ? ownerPack.name : 'igniteui';
+  // The form shows one provider at a time, so pick the one that owns the config's first
+  // platform. (main.ts awaits refreshProviders() before calling this, so the provider
+  // list — and the platform groups rendered from it — are current.)
+  const ownerPack = platforms.map((fw) => packForFramework(fw)).find(Boolean) || getPacks()[0];
+  st.provider = ownerPack ? ownerPack.name : '';
 
   // Config variants replace the provider's default seed row.
   // A config may name the pack's classes bare; the checkboxes are keyed by the qualified id.
@@ -438,6 +429,10 @@ export async function applyServerMatrixConfig() {
   // igcChange; updateMxCount below does the recount the handlers would have.
   const group = [...document.querySelectorAll<any>(`${platformGroupSel()} igc-checkbox`)];
   group.forEach((c) => { c.checked = platforms.includes(c.value); });
+  for (const [id, v] of Object.entries<string>(cfg.options || {})) {
+    const el = document.getElementById(mxOptionElId(st.provider, id)) as any;
+    if (el) el.value = v;
+  }
   // A config may mix providers' platforms (the API runs them all); the form can only
   // display one provider's group — note the ones it can't show.
   const shown = new Set(group.map((c) => c.value));
@@ -505,8 +500,14 @@ async function onSubmit(e: Event) {
   })();
   if (extraPassPrompts === null) return;
   const passes = [{ prompt }, ...extraPassPrompts];
+  const options: Record<string, string> = {};
+  for (const o of activePack()?.options || []) {
+    const el = document.getElementById(mxOptionElId(st.provider, o.id)) as any;
+    options[o.id] = String(el?.value ?? o.default ?? '').trim();
+  }
   const body = {
     platforms, variants, model, passes,
+    ...(Object.keys(options).length ? { options } : {}),
     apiKey: $('#mxKey').value,
     customMcp: $('#mxCustomMcp').value.trim() || undefined,
     selectedTests: ($('#mxTestsCombo').value || []) as string[],
@@ -594,8 +595,17 @@ const entryItem = (e: EntryVm) => {
   </li>`;
 };
 
+const mxOptionElId = (pack: string, id: string) => `mx-opt-${pack}-${id}`;
+
+// Fixed across the matrix: one value per option for every entry.
+const mxOptionInputs = (pack: ProviderPack) => (pack.options || []).map((o) => o.choices
+  ? html`<igc-select outlined id=${mxOptionElId(pack.name, o.id)} label=${o.label} value=${o.default ?? o.choices[0]}>
+      ${o.choices.map((c) => html`<igc-select-item value=${c}>${c}</igc-select-item>`)}
+    </igc-select>`
+  : html`<igc-input outlined id=${mxOptionElId(pack.name, o.id)} label=${o.label} placeholder=${o.placeholder || ''}
+      value=${o.default || ''}></igc-input>`);
+
 function tpl() {
-  const ig = st.provider === 'igniteui';
   return html`
   <!-- left: matrix setup -->
   <section class="panel">
@@ -605,7 +615,6 @@ function tpl() {
         <legend>Provider <small style="color:var(--steel);font-weight:400">(one per matrix)</small></legend>
         <igc-button-group id="mxProvider" selection="single-required"
           @igcSelect=${(e: any) => applyMxProvider(e.detail || st.provider)}>
-          <igc-toggle-button value="igniteui" .selected=${ig}>Ignite UI</igc-toggle-button>
           ${repeat(getPacks(), (p) => p.name, (p) => html`
             <igc-toggle-button value=${p.name} .selected=${st.provider === p.name}>${p.displayName}</igc-toggle-button>`)}
         </igc-button-group>
@@ -613,16 +622,13 @@ function tpl() {
 
       <fieldset>
         <legend>Platforms <small style="color:var(--steel);font-weight:400">(axis)</small></legend>
-        <div id="mxPlatformsIg" ?hidden=${!ig} @igcChange=${() => updateMxCount()}>
-          ${BUILTIN_PLATFORMS.map(([value, label]) => html`
-            <igc-checkbox value=${value} ?checked=${value === 'angular'}>${label}</igc-checkbox>`)}
-        </div>
-        <div id="mxExternalPlatforms">
+        <div id="mxPlatformGroups">
           ${repeat(getPacks(), (p) => p.name, (pack) => html`
             <div id="mxPlatforms-${pack.name}" ?hidden=${st.provider !== pack.name} @igcChange=${() => updateMxCount()}>
               ${pack.frameworks.map((fw, i) => html`
                 <igc-checkbox value=${fw.id} ?checked=${i === 0}>${fw.label}</igc-checkbox>`)}
-            </div>`)}
+            </div>
+            <div ?hidden=${st.provider !== pack.name || !(pack.options || []).length}>${mxOptionInputs(pack)}</div>`)}
         </div>
       </fieldset>
 

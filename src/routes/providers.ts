@@ -1,13 +1,13 @@
 'use strict';
 
 import type { Express } from 'express';
-import { listPacks, getPack, savePack, deletePack, validatePack, publicPack } from '../provider-registry.ts';
+import { getPack, savePack, deletePack, validatePack, publicPack, listProvidersForUi } from '../provider-registry.ts';
 import type { ProviderPack } from '../types.ts';
 
 export default function registerProviderRoutes(app: Express): void {
-  /** List all currently loaded external provider packs. */
+  /** Every provider: the built-in Ignite UI metadata first, then the loaded packs. */
   app.get('/api/providers', (_req, res) => {
-    res.json({ ok: true, providers: listPacks().map(publicPack) });
+    res.json({ ok: true, providers: listProvidersForUi() });
   });
 
   /** Upload (load) a new provider pack from a JSON body. */

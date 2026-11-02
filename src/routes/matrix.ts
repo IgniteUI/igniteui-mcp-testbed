@@ -50,6 +50,7 @@ export default function registerMatrixRoutes(app: Express): void {
         name: c.req.name,
         passes: c.req.passes,
         customMcp: fixed.customMcp || '',
+        options: fixed.options ?? null,
         customBaseUrl: fixed.customBaseUrl || null,
         selectedTests: fixed.selectedTests ?? null, // null = field omitted = "all"
         promptImages: fixed.promptImages ?? null,   // null = field omitted = attach none

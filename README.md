@@ -129,6 +129,14 @@ The header switches between four views:
   be checked for using the same skills. The wizard's "Exclude skills" field works for
   every provider.
 
+  `options` declares inputs the wizard and the Matrix tab show for the provider —
+  `{ "id": "theme", "label": "Theme", "choices": ["light", "dark"], "default": "light" }`
+  (a select with `choices`, free text without) — and each value becomes the `{{id}}`
+  placeholder in the pack's commands (`name`, `dir`, `port` and `agents` are reserved).
+  An MCP class with `"frameworks": [...]` is only offered for those framework ids.
+  Ignite UI itself is described in the same shape (its project type and theme are its
+  options), so all providers render the same way.
+
   A pack framework can also:
   - scaffold from a folder instead of a command —
     `"scaffold": { "kind": "template", "from": "template/node" }` (folder packs only)

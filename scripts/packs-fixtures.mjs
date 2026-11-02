@@ -99,7 +99,7 @@ const v2 = {
   check('v2: no mcp block ⇒ empty', reg.validatePack({ ...structuredClone(v2), mcp: undefined }).mcp, { classes: [], servers: [] });
 
   const mut = (f) => { const b = structuredClone(v2); f(b); return b; };
-  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.options = []; })), /unknown field "options"/);
+  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.configure = []; })), /unknown field "configure"/);
   throws('v2: unsupported schemaVersion', () => reg.validatePack(mut((b) => { b.schemaVersion = 3; })), /unsupported schemaVersion/);
   throws('v2: server class must be declared', () => reg.validatePack(mut((b) => { b.mcp.servers[0].class = 'other'; })), /not declared in mcp\.classes/);
   throws('v2: duplicate class', () => reg.validatePack(mut((b) => { b.mcp.classes.push({ id: 'docs', label: 'again' }); })), /declared twice/);
@@ -457,6 +457,53 @@ const v2 = {
   check('redact: built-in has no pack', 'pack' in history.redact({ framework: 'angular' }), false);
 }
 
+// ── provider data for the UI (2) ────────────────────────────────────────────
+{
+  const { providerOf } = await import('../src/provider-of.ts');
+  const history = await import('../src/history.ts');
+
+  const withOpts = (options, extra = {}) => reg.validatePack({ ...structuredClone(v2), name: 'op', frameworks: [fw('op-fw')], options, ...extra });
+  check('options: kept', withOpts([{ id: 'theme', label: 'Theme', choices: ['light', 'dark'], default: 'dark' }, { id: 'title', label: 'Title' }]).options,
+    [{ id: 'theme', label: 'Theme', choices: ['light', 'dark'], default: 'dark' }, { id: 'title', label: 'Title' }]);
+  throws('options: reserved id', () => withOpts([{ id: 'port', label: 'P' }]), /reserved/);
+  throws('options: id with a hyphen', () => withOpts([{ id: 'my-opt', label: 'P' }]), /letters, digits and underscores/);
+  throws('options: duplicate', () => withOpts([{ id: 'a', label: 'A' }, { id: 'a', label: 'B' }]), /declared twice/);
+  throws('options: default outside choices', () => withOpts([{ id: 'a', label: 'A', choices: ['x'], default: 'y' }]), /one of its choices/);
+  throws('options: unknown field', () => withOpts([{ id: 'a', label: 'A', required: true }]), /not a valid field/);
+
+  throws('class frameworks: must be the pack\'s', () => reg.validatePack({ ...structuredClone(v2),
+    mcp: { classes: [{ id: 'docs', label: 'D', frameworks: ['angular'] }], servers: [] } }), /framework ids/);
+  check('class frameworks: kept', reg.validatePack({ ...structuredClone(v2),
+    mcp: { classes: [{ id: 'docs', label: 'D', frameworks: ['reveal-node'] }], servers: [] } }).mcp.classes[0].frameworks, ['reveal-node']);
+
+  reg.registerPack(withOpts([{ id: 'theme', label: 'Theme', choices: ['light', 'dark'], default: 'dark' }, { id: 'title', label: 'Title' }]));
+  check('resolve: defaults filled', reg.resolveRunOptions('op-fw', undefined), { theme: 'dark', title: '' });
+  check('resolve: given values', reg.resolveRunOptions('op-fw', { theme: 'light', title: 'Hi' }), { theme: 'light', title: 'Hi' });
+  throws('resolve: undeclared id', () => reg.resolveRunOptions('op-fw', { color: 'x' }), /not declared/);
+  throws('resolve: outside choices', () => reg.resolveRunOptions('op-fw', { theme: 'blue' }), /one of light, dark/);
+  throws('resolve: multi-line', () => reg.resolveRunOptions('op-fw', { title: 'a\nb' }), /single-line/);
+  throws('resolve: not a string', () => reg.resolveRunOptions('op-fw', { title: 3 }), /single-line/);
+  check('resolve: built-in options', reg.resolveRunOptions('angular', { type: 'igx-ts' }), { type: 'igx-ts', theme: '' });
+  check('resolve: unknown framework has none', reg.resolveRunOptions('nope', {}), {});
+
+  const ui = reg.listProvidersForUi();
+  check('ui: built-in first', [ui[0].name, ui[0].origin], ['igniteui', 'builtin']);
+  check('ui: built-in frameworks in UI order', ui[0].frameworks.map((f) => f.id), ['angular', 'blazor', 'react', 'webcomponents']);
+  check('ui: built-in classes stay bare', ui[0].mcp.classes.map((c) => c.id), ['igniteui', 'theming', 'angular']);
+  check('ui: angular class only for angular', ui[0].mcp.classes[2].frameworks, ['angular']);
+  check('ui: packs follow', ui.slice(1).some((p) => p.name === 'op'), true);
+  check('ui: no container paths', JSON.stringify(ui).includes(providersDir.replace(/\\/g, '\\\\')), false);
+
+  check('providerFor', ['angular', 'op-fw', 'nope'].map((f) => reg.providerFor(f)), ['igniteui', 'op', undefined]);
+  check('redact: provider and options', (({ provider, options }) => ({ provider, options }))(history.redact({ framework: 'op-fw', options: { theme: 'light', title: '' } })),
+    { provider: 'op', options: { theme: 'light', title: '' } });
+  check('redact: built-in provider', history.redact({ framework: 'angular' }).provider, 'igniteui');
+  check('providerOf: new record', providerOf({ provider: 'op' }), 'op');
+  check('providerOf: 1d pack record', providerOf({ pack: { name: 'reveal' } }), 'reveal');
+  check('providerOf: older record ⇒ Ignite UI', [providerOf({}), providerOf(null)], ['igniteui', 'igniteui']);
+  reg.unregisterPack('op');
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));
@@ -464,7 +511,7 @@ const v2 = {
   const schema = JSON.parse(fs.readFileSync(new URL('../provider.schema.json', import.meta.url), 'utf8'));
   // validatePack's v2 top-level keys and the schema's must not drift apart.
   check('schema top-level keys', Object.keys(schema.properties).sort(),
-    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'schemaVersion', 'secrets', 'skills', 'version', 'versions']);
+    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'options', 'schemaVersion', 'secrets', 'skills', 'version', 'versions']);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

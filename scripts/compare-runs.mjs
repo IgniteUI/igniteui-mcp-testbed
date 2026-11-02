@@ -31,6 +31,7 @@
 // Without --inline the page links into sessions/history/artifacts/, so it stays small
 // but travels only with that folder. --inline embeds the PNGs and is portable.
 
+import { providerOf } from '../src/provider-of.ts';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -161,7 +162,7 @@ const cols = records.map((r, i) => ({
   id: r.id,
   label: r.matrixName || (r.config?.models || [])[0] || r.id,
   model: (r.config?.models || [])[0] || '—',
-  platform: r.config?.framework || '—',
+  platform: r.config?.framework ? `${r.config.framework} · ${providerOf(r.config)}` : '—',
   variant: variantOf(r.config),
   shots: new Map((r.screenshots || []).map((s) => [s.route, s])),
   liveDiags: (r.diagnostics || []).filter((d) => !d.resolvedAt && !d.supersededAt),

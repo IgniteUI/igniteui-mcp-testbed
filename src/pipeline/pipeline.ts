@@ -126,9 +126,12 @@ export async function runPipeline(
   fs.mkdirSync(path.dirname(appDir), { recursive: true });
   // `agents` feeds `ig new --agents=` so the scaffold's built-in ai-config pass honours
   // the skills toggle instead of falling back to the CLI's checkbox defaults.
+  // The provider's options become {{id}} vars. `type`/`theme` are also still accepted as
+  // the older projectType/theme fields (matrix configs, history re-runs); an option wins.
   const vars = {
-    name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '',
-    port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
+    type: cfg.projectType || '', theme: cfg.theme || '',
+    ...(cfg.options || {}),
+    name: 'app', dir: appDir, port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
   };
   const scaffold = fw.scaffold;
   if (scaffold.kind === 'template') {

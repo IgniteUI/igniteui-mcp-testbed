@@ -1,5 +1,6 @@
 'use strict';
 
+import { resolveRunOptions } from '../provider-registry.ts';
 import type { Express } from 'express';
 import { APP_DIR, OPENCODE_PORT } from '../config.ts';
 import * as history from '../history.ts';
@@ -36,6 +37,14 @@ export default function registerRunRoutes(app: Express): void {
     };
 
     const cfg = req.body || {};
+    // Checked before the record exists, so a bad option is a plain 400, not a failed run.
+    try {
+      cfg.options = resolveRunOptions(String(cfg.framework || ''), cfg.options);
+    } catch (e: any) {
+      emit('error', e.message);
+      res.end();
+      return;
+    }
     const runId = session.beginRun(cfg);
     // Bound to the collector beginRun just installed, so a previous watcher still dying
     // in the background cannot feed its output into this run.
