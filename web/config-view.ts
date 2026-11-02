@@ -49,12 +49,14 @@ const packCard = (pack: ProviderPack) => html`
     <div class="provider-card-head">
       <strong>${pack.displayName}</strong>
       ${pack.version ? html`<span class="note">v${pack.version}</span>` : nothing}
-      <button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>
+      ${pack.origin === 'folder'
+        ? html`<span class="note" title="Folder packs are managed on the host">folder</span>`
+        : html`<button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>`}
     </div>
     ${pack.description ? html`<p class="note" style="margin:.2rem 0 0">${pack.description}</p>` : nothing}
     <p class="note" style="margin:.25rem 0 0">
       Frameworks: ${pack.frameworks.map((f) => f.label).join(', ')} ·
-      MCPs: ${(pack.configure.mcpServers || []).map((s) => s.label).join(', ') || '—'}
+      MCPs: ${pack.mcp.classes.map((c) => c.label).join(', ') || '—'}
     </p>
     ${pack.containerDeps?.npmGlobal?.length ? html`
       <p class="note warn" style="margin:.25rem 0 0">

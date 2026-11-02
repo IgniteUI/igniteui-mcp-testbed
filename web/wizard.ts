@@ -485,7 +485,7 @@ const statsUpdated = () => st.stats?.updatedAt
 
 const skillsLabel = () => {
   if (st.provider === 'igniteui') return 'Install Ignite UI skills';
-  return activePack()?.configure?.skills?.label || 'Install skills';
+  return activePack()?.skills?.label || 'Install skills';
 };
 
 function tpl() {
@@ -532,8 +532,8 @@ function tpl() {
         </div>
         ${repeat(getPacks(), (p) => p.name, (pack) => html`
           <div id="mcps-${pack.name}" ?hidden=${st.provider !== pack.name}>
-            ${pack.configure?.mcpServers?.map((s) => html`
-              <igc-checkbox data-mcp=${s.class} checked>${s.label}${s.description ? html`<small>${s.description}</small>` : nothing}</igc-checkbox>`)}
+            ${pack.mcp.classes.map((c) => html`
+              <igc-checkbox data-mcp=${c.id} ?checked=${c.default !== false}>${c.label}${c.description ? html`<small>${c.description}</small>` : nothing}</igc-checkbox>`)}
           </div>`)}
         <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
         <igc-checkbox data-mcp="custom" id="customMcpEnable" @igcChange=${onCustomMcpToggle}>Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>

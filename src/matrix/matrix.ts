@@ -11,6 +11,7 @@ import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
 import { writeMatrixReport } from './report.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
+import { canonicalMcpClasses } from '../provider-registry.ts';
 import type { Combo, MatrixEntry, MatrixPass, MatrixState, MatrixFixed as Fixed, RunConfig, Diagnostic, DiagnosticKind, AgentRunError } from '../types.ts';
 import { deriveStatus, summarizeDiagnostics, isActive, kindPriority } from '../capture/diagnostics.ts';
 import { DIAGNOSTIC_AGGREGATE_THRESHOLD } from '../config.ts';
@@ -88,7 +89,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
     framework: c.platform,
     projectType: fixed.projectType || '',
     theme: fixed.theme || '',
-    enabledMcps: c.variant.mcps,
+    enabledMcps: canonicalMcpClasses(c.platform, c.variant.mcps),
     customMcp: fixed.customMcp,
     skills: !!c.variant.skills,
     excludedSkills: [],

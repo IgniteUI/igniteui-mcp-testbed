@@ -11,3 +11,14 @@
 export function normMcpClass(s: string): string {
   return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
 }
+
+// Pack classes are qualified `<pack>/<class>` so two packs may both declare `docs`.
+// Idempotent; the fold above turns `mui/docs` into `mui_docs`, i.e. MCP_CMD_MUI_DOCS.
+export function qualifyMcpClass(pack: string, cls: string): string {
+  return cls.includes('/') ? cls : `${pack}/${cls}`;
+}
+
+export function bareMcpClass(cls: string): string {
+  const i = cls.indexOf('/');
+  return i < 0 ? cls : cls.slice(i + 1);
+}

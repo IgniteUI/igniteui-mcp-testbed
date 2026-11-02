@@ -21,6 +21,7 @@ import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts'
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
 import { classify } from './mcp-classify.ts';
+import { bareMcpClass } from '../mcp-class.ts';
 import { waitForMcp } from './mcp-ready.ts';
 import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
@@ -150,7 +151,7 @@ export async function runPipeline(
     // The explicit forbidden-key guard is the barrier CodeQL requires to resolve
     // js/remote-property-injection — Object.fromEntries() is not recognised.
     const packServers: Record<string, any> = Object.create(null);
-    for (const s of pack.configure.mcpServers) {
+    for (const s of pack.mcp.servers) {
       if (s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
         packServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
       }
@@ -162,48 +163,49 @@ export async function runPipeline(
     if (cfg.skills) {
       const skillsDir = path.join(appDir, '.agents', 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
-      const skillsConf = pack.configure.skills;
-      if (skillsConf?.github) {
-        // Clone the GitHub repo and copy every top-level skill folder.
-        // Validate the ref before embedding it in a git argument to prevent
-        // second-order command injection (e.g. "--upload-pack=malicious").
-        const githubRef = skillsConf.github;
-        if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
-          throw new Error(`invalid skills.github value "${githubRef}" — expected "owner/repo" with only safe characters`);
+      for (const src of pack.skills?.sources || []) {
+        if (src.github) {
+          // Validated as owner/repo at load; re-checked here because it reaches a git argument.
+          const githubRef = src.github;
+          if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
+            throw new Error(`invalid skills github value "${githubRef}" — expected "owner/repo" with only safe characters`);
+          }
+          const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
+          emit('log', `cloning skills from github.com/${githubRef}`);
+          await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
+          // The default branch moves, so record which commit this run actually tested.
+          const head = (await capture('git', ['-C', tmpDir, 'log', '-1', '--format=%h %cs'], appDir).catch(() => '')).trim();
+          // Repos that ship more than skills keep them under skills/; only a folder
+          // holding a SKILL.md is a skill opencode can load.
+          const skillsRoot = fs.existsSync(path.join(tmpDir, 'skills')) ? path.join(tmpDir, 'skills') : tmpDir;
+          let count = 0;
+          for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
+            if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+            if (!fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))) continue;
+            fs.cpSync(path.join(skillsRoot, entry.name), path.join(skillsDir, entry.name), { recursive: true });
+            count++;
+          }
+          emit('log', `installed ${count} skill(s) from github.com/${githubRef}${head ? ` @ ${head}` : ''}`);
+          await rmrf(tmpDir);
+        } else if (src.command?.length) {
+          const [cmd, ...args] = src.command;
+          emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
+          await runStep(cmd, args, skillsDir, emit);
         }
-        const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
-        emit('log', `cloning skills from github.com/${githubRef}`);
-        await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
-        // The default branch moves, so record which commit this run actually tested — the
-        // entry log is persisted into the history record, so the run stays attributable.
-        const head = (await capture('git', ['-C', tmpDir, 'log', '-1', '--format=%h %cs'], appDir).catch(() => '')).trim();
-        // Repos that ship more than skills keep them under skills/ (the Agent Skills
-        // convention); only a folder holding a SKILL.md is a skill opencode can load.
-        const skillsRoot = fs.existsSync(path.join(tmpDir, 'skills')) ? path.join(tmpDir, 'skills') : tmpDir;
-        let count = 0;
-        for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
-          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-          if (!fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))) continue;
-          fs.cpSync(path.join(skillsRoot, entry.name), path.join(skillsDir, entry.name), { recursive: true });
-          count++;
-        }
-        emit('log', `installed ${count} skill(s) from github.com/${githubRef}${head ? ` @ ${head}` : ''}`);
-        await rmrf(tmpDir);
-      } else if (skillsConf?.installCommand?.length) {
-        const [cmd, ...args] = skillsConf.installCommand;
-        emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
-        await runStep(cmd, args, skillsDir, emit);
       }
     }
 
     // Write opencode.json directly — pack commands are already correct,
     // so the translate step is not needed.
+    // Pack classes are qualified `<pack>/<class>`; a bare class still matches this
+    // pack's own class, so matrix configs and history re-runs written before
+    // qualification keep selecting the same servers.
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
     // Null-prototype object + explicit forbidden-key guard: same pattern as vsServers
     // above. The guard is the barrier CodeQL needs to close js/remote-property-injection.
     const mcpBlock: Record<string, any> = Object.create(null);
-    for (const s of pack.configure.mcpServers) {
-      const on = selected.has(s.class.toLowerCase());
+    for (const s of pack.mcp.servers) {
+      const on = selected.has(s.class.toLowerCase()) || selected.has(bareMcpClass(s.class).toLowerCase());
       // Sanitize server name and class before emitting to logs (CodeQL js/log-injection).
       const safeName = s.name.replace(/[\r\n]/g, ' ');
       const safeClass = s.class.replace(/[\r\n]/g, ' ');
@@ -322,6 +324,9 @@ export async function runPipeline(
     // maps each server with explicit precedence. Only classes the caller explicitly
     // selected are enabled — everything else stays off, so a variant with no MCPs is a
     // true clean baseline.
+    // Pack classes are qualified `<pack>/<class>`; a bare class still matches this
+    // pack's own class, so matrix configs and history re-runs written before
+    // qualification keep selecting the same servers.
     const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
     const servers = mcpDoc.servers;
     const enabled = new Set<string>();

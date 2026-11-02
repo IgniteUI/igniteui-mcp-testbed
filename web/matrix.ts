@@ -7,6 +7,7 @@ import { setMatrixLock } from './wizard.ts';
 import { getPacks, type ProviderPack } from './providers.ts';
 import { createImagePicker, refreshPromptImages } from './prompt-images.ts';
 import { statusLabel, KIND_CHIP, pillClass } from '../src/status-meta.ts';
+import { bareMcpClass } from '../src/mcp-class.ts';
 import type { Diagnostic, MatrixBanner } from '../src/types.ts';
 
 // Skill mode <-> {skills, localSkills} (the 4-way axis): off / default / local / merge.
@@ -83,13 +84,13 @@ const activePack = (): ProviderPack | undefined =>
 function mcpDefsForProvider(): Array<[string, string]> {
   const defs: Array<[string, string]> = st.provider === 'igniteui'
     ? [['igniteui', 'Ignite UI CLI MCP'], ['theming', 'Theming MCP']]
-    : (activePack()?.configure?.mcpServers || []).map((s): [string, string] => [s.class, s.label]);
+    : (activePack()?.mcp.classes || []).map((c): [string, string] => [c.id, c.label]);
   return [...defs, ['custom', 'Custom MCP']];
 }
 
 function defaultVariantPreset(): VariantRow {
   if (st.provider === 'igniteui') return newRow(['igniteui', 'theming'], 'default');
-  const classes = (activePack()?.configure?.mcpServers || []).map((s) => s.class);
+  const classes = (activePack()?.mcp.classes || []).filter((c) => c.default !== false).map((c) => c.id);
   return newRow(classes, classes.length ? 'default' : 'off');
 }
 
@@ -425,7 +426,10 @@ export async function applyServerMatrixConfig() {
   st.provider = ownerPack ? ownerPack.name : 'igniteui';
 
   // Config variants replace the provider's default seed row.
-  st.variants = (cfg.variants || []).map((v: any) => newRow(v.mcps || [], skillModeOf(v)));
+  // A config may name the pack's classes bare; the checkboxes are keyed by the qualified id.
+  const qualify = (c: string) =>
+    ownerPack?.mcp.classes.find((k) => bareMcpClass(k.id).toLowerCase() === c.toLowerCase())?.id ?? c;
+  st.variants = (cfg.variants || []).map((v: any) => newRow((v.mcps || []).map(qualify), skillModeOf(v)));
   if (cfg.hasApiKey) st.keyPlaceholder = 'using key from server config';
   update();
 

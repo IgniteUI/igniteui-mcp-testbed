@@ -3,7 +3,7 @@
 import type { Variant } from '../types.ts';
 
 // Known MCP classes for the built-in IgniteUI provider. External providers add their own
-// classes via ProviderPack.configure.mcpServers[].class — those flow through parseVariants
+// qualified `<pack>/<class>` ids via ProviderPack.mcp.classes — those flow through parseVariants
 // without a whitelist check. 'custom' toggles the shared custom MCP JSON blob.
 // No longer used for strict whitelist validation — kept for reference.
 export const MATRIX_MCP_CLASSES = ['igniteui', 'theming', 'custom'];
@@ -33,7 +33,7 @@ export function variantLabel(v: Variant): string {
 // Filesystem-safe, self-describing dir name for a matrix entry so the per-entry
 // app/data dirs are findable at a glance (e.g. entry-0-angular-igniteui+theming-skills).
 export function entryDirName(i: number, platform: string, v: Variant): string {
-  const mcps = (v.mcps && v.mcps.length) ? v.mcps.join('+') : 'none';
+  const mcps = (v.mcps && v.mcps.length) ? v.mcps.map((c) => c.replace(/\//g, '.')).join('+') : 'none';
   return `entry-${i}-${platform}-${mcps}-${skillSlug(v)}`;
 }
 
@@ -44,11 +44,11 @@ export function parseVariants(raw: any): Variant[] {
   const seen = new Set<string>();
   const out: Variant[] = [];
   for (const v of Array.isArray(raw) ? raw : []) {
-    // Accept any non-empty string matching SAFE_ID (letters, digits, hyphens, underscores)
-    // and normalize to lowercase so mixed-case variants deduplicate correctly.
+    // A safe id, optionally pack-qualified (`<pack>/<class>`), lowercased so
+    // mixed-case variants deduplicate correctly.
     const mcps = Array.isArray(v?.mcps)
       ? v.mcps
-          .filter((c: any) => typeof c === 'string' && /^[a-zA-Z0-9_-]+$/.test(c))
+          .filter((c: any) => typeof c === 'string' && /^[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)?$/.test(c))
           .map((c: string) => c.toLowerCase())
       : [];
     const skills = !!(v && v.skills);

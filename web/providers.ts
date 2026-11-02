@@ -8,12 +8,16 @@ export interface ProviderPack {
   displayName: string;
   description?: string;
   version?: string;
+  schemaVersion: 2;
   frameworks: { id: string; label: string; [k: string]: any }[];
-  configure: {
-    mcpServers: { name: string; command: string; args?: string[]; class: string; label: string; description?: string }[];
-    skills?: { github?: string; installCommand?: string[]; label: string };
+  // Class ids arrive qualified as `<pack>/<class>`.
+  mcp: {
+    classes: { id: string; label: string; description?: string; default?: boolean }[];
+    servers: { name: string; class: string; command: string; args?: string[] }[];
   };
+  skills?: { label: string; sources: { github?: string; command?: string[] }[] };
   containerDeps?: { npmGlobal?: string[] };
+  origin: 'file' | 'folder' | 'inline';
 }
 
 let cachedPacks: ProviderPack[] = [];

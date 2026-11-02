@@ -105,11 +105,18 @@ The header switches between four views:
 - **Configuration** — manage **provider packs**: JSON files that teach the testbed how
   to scaffold and configure a 3rd-party library (its own scaffold / dev-server
   commands, MCP servers, and skills source). Packs loaded here persist in
-  `./providers-data/` on the host (you can also drop pack `.json` files there
-  directly), and their frameworks appear as extra platforms in the Interactive and
-  Matrix views. [`provider.example.angular-material.json`](provider.example.angular-material.json)
-  is a ready-to-load example (Angular Material). A matrix config file can alternatively
-  carry packs inline via its `providers` field — see below.
+  `./providers-data/` on the host, and their frameworks appear as extra platforms in
+  the Interactive and Matrix views. A pack is either a single `<name>.json` file or a
+  `<name>/pack.json` folder (the folder name must match the pack's `name`); folder
+  packs are managed on the host and can't be removed from the UI.
+  [`provider.example.angular-material.json`](provider.example.angular-material.json)
+  is a ready-to-load example (Angular Material), and
+  [`provider.schema.json`](provider.schema.json) gives editors autocomplete and
+  validation (add `"$schema": "./provider.schema.json"`). The schema describes
+  format v2 (`schemaVersion: 2`, `mcp.classes` / `mcp.servers`, `skills.sources`);
+  v1 packs (`configure.mcpServers` / `configure.skills`) still load and are upgraded
+  in memory. A matrix config file can also name packs, or carry them inline, via its
+  `providers` field — see below.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.
@@ -175,7 +182,7 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `platforms` | yes | Built-in framework ids (`angular`, `blazor`, `react`, `webcomponents`) **or any registered provider pack's framework ids** (from `./providers-data/` or this file's `providers` field). Unknown names are ignored with a warning. |
 | `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. For built-in platforms `mcps` ⊆ `igniteui` / `theming` / `custom`; for provider platforms use the pack's MCP server `class` names (+ `custom`). Classes no selected platform declares warn at load. `localSkills` without `skills` = local-only. Deduped. |
 | `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
-| `providers` | no | Array of **provider pack definitions** (same JSON shape the Configuration tab uploads: `name`, `displayName`, `frameworks[]`, `configure.mcpServers[]`, …). Registered in-memory at startup *before* the request is validated, so `platforms`/`mcps` can reference them — a terminal run is fully self-contained in one file. Unlike UI uploads they are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
+| `providers` | no | Array of packs the config uses. Each entry is a **pack name** already in `./providers-data/` (`"reveal"`), a **path** to a pack file or folder (relative to `/providers`, e.g. `"experimental/reveal"`), or an **inline pack body** (same JSON the Configuration tab uploads; inline packs can't be folder packs). Registered *before* the request is validated, so `platforms`/`mcps` can reference them. Paths and inline bodies are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
 | `prompt` | yes | The shared prompt every entry runs. |
 | `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
 | `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
@@ -463,9 +470,10 @@ MCP_CMD_THEMING="/opt/local-mcp/bin/my-theming-mcp --stdio" ./run.sh
 ./run.sh --matrix-config ./matrix.json     # unset => the released servers
 ```
 
-Any class works — `igniteui`, `theming`, `angular`, `custom`, or whatever `class` a
-provider pack declares. The suffix is matched case-insensitively with non-alphanumerics
-folded to `_`, so a pack class `mui-docs` is set with `MCP_CMD_MUI_DOCS`. The value is a
+Any class works — `igniteui`, `theming`, `angular`, `custom`, or a provider pack's class.
+Pack classes are qualified with the pack name (`<pack>/<class>`), so two packs can both
+declare `docs`. The suffix is matched case-insensitively with non-alphanumerics folded to
+`_`, so class `docs` of pack `mui` is set with `MCP_CMD_MUI_DOCS`. The value is a
 whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains an alias for
 `MCP_CMD_IGNITEUI`.
 

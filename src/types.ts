@@ -56,39 +56,49 @@ export interface ProviderPackFramework {
   prepare?: Record<string, string>;
 }
 
-export interface ProviderPackMcpServer {
-  name: string;
-  command: string;
-  args?: string[];
-  /** Logical class used for enable/disable toggling (e.g. 'igniteui'). */
-  class: string;
+// The in-memory shape is always schema v2; v1 bodies are upgraded on load
+// (provider-registry.ts normalizePack). Class ids are qualified `<pack>/<class>`.
+export interface PackMcpClass {
+  id: string;
   label: string;
   description?: string;
+  /** Checked by default in the wizard and the matrix seed row (default true). */
+  default?: boolean;
 }
 
-export interface ProviderPackSkills {
-  /** 'owner/repo' on GitHub — cloned with `git clone --depth 1` and skill folders copied. */
+export interface PackMcpServer {
+  name: string;
+  class: string;
+  command: string;
+  args?: string[];
+}
+
+// One of `github` ('owner/repo', shallow-cloned) or `command` (run in .agents/skills/).
+export interface PackSkillSource {
   github?: string;
-  /** Alternative: run a command directly (e.g. a custom install script). */
-  installCommand?: string[];
-  /** Human label shown in the wizard skills checkbox. */
-  label: string;
+  command?: string[];
 }
 
-export interface ProviderPackConfigure {
-  mcpServers: ProviderPackMcpServer[];
-  skills?: ProviderPackSkills;
+export interface PackSkills {
+  label: string;
+  sources: PackSkillSource[];
 }
+
+export type PackOrigin = 'file' | 'folder' | 'inline';
 
 export interface ProviderPack {
+  schemaVersion: 2;
   name: string;
   displayName: string;
   description?: string;
   version?: string;
   frameworks: ProviderPackFramework[];
-  configure: ProviderPackConfigure;
-  /** npm packages that must be installed globally in the container image. */
+  mcp: { classes: PackMcpClass[]; servers: PackMcpServer[] };
+  skills?: PackSkills;
   containerDeps?: { npmGlobal?: string[] };
+  origin: PackOrigin;
+  /** Absolute pack folder (folder packs only). Never sent to the browser. */
+  dir?: string;
 }
 
 export interface FrameworkDef {

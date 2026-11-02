@@ -1,20 +1,24 @@
 'use strict';
 
 import * as fs from 'fs';
-import { PROVIDER_ENV } from '../config.ts';
+import * as path from 'path';
+import { PROVIDER_ENV, PROVIDERS_DIR } from '../config.ts';
 import { FRAMEWORKS } from '../frameworks.ts';
-import { registerPack, validatePack, getPackForFramework } from '../provider-registry.ts';
+import { registerPack, validatePack, getPackForFramework, getPack, readPackFrom } from '../provider-registry.ts';
+import { bareMcpClass } from '../mcp-class.ts';
+import type { ProviderPack } from '../types.ts';
 import { sharedTests, frameworkTests } from '../verify/tests.ts';
 import * as matrix from './matrix.ts';
 import { normalizeMatrixRequest, type NormalizedMatrixRequest } from './request.ts';
 
 // A MATRIX_CONFIG file is the POST /api/matrix body as JSON, plus:
-//   providers   — array of ProviderPack definitions registered (in-memory) before the
-//                 request is normalized, so `platforms` can name their framework ids
-//                 and `variants[].mcps` their MCP classes. Unlike a Configuration-tab
-//                 upload these are NOT persisted to /providers — the config file is
-//                 the source of truth and re-registers them on every startup (a
-//                 same-named disk pack is replaced for this container's lifetime).
+//   providers   — packs the config uses, registered before the request is normalized
+//                 so `platforms` can name their framework ids and `variants[].mcps`
+//                 their MCP classes. Each entry is a loaded pack's name ("reveal"), a
+//                 path to a pack file or folder (relative to /providers), or an inline
+//                 single-file pack body. Paths and bodies are NOT persisted to
+//                 /providers; they re-register on every startup (a same-named disk
+//                 pack is replaced for this container's lifetime).
 //   apiKeyEnv   — name of an env var holding the key (instead of a plaintext apiKey);
 //                 with neither, the PROVIDER_ENV var for the model's prefix is used.
 //   customMcp   — may be an object (stringified here; the pipeline expects a string).
@@ -61,17 +65,16 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
 
   const warnings: string[] = [];
 
-  // Register inline provider packs BEFORE normalizing — `platforms` may name their
-  // framework ids. Validation is the same as POST /api/providers; any invalid or
-  // conflicting pack is a hard error (fail-fast, like the rest of the file).
+  // Resolve `providers` BEFORE normalizing — `platforms` may name their framework ids.
+  // Each entry is a loaded pack's name, a path to a pack file/folder (relative to
+  // PROVIDERS_DIR), or an inline single-file pack body. Any failure is a hard error.
   if (raw.providers !== undefined) {
     if (!Array.isArray(raw.providers)) {
-      throw new Error(`matrix config ${filePath}: providers must be an array of provider pack objects`);
+      throw new Error(`matrix config ${filePath}: providers must be an array of pack names, paths or pack objects`);
     }
     for (let i = 0; i < raw.providers.length; i++) {
       try {
-        const pack = validatePack(raw.providers[i]);
-        registerPack(pack); // in-memory only; rejects 'igniteui' + framework-id collisions
+        const pack = resolveProviderRef(raw.providers[i]);
         if (pack.containerDeps?.npmGlobal?.length) {
           warnings.push(
             `provider '${pack.name}' needs global npm package(s) ${pack.containerDeps.npmGlobal.join(', ')} ` +
@@ -122,8 +125,11 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
       for (const c of ['igniteui', 'theming', 'angular']) knownClasses.add(c);
       continue;
     }
-    for (const s of getPackForFramework(p)?.configure?.mcpServers || []) {
-      knownClasses.add(s.class.toLowerCase());
+    // Qualified `<pack>/<class>` is canonical; the bare form still selects the pack's
+    // own class (see the pipeline's external branch).
+    for (const c of getPackForFramework(p)?.mcp.classes || []) {
+      knownClasses.add(c.id.toLowerCase());
+      knownClasses.add(bareMcpClass(c.id).toLowerCase());
     }
   }
   for (const v of r.req.variants) {
@@ -194,4 +200,28 @@ export function startAutoRun(): { matrixId: string; total: number } | null {
     });
   }
   return { matrixId, total };
+}
+
+// A pack named like an id must already be loaded from PROVIDERS_DIR; anything with a
+// path separator or a .json suffix is read from disk. The config file is the operator's
+// own (read at startup, never from HTTP), so a path may point anywhere in the container.
+function resolveProviderRef(ref: unknown): ProviderPack {
+  if (typeof ref === 'string') {
+    const s = ref.trim();
+    if (/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(s)) {
+      const loaded = getPack(s);
+      if (!loaded) throw new Error(`no provider pack named "${s}" is loaded from ${PROVIDERS_DIR}`);
+      return loaded;
+    }
+    const abs = path.resolve(PROVIDERS_DIR, s);
+    const pack = readPackFrom(abs);
+    const loaded = getPack(pack.name);
+    if (loaded?.dir && pack.dir && path.resolve(loaded.dir) === path.resolve(pack.dir)) return loaded;
+    registerPack(pack);
+    return pack;
+  }
+  // Inline bodies have no folder, so they can only describe a self-contained pack.
+  const pack = validatePack(ref, { origin: 'inline' });
+  registerPack(pack);
+  return pack;
 }

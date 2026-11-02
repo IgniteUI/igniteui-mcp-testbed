@@ -1,13 +1,13 @@
 'use strict';
 
 import type { Express } from 'express';
-import { listPacks, getPack, savePack, deletePack, validatePack } from '../provider-registry.ts';
+import { listPacks, getPack, savePack, deletePack, validatePack, publicPack } from '../provider-registry.ts';
 import type { ProviderPack } from '../types.ts';
 
 export default function registerProviderRoutes(app: Express): void {
   /** List all currently loaded external provider packs. */
   app.get('/api/providers', (_req, res) => {
-    res.json({ ok: true, providers: listPacks() });
+    res.json({ ok: true, providers: listPacks().map(publicPack) });
   });
 
   /** Upload (load) a new provider pack from a JSON body. */
@@ -24,10 +24,10 @@ export default function registerProviderRoutes(app: Express): void {
       return;
     }
     try {
-      savePack(pack);
-      res.json({ ok: true, provider: pack });
+      savePack(req.body, pack);
+      res.json({ ok: true, provider: publicPack(getPack(pack.name) ?? pack) });
     } catch (e: any) {
-      res.status(500).json({ ok: false, error: e.message });
+      res.status(400).json({ ok: false, error: e.message });
     }
   });
 
@@ -46,7 +46,7 @@ export default function registerProviderRoutes(app: Express): void {
       deletePack(name);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ ok: false, error: e.message });
+      res.status(400).json({ ok: false, error: e.message });
     }
   });
 }
