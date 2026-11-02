@@ -7,13 +7,16 @@ import { ensureDirs } from './proc/fsutil.ts';
 import * as history from './history.ts';
 import { attachConsoleMirror } from './matrix/console-mirror.ts';
 import { loadMatrixConfig, startAutoRun, type LoadedMatrixConfig } from './matrix/matrix-config.ts';
-import { loadAll } from './provider-registry.ts';
+import { loadAll, loadBuiltins } from './provider-registry.ts';
 import app from './app.ts';
 import { opencodeVersion } from './pipeline/opencode-cli.ts';
 
 ensureDirs();
 
 // Load any provider packs (3rd-party library configs) from the /providers bind mount.
+// Built-in packs first (Ignite UI): without them there is no default provider, so a
+// broken one stops the server rather than starting it half-working.
+try { loadBuiltins(); } catch (e: any) { console.error(`built-in pack failed to load: ${e.message}`); process.exit(1); }
 try { loadAll(); } catch (e: any) { console.error(`provider-registry load failed: ${e.message}`); }
 
 // Validate-only mode (./run.sh --matrix-config <file> --validate): load + validate the

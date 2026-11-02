@@ -7,7 +7,7 @@ import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
 import { pillClass } from '../src/status-meta.ts';
-import { normMcpClass } from '../src/mcp-class.ts';
+import { normMcpClass, bareMcpClass } from '../src/mcp-class.ts';
 import { providerOf } from '../src/provider-of.ts';
 import { getPacks } from './providers.ts';
 import type { Diagnostic } from '../src/types.ts';
@@ -156,7 +156,8 @@ function skillSummary(c: any): string {
 // every ordinary run and every record predating the field.
 function mcpSummary(c: any): string {
   const overrides = c.mcpCommands || {};
-  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${m} (local)` : m));
+  // One run is one provider, so `igniteui/theming` shows as `theming`.
+  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${bareMcpClass(m)} (local)` : bareMcpClass(m)));
   return list.join(', ') || '—';
 }
 

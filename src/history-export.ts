@@ -6,6 +6,7 @@ import type { HistoryRecord } from './types.ts';
 import { ARTIFACT_DIR } from './config.ts';
 import { PILL_STATUSES } from './status-meta.ts';
 import { providerOf } from './provider-of.ts';
+import { bareMcpClass } from './mcp-class.ts';
 
 // Read a screenshot file and return a base64 data-URL, or null on any error.
 async function toDataUrl(runId: string, filename: string): Promise<string | null> {
@@ -207,7 +208,8 @@ function stars(n){if(!n)return'\u2014';return'\u2605'.repeat(n)+'\u2606'.repeat(
    (MCP_CMD_<CLASS>) is marked, else the two arms of a local-vs-released A/B export
    identically. Keep the two in step. */
 ${providerOf.toString()}
-function mcpSummary(c){const o=c.mcpCommands||{};return (c.enabledMcps||[]).map(m=>o[m]?m+' (local)':m).join(', ')||'\u2014'}
+${bareMcpClass.toString()}
+function mcpSummary(c){const o=c.mcpCommands||{};return (c.enabledMcps||[]).map(m=>o[m]?bareMcpClass(m)+' (local)':bareMcpClass(m)).join(', ')||'\u2014'}
 function skillSummary(c){const xs=(c.excludedSkills||[]).length;const gen=c.skills?(xs?'default (-'+xs+')':'default'):null;if(c.overrideSkills){if(c.localSkillsOnly||!c.skills)return'local';return gen+' + local'}return gen||'off'}
 /* The token split is recorded for every run; the grid has room only for the total, so
    the breakdown goes in the cell tooltip and the detail panel. */

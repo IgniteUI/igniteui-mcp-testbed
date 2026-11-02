@@ -487,10 +487,13 @@ selected platform, and each entry runs only its own group's selected specs. See
 These integration points depend on the exact packages and generated scripts in your
 setup, so they're the most likely to need tuning:
 
-1. **`src/frameworks.ts`** — the dev-server command per framework. The defaults assume
-   `npm run start` / `npm run dev` (Angular `ng serve`, React / Web Components on Vite)
-   and `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to the
-   scripts your scaffolds actually generate.
+1. **`packs/igniteui/pack.json`** — Ignite UI's built-in provider pack: the scaffold,
+   dev-server and `ig ai-config` commands per framework, the MCP classification rules
+   and the default MCP launch commands. The dev servers assume `npm run start`
+   (Angular `ng serve`, React / Web Components on Vite) and `dotnet watch run` for
+   Blazor, all forced onto `0.0.0.0:5000`. Match these to the scripts your scaffolds
+   actually generate; `npm run packs:test` checks the pack still produces what the
+   pre-pack code did.
 2. **`Containerfile`** — the global package names (`@opencode/cli` or, for 1.x, `opencode-ai`; `igniteui-cli`,
    `igniteui-theming`) and the Blazor template install line (`dotnet new install
    <YourTemplateId>`).
@@ -529,12 +532,15 @@ MCP_CMD_THEMING="/opt/local-mcp/bin/my-theming-mcp --stdio" ./run.sh
 ./run.sh --matrix-config ./matrix.json     # unset => the released servers
 ```
 
-Any class works — `igniteui`, `theming`, `angular`, `custom`, or a provider pack's class.
-Pack classes are qualified with the pack name (`<pack>/<class>`), so two packs can both
-declare `docs`. The suffix is matched case-insensitively with non-alphanumerics folded to
-`_`, so class `docs` of pack `mui` is set with `MCP_CMD_MUI_DOCS`. The value is a
-whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains an alias for
-`MCP_CMD_IGNITEUI`.
+Any class works, `custom` included. Classes are qualified with their pack's name
+(`<pack>/<class>`, so Ignite UI's are `igniteui/igniteui`, `igniteui/theming` and
+`igniteui/angular`), and two packs can both declare `docs`. The full name is
+`MCP_CMD_<PACK>_<CLASS>` (`MCP_CMD_IGNITEUI_IGNITEUI`); the short `MCP_CMD_<CLASS>`
+(`MCP_CMD_IGNITEUI`, `MCP_CMD_THEMING`) works too while only one loaded pack declares
+that class — if two do, it applies to neither and the server logs a warning at
+startup. The suffix is matched case-insensitively with non-alphanumerics folded to
+`_`. The value is a whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains
+an alias for `MCP_CMD_IGNITEUI`.
 
 This replaces the *command* of the existing server rather than adding a second one, so the
 server name — and therefore every tool name the model sees — is identical in both arms,

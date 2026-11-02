@@ -36,8 +36,8 @@ const GENERATED_AGENT_CONFIG = [
 ];
 
 // Belt-and-braces for a skills-off run. The scaffold argv passes --agents=none, but the
-// CLI owns that default and has changed it before (see the igNew comment in
-// src/frameworks.ts) — and a contaminated "no skills" baseline invalidates every matrix
+// CLI owns that default and has changed it before (the `--agents` note under stage 1 in
+// CLAUDE.md) — and a contaminated "no skills" baseline invalidates every matrix
 // comparison against it *silently*. So verify rather than trust, and say what was found.
 export function stripGeneratedAgentConfig(appDir: string, emit: Emit): void {
   for (const rel of GENERATED_AGENT_CONFIG) {

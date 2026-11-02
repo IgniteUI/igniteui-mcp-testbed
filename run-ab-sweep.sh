@@ -27,8 +27,9 @@ MCP_BIN="${MCP_BIN:-/opt/local-mcp/bin/igniteui-mcp}"
 IMAGE=localhost/igniteui-testbed:latest
 TMP=./.ab-tmp
 
-# Same folding src/config.ts applies, so a hyphenated pack class (mui-docs) reaches the
-# right var name (MCP_CMD_MUI_DOCS).
+# Same folding src/config.ts applies, so a pack class (mui/mui-docs) reaches the right
+# var name (MCP_CMD_MUI_MUI_DOCS). A bare class (igniteui) works while only one loaded
+# pack declares it — see resolveMcpCommand in src/provider-registry.ts.
 CMD_VAR="MCP_CMD_$(printf '%s' "$MCP_CLASS" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')"
 CMD_VAR="${CMD_VAR%_}"
 

@@ -3,9 +3,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord } from './types.ts';
-import { mcpOverrideFor } from './config.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
-import { getPackForFramework, providerFor } from './provider-registry.ts';
+import { getPackForFramework, providerFor, mcpOverrideFor } from './provider-registry.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second

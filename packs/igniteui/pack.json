@@ -1,0 +1,98 @@
+{
+  "$schema": "../../provider.schema.json",
+  "schemaVersion": 2,
+  "name": "igniteui",
+  "displayName": "Ignite UI",
+  "description": "Built in. Projects scaffolded by the Ignite UI CLI (Angular, React, Web Components) or the IgniteUI.Blazor.Templates dotnet template.",
+  "versions": [
+    { "name": "igniteui-cli", "cmd": "ig", "argv": ["--version"] }
+  ],
+  "options": [
+    { "id": "type", "label": "Project type (optional)", "placeholder": "e.g. igx-ts / sidenav", "default": "" },
+    { "id": "theme", "label": "Theme (optional)", "placeholder": "e.g. default", "default": "" }
+  ],
+  "frameworks": [
+    {
+      "id": "angular",
+      "label": "Angular",
+      "vars": { "aiFramework": "angular" },
+      "scaffold": {
+        "cmd": "ig", "cwdIsParent": true,
+        "argv": ["new", "{{name}}", "--framework=angular", "--type={{type}}", "--theme={{theme}}", "--agents={{agents}}", "--assistants=generic", "--skip-git"]
+      },
+      "dev": {
+        "cmd": "npx", "argv": ["ng", "serve", "--host", "0.0.0.0", "--port", "{{port}}", "--poll", "1500"],
+        "env": { "CI": "1" }
+      },
+      "routes": { "kind": "route-config" }
+    },
+    {
+      "id": "blazor",
+      "label": "Blazor",
+      "vars": { "aiFramework": "blazor", "template": "{{env:BLAZOR_TEMPLATE|igb-blazor}}" },
+      "scaffold": {
+        "cmd": "dotnet", "cwdIsParent": true,
+        "argv": ["new", "{{template}}", "-o", ".", "-n", "{{name}}", "--force", "--IncludeWeatherSample", "false"]
+      },
+      "prepare": {
+        "Directory.Build.props": "<Project>\n  <PropertyGroup>\n    <BaseIntermediateOutputPath>/tmp/blazor-build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>\n    <BaseOutputPath>/tmp/blazor-build/bin/$(MSBuildProjectName)/</BaseOutputPath>\n  </PropertyGroup>\n</Project>\n"
+      },
+      "dev": {
+        "cmd": "dotnet", "argv": ["watch", "--no-hot-reload", "run", "--urls", "http://0.0.0.0:{{port}}"],
+        "env": { "DOTNET_USE_POLLING_FILE_WATCHER": "true" }
+      },
+      "routes": { "kind": "razor" }
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "vars": { "aiFramework": "react" },
+      "scaffold": {
+        "cmd": "ig", "cwdIsParent": true,
+        "argv": ["new", "{{name}}", "--framework=react", "--type={{type}}", "--theme={{theme}}", "--agents={{agents}}", "--assistants=generic", "--skip-git"]
+      },
+      "dev": {
+        "cmd": "npm", "argv": ["run", "start", "--", "--host", "0.0.0.0", "--port", "{{port}}", "--strictPort"],
+        "env": { "CHOKIDAR_USEPOLLING": "true", "CHOKIDAR_INTERVAL": "1500" }
+      },
+      "routes": { "kind": "route-config", "fallback": "state-nav" }
+    },
+    {
+      "id": "webcomponents",
+      "label": "Web Comps",
+      "vars": { "aiFramework": "webcomponents" },
+      "scaffold": {
+        "cmd": "ig", "cwdIsParent": true,
+        "argv": ["new", "{{name}}", "--framework=webcomponents", "--type={{type}}", "--theme={{theme}}", "--agents={{agents}}", "--assistants=generic", "--skip-git"]
+      },
+      "dev": {
+        "cmd": "npm", "argv": ["run", "start", "--", "--host", "0.0.0.0", "--port", "{{port}}", "--strictPort"],
+        "env": { "CHOKIDAR_USEPOLLING": "true", "CHOKIDAR_INTERVAL": "1500" }
+      },
+      "routes": { "kind": "route-config", "fallback": "state-nav" }
+    }
+  ],
+  "configure": [
+    { "cmd": "ig", "argv": ["ai-config", "--framework", "{{aiFramework}}", "--agents", "{{agents}}", "--assistants", "generic"] }
+  ],
+  "mcp": {
+    "classes": [
+      { "id": "igniteui", "label": "Ignite UI CLI MCP", "description": "Live component docs & API lookup" },
+      { "id": "theming", "label": "Theming MCP", "description": "Palette / theming queries" },
+      { "id": "angular", "label": "Angular CLI MCP", "description": "Registered alongside on Angular projects", "default": false, "frameworks": ["angular"] }
+    ],
+    "source": {
+      "files": [".mcp.json", ".vscode/mcp.json"],
+      "rules": [
+        { "match": "theming", "class": "theming" },
+        { "match": "angular", "class": "angular" },
+        { "match": "ignite", "class": "igniteui" }
+      ]
+    },
+    "commands": {
+      "igniteui": ["ig", "mcp"],
+      "theming": ["igniteui-theming-mcp"]
+    }
+  },
+  "skills": { "label": "Install Ignite UI skills", "sources": [] }
+}

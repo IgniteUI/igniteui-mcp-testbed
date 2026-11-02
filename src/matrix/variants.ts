@@ -1,6 +1,7 @@
 'use strict';
 
 import type { Variant } from '../types.ts';
+import { bareMcpClass } from '../mcp-class.ts';
 
 // The four skill modes a variant can express, from {skills, localSkills}:
 //   skills  local  → mode
@@ -20,14 +21,15 @@ function skillSlug(v: Variant): string {
 
 // Short, human label for a variant: which MCPs + skill mode.
 export function variantLabel(v: Variant): string {
-  const mcps = (v.mcps && v.mcps.length) ? v.mcps.join('+') : 'none';
+  // A matrix entry is one provider, so the pack prefix of `<pack>/<class>` adds nothing.
+  const mcps = (v.mcps && v.mcps.length) ? v.mcps.map(bareMcpClass).join('+') : 'none';
   return `${mcps} · ${skillMode(v)}`;
 }
 
 // Filesystem-safe, self-describing dir name for a matrix entry so the per-entry
 // app/data dirs are findable at a glance (e.g. entry-0-angular-igniteui+theming-skills).
 export function entryDirName(i: number, platform: string, v: Variant): string {
-  const mcps = (v.mcps && v.mcps.length) ? v.mcps.map((c) => c.replace(/\//g, '.')).join('+') : 'none';
+  const mcps = (v.mcps && v.mcps.length) ? v.mcps.map(bareMcpClass).join('+') : 'none';
   return `entry-${i}-${platform}-${mcps}-${skillSlug(v)}`;
 }
 

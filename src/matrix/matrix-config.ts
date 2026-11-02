@@ -3,11 +3,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PROVIDER_ENV, PROVIDERS_DIR } from '../config.ts';
-import { FRAMEWORKS } from '../frameworks.ts';
 import { registerPack, validatePack, getPackForFramework, getPack, readPackFrom } from '../provider-registry.ts';
 import { bareMcpClass } from '../mcp-class.ts';
 import { missingSecrets } from '../secrets.ts';
-import { IGNITEUI_META } from '../builtin-pack.ts';
 import type { ProviderPack } from '../types.ts';
 import { sharedTests, frameworkTests } from '../verify/tests.ts';
 import * as matrix from './matrix.ts';
@@ -123,16 +121,12 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
 
   // Warn about variant MCP classes no selected platform's provider declares — an
   // unknown class simply enables nothing at configure time, which headlessly would
-  // read as "MCP silently missing". Built-in platforms use the fixed wizard classes;
-  // external platforms declare theirs in the pack ('custom' works everywhere).
+  // read as "MCP silently missing". Every platform's pack declares its classes
+  // ('custom' works everywhere).
   const knownClasses = new Set(['custom']);
   for (const p of r.req.platforms) {
-    if (FRAMEWORKS[p]) {
-      for (const c of IGNITEUI_META.mcp.classes) knownClasses.add(c.id);
-      continue;
-    }
     // Qualified `<pack>/<class>` is canonical; the bare form still selects the pack's
-    // own class (see the pipeline's external branch).
+    // own class (canonicalMcpClasses).
     for (const c of getPackForFramework(p)?.mcp.classes || []) {
       knownClasses.add(c.id.toLowerCase());
       knownClasses.add(bareMcpClass(c.id).toLowerCase());

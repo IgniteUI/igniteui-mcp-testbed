@@ -32,7 +32,9 @@ MCP server for a locally-built one packed into .\local-mcp\ and installed at bui
 e.g. MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp or
 MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp. Any class works (igniteui, theming,
 angular, custom, or one a provider pack declares); a hyphen in a class name becomes an
-underscore (mui-docs -> MCP_CMD_MUI_DOCS). Unset, runs use the released server, so one
+underscore (mui/mui-docs -> MCP_CMD_MUI_MUI_DOCS; a pack class is <pack>/<class>, and the
+bare MCP_CMD_<CLASS> also works while only one loaded pack declares that class, so
+MCP_CMD_IGNITEUI still means Ignite UI's server). Unset, runs use the released server, so one
 image serves every arm. IGNITEUI_MCP_CMD is still accepted as an alias for
 MCP_CMD_IGNITEUI.
 

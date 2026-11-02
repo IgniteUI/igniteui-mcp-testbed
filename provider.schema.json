@@ -73,6 +73,12 @@
             "propertyNames": { "$ref": "#/$defs/relPath" },
             "additionalProperties": { "type": "string" }
           },
+          "vars": {
+            "type": "object",
+            "description": "Per-framework {{vars}} for this framework's commands. A value may use {{env:NAME|default}} (not SECRET_* names).",
+            "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "not": { "enum": ["name", "dir", "port", "agents"] } },
+            "additionalProperties": { "type": "string" }
+          },
           "buildFailed": {
             "type": "array", "minItems": 1,
             "items": { "type": "string", "minLength": 1, "maxLength": 200 },
@@ -112,6 +118,27 @@
             }
           }
         },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files", "rules"],
+          "description": "Read the servers from a file the configure steps generated instead of listing them. Each server's class is the first rule whose `match` occurs in its name + command line; unmatched servers stay disabled.",
+          "properties": {
+            "files": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/relPath" }, "description": "Tried in order; .mcp.json (`mcpServers`) or VS Code (`servers`) shape." },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": false, "required": ["match", "class"],
+                "properties": { "match": { "type": "string", "minLength": 1 }, "class": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "commands": {
+          "type": "object",
+          "description": "Class → the command its servers launch with (an MCP_CMD_* env override wins).",
+          "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+        },
         "servers": {
           "type": "array",
           "items": {
@@ -125,6 +152,18 @@
               "args": { "$ref": "#/$defs/argv" }
             }
           }
+        }
+      }
+    },
+    "configure": {
+      "type": "array",
+      "description": "Commands run in the app dir after scaffold + install (e.g. `ig ai-config …`), with the same {{vars}} as the scaffold.",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["cmd", "argv"],
+        "properties": {
+          "cmd": { "type": "string" },
+          "argv": { "$ref": "#/$defs/argv" },
+          "frameworks": { "type": "array", "items": { "type": "string" } }
         }
       }
     },

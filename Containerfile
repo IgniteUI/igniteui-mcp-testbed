@@ -102,6 +102,8 @@ RUN npm install --omit=dev
 # OS libraries Chromium needs (apt) on the Debian-based SDK image. Adds notable size.
 RUN npx --yes playwright install --with-deps chromium
 COPY src ./src
+# Built-in provider packs (Ignite UI) — read-only, loaded before /providers.
+COPY packs ./packs
 COPY web ./web
 COPY public ./public
 COPY vendor ./vendor

@@ -1,9 +1,11 @@
 'use strict';
 
-// Runtime registry of loaded ProviderPacks. A pack is either a single `<name>.json`
-// file or a `<name>/pack.json` folder under PROVIDERS_DIR (bind-mounted at /providers).
-// server.ts calls loadAll() on startup; the Configuration tab calls savePack/deletePack,
-// which only ever touch single-file packs — a folder pack is managed on the host.
+// Runtime registry of loaded ProviderPacks. Built-in packs (Ignite UI) ship in the image
+// under BUILTIN_PACKS_DIR and load first; user packs are a single `<name>.json` file or a
+// `<name>/pack.json` folder under PROVIDERS_DIR (bind-mounted at /providers).
+// server.ts calls loadBuiltins() + loadAll() on startup; the Configuration tab calls
+// savePack/deletePack, which only ever touch single-file packs — a folder pack is managed
+// on the host, and a built-in one can't be replaced at all.
 //
 // Two schema versions are accepted. v1 (`configure.mcpServers` + `configure.skills`) is
 // upgraded to v2 in memory, so everything past validatePack sees one shape.
@@ -11,16 +13,24 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PROVIDERS_DIR } from './config.ts';
-import { FRAMEWORKS } from './frameworks.ts';
-import { bareMcpClass, qualifyMcpClass } from './mcp-class.ts';
+import { fileURLToPath } from 'url';
+import { PROVIDERS_DIR, MCP_COMMAND_OVERRIDES } from './config.ts';
+import { bareMcpClass, normMcpClass, qualifyMcpClass } from './mcp-class.ts';
 import { secretStatus, type SecretStatus } from './secrets.ts';
-import { IGNITEUI_META, BUILTIN_PROVIDER, isBuiltinFramework } from './builtin-pack.ts';
-import type { FrameworkDef, PackMcpClass, PackMcpServer, PackOption, PackOrigin, PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack } from './types.ts';
+import type {
+  FrameworkDef, PackConfigureStep, PackMcpClass, PackMcpServer, PackMcpSource, PackOption, PackOrigin,
+  PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack,
+} from './types.ts';
+
+// Packs that ship with the testbed: the repo's packs/ folder (copied to /app/packs in
+// the image). Read-only by design — /providers is the read-write mount savePack uses.
+export const BUILTIN_PACKS_DIR = process.env.BUILTIN_PACKS_DIR
+  || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'packs');
 
 const packs = new Map<string, ProviderPack>();
 
-const BUILTIN_FRAMEWORK_IDS = new Set(Object.keys(FRAMEWORKS));
+// Names of the built-in packs, reserved so a user pack can never take one over.
+const builtinNames = new Set<string>();
 
 // Which pack owns each external framework id, so two packs can't overwrite each other.
 const externalFrameworkOwner = new Map<string, string>();
@@ -155,6 +165,7 @@ function validateFrameworks(list: unknown, origin: PackOrigin): ProviderPack['fr
     }
     validateBuildFailed(fw.buildFailed, `frameworks[${i}].buildFailed`);
     validateRoutes(fw.routes, `frameworks[${i}].routes`);
+    validateVars(fw.vars, `frameworks[${i}].vars`);
     if (fw.install !== undefined && !isStrArray(fw.install)) throw new Error(`frameworks[${i}].install must be an array of strings`);
     if (fw.prepare !== undefined) {
       if (!isObj(fw.prepare)) throw new Error(`frameworks[${i}].prepare must be an object of { relativePath: contents }`);
@@ -166,6 +177,69 @@ function validateFrameworks(list: unknown, origin: PackOrigin): ProviderPack['fr
     }
   });
   return list as ProviderPack['frameworks'];
+}
+
+// Framework vars become {{name}} placeholders next to the run's own ones.
+function validateVars(v: unknown, label: string): void {
+  if (v === undefined) return;
+  if (!isObj(v)) throw new Error(`${label} must be an object of string values`);
+  for (const [k, val] of Object.entries(v)) {
+    if (!OPTION_ID.test(k)) throw new Error(`${label}.${k}: names are letters, digits and underscores`);
+    if (RESERVED_OPTION_IDS.has(k)) throw new Error(`${label}.${k} is reserved`);
+    if (typeof val !== 'string') throw new Error(`${label}.${k} must be a string`);
+    for (const m of val.matchAll(/\{\{env:([^}|]*)/g)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(m[1]) || m[1].startsWith('SECRET_')) {
+        throw new Error(`${label}.${k} reads env var "${m[1]}", which isn't allowed (secrets go in "secrets")`);
+      }
+    }
+  }
+}
+
+function validateConfigure(list: unknown, frameworkIds: string[]): PackConfigureStep[] {
+  if (!Array.isArray(list)) throw new Error('configure must be an array of steps');
+  return list.map((c: any, i: number) => {
+    const label = `configure[${i}]`;
+    if (!isObj(c)) throw new Error(`${label} must be an object`);
+    for (const k of Object.keys(c)) {
+      if (!['cmd', 'argv', 'frameworks'].includes(k)) throw new Error(`${label}.${k} is not a valid field`);
+    }
+    if (!isStr(c.cmd)) throw new Error(`${label}.cmd is required`);
+    if (!isStrArray(c.argv)) throw new Error(`${label}.argv must be an array of strings`);
+    if (c.argv.some((a: string) => a.includes('{{secret:'))) throw new Error(`${label}.argv must not reference a secret`);
+    if (c.frameworks !== undefined && (!isStrArray(c.frameworks) || !c.frameworks.every((f: string) => frameworkIds.includes(f)))) {
+      throw new Error(`${label}.frameworks must list this pack's framework ids`);
+    }
+    return { cmd: c.cmd, argv: [...c.argv], ...(c.frameworks ? { frameworks: [...c.frameworks] } : {}) };
+  });
+}
+
+function validateMcpSource(src: any, classIds: string[]): PackMcpSource {
+  if (!isObj(src)) throw new Error('mcp.source must be an object');
+  for (const k of Object.keys(src)) {
+    if (!['files', 'rules'].includes(k)) throw new Error(`mcp.source.${k} is not a valid field`);
+  }
+  if (!isStrArray(src.files) || !src.files.length) throw new Error('mcp.source.files must be a non-empty array of paths');
+  src.files.forEach((f: string, i: number) => assertRelativeInside(f, `mcp.source.files[${i}]`));
+  if (!Array.isArray(src.rules)) throw new Error('mcp.source.rules must be an array');
+  const rules = src.rules.map((r: any, i: number) => {
+    if (!isObj(r) || !isStr(r.match)) throw new Error(`mcp.source.rules[${i}].match is required`);
+    if (typeof r.class !== 'string' || !classIds.includes(r.class)) {
+      throw new Error(`mcp.source.rules[${i}].class must be one of mcp.classes`);
+    }
+    return { match: r.match, class: r.class };
+  });
+  return { files: [...src.files], rules };
+}
+
+function validateMcpCommands(cmds: unknown, classIds: string[]): Record<string, string[]> {
+  if (!isObj(cmds)) throw new Error('mcp.commands must be an object of { class: argv }');
+  const out: Record<string, string[]> = Object.create(null);
+  for (const [cls, argv] of Object.entries(cmds)) {
+    if (!classIds.includes(cls)) throw new Error(`mcp.commands.${cls} is not one of mcp.classes`);
+    if (!isStrArray(argv) || !argv.length) throw new Error(`mcp.commands.${cls} must be a non-empty array of strings`);
+    out[cls] = [...argv];
+  }
+  return out;
 }
 
 function validateEnv(env: unknown, label: string): void {
@@ -386,7 +460,7 @@ function upgradeV1(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' |
 
 const V2_KEYS = new Set([
   '$schema', 'schemaVersion', 'name', 'displayName', 'description', 'version',
-  'frameworks', 'mcp', 'skills', 'options', 'secrets', 'versions', 'containerDeps',
+  'frameworks', 'configure', 'mcp', 'skills', 'options', 'secrets', 'versions', 'containerDeps',
 ]);
 
 function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | 'dir' | 'hash'> {
@@ -395,8 +469,13 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
   }
   const classes: PackMcpClass[] = [];
   const servers: PackMcpServer[] = [];
+  let source: PackMcpSource | undefined;
+  let commands: Record<string, string[]> | undefined;
   if (body.mcp !== undefined) {
     if (!isObj(body.mcp)) throw new Error('mcp must be an object');
+    for (const k of Object.keys(body.mcp)) {
+      if (!['classes', 'servers', 'source', 'commands'].includes(k)) throw new Error(`mcp.${k} is not a valid field`);
+    }
     const rawClasses = body.mcp.classes ?? [];
     const rawServers = body.mcp.servers ?? [];
     if (!Array.isArray(rawClasses)) throw new Error('mcp.classes must be an array');
@@ -428,6 +507,9 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
       if (!classes.some((c) => c.id === s.class)) throw new Error(`${label}.class "${s.class}" is not declared in mcp.classes`);
       servers.push({ name: s.name, class: s.class, command: s.command, ...(s.args ? { args: [...s.args] } : {}) });
     });
+    const ids = classes.map((c) => c.id);
+    if (body.mcp.source !== undefined) source = validateMcpSource(body.mcp.source, ids);
+    if (body.mcp.commands !== undefined) commands = validateMcpCommands(body.mcp.commands, ids);
   }
   let skills: ProviderPack['skills'];
   if (body.skills !== undefined) {
@@ -445,7 +527,9 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
     ...(isStr(body.description) ? { description: body.description } : {}),
     ...(isStr(body.version) ? { version: body.version } : {}),
     frameworks: validateFrameworks(body.frameworks, origin),
-    mcp: { classes, servers },
+    mcp: { classes, servers, ...(source ? { source } : {}), ...(commands ? { commands } : {}) },
+    ...(body.configure !== undefined
+      ? { configure: validateConfigure(body.configure, (body.frameworks || []).map((f: any) => f?.id)) } : {}),
     ...(skills ? { skills } : {}),
     ...(body.options !== undefined ? { options: validateOptions(body.options) } : {}),
     ...(body.secrets !== undefined ? { secrets: validateSecrets(body.secrets) } : {}),
@@ -484,6 +568,12 @@ export function validatePack(body: any, src: PackSource = {}): ProviderPack {
     mcp: {
       classes: parsed.mcp.classes.map((c) => ({ ...c, id: q(c.id) })),
       servers: parsed.mcp.servers.map((s) => ({ ...s, class: q(s.class) })),
+      ...(parsed.mcp.source
+        ? { source: { files: parsed.mcp.source.files, rules: parsed.mcp.source.rules.map((r) => ({ ...r, class: q(r.class) })) } }
+        : {}),
+      ...(parsed.mcp.commands
+        ? { commands: Object.fromEntries(Object.entries(parsed.mcp.commands).map(([c, a]) => [q(c), a])) }
+        : {}),
     },
     origin,
     hash: src.dir ? hashPackFolder(src.dir) : hashJson(body),
@@ -539,8 +629,7 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
   return {
     scaffold: fw.scaffold,
     install: fw.install,
-    configure: 'external',
-    aiFramework: fw.id,
+    vars: fw.vars,
     dev: fw.dev,
     prepare: fw.prepare,
     buildFailed: fw.buildFailed,
@@ -551,19 +640,18 @@ function packFwToDef(fw: ProviderPack['frameworks'][number]): FrameworkDef {
 export function registerPack(pack: ProviderPack): void {
   assertSafeId(pack.name, 'pack name');
   // Reserved here too, so a pack dropped straight into /providers can't hijack it.
-  if (pack.name === 'igniteui') {
-    throw new Error('"igniteui" is reserved for the built-in provider');
+  if (builtinNames.has(pack.name) && pack.origin !== 'builtin') {
+    throw new Error(`"${pack.name}" is reserved for the built-in provider`);
   }
   // Validate every framework before mutating anything, so a bad pack can't leave the
   // registry half-registered.
   for (const fw of pack.frameworks) {
     assertSafeId(fw.id, `framework id in pack "${pack.name}"`);
-    if (BUILTIN_FRAMEWORK_IDS.has(fw.id)) {
-      throw new Error(`framework id "${fw.id}" in pack "${pack.name}" conflicts with a built-in framework id`);
-    }
     const owner = externalFrameworkOwner.get(fw.id);
     if (owner && owner !== pack.name) {
-      throw new Error(`framework id "${fw.id}" in pack "${pack.name}" is already registered by pack "${owner}"`);
+      throw new Error(builtinNames.has(owner)
+        ? `framework id "${fw.id}" in pack "${pack.name}" conflicts with a built-in framework id`
+        : `framework id "${fw.id}" in pack "${pack.name}" is already registered by pack "${owner}"`);
     }
   }
   unregisterPack(pack.name);
@@ -585,21 +673,21 @@ export function unregisterPack(name: string): void {
 }
 
 export function getFramework(id: string): FrameworkDef | undefined {
-  return FRAMEWORKS[id] ?? externalFrameworks.get(id);
+  return externalFrameworks.get(id);
 }
 
 export function frameworkIds(): string[] {
-  return [...Object.keys(FRAMEWORKS), ...externalFrameworks.keys()];
+  return [...externalFrameworks.keys()];
 }
 
 /** Read a pack from a `<name>.json` file or a folder holding `pack.json`. */
-export function readPackFrom(p: string): ProviderPack {
+export function readPackFrom(p: string, folderOrigin: 'folder' | 'builtin' = 'folder'): ProviderPack {
   const abs = path.resolve(p);
   const st = fs.statSync(abs);
   if (st.isDirectory()) {
     const manifest = path.join(abs, PACK_MANIFEST);
     if (!fs.existsSync(manifest)) throw new Error(`folder has no ${PACK_MANIFEST}`);
-    const pack = validatePack(JSON.parse(fs.readFileSync(manifest, 'utf8')), { origin: 'folder', dir: abs });
+    const pack = validatePack(JSON.parse(fs.readFileSync(manifest, 'utf8')), { origin: folderOrigin, dir: abs });
     // The folder name is the pack's identity on disk (deletePack, matrix references),
     // so it must agree with the manifest.
     if (path.basename(abs) !== pack.name) {
@@ -608,6 +696,20 @@ export function readPackFrom(p: string): ProviderPack {
     return pack;
   }
   return validatePack(JSON.parse(fs.readFileSync(abs, 'utf8')), { origin: 'file' });
+}
+
+/** Load the packs that ship with the testbed. Called before loadAll(), so their names
+ * and framework ids are taken before any user pack is read. A broken built-in pack is
+ * fatal: without it there is no Ignite UI at all. */
+export function loadBuiltins(dir: string = BUILTIN_PACKS_DIR): void {
+  if (!fs.existsSync(dir)) throw new Error(`built-in packs folder not found: ${dir}`);
+  for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!e.isDirectory() || e.name.startsWith('.')) continue;
+    const pack = readPackFrom(path.join(dir, e.name), 'builtin');
+    builtinNames.add(pack.name);
+    registerPack(pack);
+  }
+  warnAmbiguousOverrides();
 }
 
 /** Load every `*.json` file and `<name>/pack.json` folder in PROVIDERS_DIR. */
@@ -628,6 +730,7 @@ export function loadAll(): void {
       if (!isDir && !e.name.endsWith('.json')) continue;
       if (isDir && !fs.existsSync(path.join(full, PACK_MANIFEST))) continue;
       const pack = readPackFrom(full);
+      if (builtinNames.has(pack.name)) throw new Error(`"${pack.name}" is reserved for the built-in provider`);
       const prior = packs.get(pack.name);
       if (prior) throw new Error(`pack "${pack.name}" is already loaded from a ${prior.origin} — skipped`);
       registerPack(pack);
@@ -637,6 +740,7 @@ export function loadAll(): void {
     }
   }
   if (loaded) console.log(`provider-registry: loaded ${loaded} pack(s) from ${PROVIDERS_DIR}`);
+  warnAmbiguousOverrides();
 }
 
 /** Persist an uploaded single-file pack as PROVIDERS_DIR/<name>.json and register it.
@@ -645,6 +749,7 @@ export function loadAll(): void {
 export function savePack(raw: unknown, pack: ProviderPack): void {
   assertSafeId(pack.name, 'pack name');
   const existing = packs.get(pack.name);
+  if (builtinNames.has(pack.name)) throw new Error(`"${pack.name}" is reserved for the built-in provider`);
   if (existing?.origin === 'folder') {
     throw new Error(`pack "${pack.name}" is a folder pack — edit ${pack.name}/${PACK_MANIFEST} on the host instead`);
   }
@@ -657,6 +762,7 @@ export function savePack(raw: unknown, pack: ProviderPack): void {
 export function deletePack(name: string): void {
   assertSafeId(name, 'pack name');
   const pack = packs.get(name);
+  if (builtinNames.has(name)) throw new Error('cannot remove the built-in provider');
   if (pack?.origin === 'folder') {
     throw new Error(`pack "${name}" is a folder pack — remove the ${name}/ folder on the host instead`);
   }
@@ -680,9 +786,9 @@ export function getPackForFramework(frameworkId: string): ProviderPack | undefin
   return undefined;
 }
 
-/** Rewrite bare class names to the framework's pack-qualified ids (`angular` →
- * `angular-material/angular`), so a run records the same class the pipeline enables and
- * MCP_CMD_<PACK>_<CLASS> resolves. Built-in frameworks and unknown names pass through. */
+/** Rewrite bare class names to the framework's pack-qualified ids (`igniteui` →
+ * `igniteui/igniteui`), so a run records the same class the pipeline enables and
+ * MCP_CMD_<PACK>_<CLASS> resolves. `custom` and unknown names pass through. */
 export function canonicalMcpClasses(frameworkId: string, classes: string[]): string[] {
   const pack = getPackForFramework(frameworkId);
   if (!pack) return classes.slice();
@@ -690,15 +796,12 @@ export function canonicalMcpClasses(frameworkId: string, classes: string[]): str
     pack.mcp.classes.find((k) => bareMcpClass(k.id).toLowerCase() === c.toLowerCase())?.id ?? c);
 }
 
-/** The provider that owns a framework id: a loaded pack's name, the built-in one, or
- * undefined for an unknown id. */
+/** The provider (pack name) that owns a framework id, or undefined for an unknown id. */
 export function providerFor(frameworkId: string): string | undefined {
-  if (isBuiltinFramework(frameworkId)) return BUILTIN_PROVIDER;
   return getPackForFramework(frameworkId)?.name;
 }
 
 export function optionsFor(frameworkId: string): PackOption[] {
-  if (isBuiltinFramework(frameworkId)) return IGNITEUI_META.options || [];
   return getPackForFramework(frameworkId)?.options || [];
 }
 
@@ -723,7 +826,79 @@ export function resolveRunOptions(frameworkId: string, raw: unknown): Record<str
   return out;
 }
 
-/** Every provider as the browser sees it: the built-in Ignite UI first, then the packs. */
+/** Every provider as the browser sees it: built-in packs first (they load first). */
 export function listProvidersForUi(): unknown[] {
-  return [{ ...IGNITEUI_META, secrets: [] }, ...listPacks().map(publicPack)];
+  return listPacks().map(publicPack);
+}
+
+// ── MCP launch commands ──────────────────────────────────────────────────────
+// A server's command comes from, in order: an MCP_CMD_* env override, the pack's
+// `mcp.commands` default for its class, or the command as declared/generated.
+// The env override for class `<pack>/<cls>` is MCP_CMD_<PACK>_<CLS>; the bare
+// MCP_CMD_<CLS> also works while only one loaded pack declares <cls> (so MCP_CMD_IGNITEUI
+// keeps meaning Ignite UI's server). A bare class with no pack (`custom`, or a record
+// written before classes were qualified) is looked up as-is.
+
+function packsDeclaringBare(bare: string): number {
+  const b = bare.toLowerCase();
+  return listPacks().filter((p) => p.mcp.classes.some((c) => bareMcpClass(c.id).toLowerCase() === b)).length;
+}
+
+function envOverride(cls: string): string[] | undefined {
+  const exact = MCP_COMMAND_OVERRIDES[normMcpClass(cls)];
+  if (exact) return exact;
+  if (!cls.includes('/')) return undefined;
+  const bare = bareMcpClass(cls);
+  return packsDeclaringBare(bare) === 1 ? MCP_COMMAND_OVERRIDES[normMcpClass(bare)] : undefined;
+}
+
+function packDefaultCommand(cls: string): string[] | undefined {
+  const pack = cls.includes('/') ? packs.get(cls.slice(0, cls.indexOf('/'))) : undefined;
+  return pack?.mcp.commands?.[cls];
+}
+
+/** The command a class's servers launch with, or undefined to keep the declared one. */
+export function resolveMcpCommand(cls: string | undefined): string[] | undefined {
+  if (!cls) return undefined;
+  const hit = envOverride(cls) ?? packDefaultCommand(cls);
+  return hit ? hit.slice() : undefined;
+}
+
+/**
+ * The env override for a class as a command line, or undefined when it runs its default.
+ * Stamped onto every history record (history.redact) because the A/B arms are otherwise
+ * indistinguishable after the fact: the server keeps its name, exposes identically-named
+ * tools, and a locally-packed build can report the SAME `--version` as the released one,
+ * so the command line is the only thing that says which binary answered.
+ */
+export function mcpOverrideFor(cls: string | undefined): string | undefined {
+  if (!cls) return undefined;
+  return envOverride(cls)?.join(' ');
+}
+
+/** Folded class → overriding command line, for every class this container overrides,
+ * under both the qualified and (when it applies) the bare spelling, so the History
+ * re-run check can look up old and new records alike. */
+export function mcpOverridesForStatus(): Record<string, string> {
+  const out: Record<string, string> = {};
+  const classes = [...listPacks().flatMap((p) => p.mcp.classes.map((c) => c.id)), 'custom'];
+  for (const cls of classes) {
+    const cmd = mcpOverrideFor(cls);
+    if (!cmd) continue;
+    out[normMcpClass(cls)] = cmd;
+    if (cls.includes('/') && packsDeclaringBare(bareMcpClass(cls)) === 1) out[normMcpClass(bareMcpClass(cls))] = cmd;
+  }
+  return out;
+}
+
+// An MCP_CMD_<CLS> that matches the bare class of several packs applies to none of them,
+// which would otherwise look exactly like "released" — say so once at startup.
+function warnAmbiguousOverrides(): void {
+  for (const key of Object.keys(MCP_COMMAND_OVERRIDES)) {
+    const owners = listPacks().filter((p) => p.mcp.classes.some((c) => normMcpClass(bareMcpClass(c.id)) === key));
+    const qualifiedMatch = listPacks().some((p) => p.mcp.classes.some((c) => normMcpClass(c.id) === key));
+    if (owners.length > 1 && !qualifiedMatch) {
+      console.warn(`provider-registry: MCP_CMD_${key.toUpperCase()} matches class "${bareMcpClass(owners[0].mcp.classes.find((c) => normMcpClass(bareMcpClass(c.id)) === key)!.id)}" in ${owners.map((o) => o.name).join(', ')} and applies to none — use MCP_CMD_<PACK>_<CLASS>`);
+    }
+  }
 }

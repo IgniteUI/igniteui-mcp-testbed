@@ -1,0 +1,5769 @@
+{
+  "_about": "Pre-phase-3 Ignite UI behaviour (FRAMEWORKS + the igniteui configure/translate stage), generated 2026-11-02 from commit before the built-in pack. scripts/packs-fixtures.mjs checks the pack path against it.",
+  "plain": {
+    "angular": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=angular",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=angular",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "angular",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "angular",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 3 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (4 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npx",
+        "argv": [
+          "ng",
+          "serve",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--poll",
+          "1500"
+        ],
+        "env": {
+          "CI": "1"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config"
+      }
+    },
+    "react": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=react",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=react",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "react",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "react",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npm",
+        "argv": [
+          "run",
+          "start",
+          "--",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--strictPort"
+        ],
+        "env": {
+          "CHOKIDAR_USEPOLLING": "true",
+          "CHOKIDAR_INTERVAL": "1500"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config",
+        "fallback": "state-nav"
+      }
+    },
+    "webcomponents": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=webcomponents",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=webcomponents",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "webcomponents",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "webcomponents",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npm",
+        "argv": [
+          "run",
+          "start",
+          "--",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--strictPort"
+        ],
+        "env": {
+          "CHOKIDAR_USEPOLLING": "true",
+          "CHOKIDAR_INTERVAL": "1500"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config",
+        "fallback": "state-nav"
+      }
+    },
+    "blazor": {
+      "scaffold": {
+        "skills": {
+          "cmd": "dotnet",
+          "argv": [
+            "new",
+            "igb-blazor",
+            "-o",
+            ".",
+            "-n",
+            "app",
+            "--force",
+            "--IncludeWeatherSample",
+            "false"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "dotnet",
+          "argv": [
+            "new",
+            "igb-blazor",
+            "-o",
+            ".",
+            "-n",
+            "app",
+            "--force",
+            "--IncludeWeatherSample",
+            "false"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "blazor",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "blazor",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "ig",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → ig mcp",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "dotnet",
+        "argv": [
+          "watch",
+          "--no-hot-reload",
+          "run",
+          "--urls",
+          "http://0.0.0.0:5000"
+        ],
+        "env": {
+          "DOTNET_USE_POLLING_FILE_WATCHER": "true"
+        }
+      },
+      "prepare": {
+        "Directory.Build.props": "<Project>\n  <PropertyGroup>\n    <BaseIntermediateOutputPath>/tmp/blazor-build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>\n    <BaseOutputPath>/tmp/blazor-build/bin/$(MSBuildProjectName)/</BaseOutputPath>\n  </PropertyGroup>\n</Project>\n"
+      },
+      "install": [],
+      "routes": {
+        "kind": "razor"
+      }
+    }
+  },
+  "override": {
+    "angular": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=angular",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=angular",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "angular",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "angular",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 3 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (4 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  },
+                  "angular-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "@angular/cli",
+                      "mcp"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                },
+                "angular-cli": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "@angular/cli",
+                    "mcp"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"angular-cli\" → angular → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npx",
+        "argv": [
+          "ng",
+          "serve",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--poll",
+          "1500"
+        ],
+        "env": {
+          "CI": "1"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config"
+      }
+    },
+    "react": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=react",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=react",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "react",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "react",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npm",
+        "argv": [
+          "run",
+          "start",
+          "--",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--strictPort"
+        ],
+        "env": {
+          "CHOKIDAR_USEPOLLING": "true",
+          "CHOKIDAR_INTERVAL": "1500"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config",
+        "fallback": "state-nav"
+      }
+    },
+    "webcomponents": {
+      "scaffold": {
+        "skills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=webcomponents",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=generic",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "ig",
+          "argv": [
+            "new",
+            "app",
+            "--framework=webcomponents",
+            "--type=igx-ts",
+            "--theme=default",
+            "--agents=none",
+            "--assistants=generic",
+            "--skip-git"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "webcomponents",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "webcomponents",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "npm",
+        "argv": [
+          "run",
+          "start",
+          "--",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5000",
+          "--strictPort"
+        ],
+        "env": {
+          "CHOKIDAR_USEPOLLING": "true",
+          "CHOKIDAR_INTERVAL": "1500"
+        }
+      },
+      "prepare": {},
+      "install": [],
+      "routes": {
+        "kind": "route-config",
+        "fallback": "state-nav"
+      }
+    },
+    "blazor": {
+      "scaffold": {
+        "skills": {
+          "cmd": "dotnet",
+          "argv": [
+            "new",
+            "igb-blazor",
+            "-o",
+            ".",
+            "-n",
+            "app",
+            "--force",
+            "--IncludeWeatherSample",
+            "false"
+          ],
+          "cwdIsParent": true
+        },
+        "noskills": {
+          "cmd": "dotnet",
+          "argv": [
+            "new",
+            "igb-blazor",
+            "-o",
+            ".",
+            "-n",
+            "app",
+            "--force",
+            "--IncludeWeatherSample",
+            "false"
+          ],
+          "cwdIsParent": true
+        }
+      },
+      "configure": {
+        "skills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "blazor",
+          "--agents",
+          "generic",
+          "--assistants",
+          "generic"
+        ],
+        "noskills": [
+          "ig",
+          "ai-config",
+          "--framework",
+          "blazor",
+          "--agents",
+          "none",
+          "--assistants",
+          "generic"
+        ]
+      },
+      "mcp": {
+        "none": {
+          "input": {
+            "enabledMcps": [],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 0 enabled)"
+          ]
+        },
+        "igniteui": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "theming": {
+          "input": {
+            "enabledMcps": [
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": true,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → disabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 1 enabled)"
+          ]
+        },
+        "both": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "all": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming",
+              "angular"
+            ],
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "custom": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "custom"
+            ],
+            "customMcp": "{\"my-docs\":{\"command\":\"npx\",\"args\":[\"-y\",\"my-docs-mcp\"]}}",
+            "generated": {
+              "file": ".mcp.json",
+              "doc": {
+                "mcpServers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": true,
+                  "codemode": false
+                },
+                "custom-my-docs": {
+                  "type": "local",
+                  "command": [
+                    "npx",
+                    "-y",
+                    "my-docs-mcp"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → disabled",
+            "mcp \"custom-my-docs\" → custom → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (3 MCP servers, 2 enabled)"
+          ]
+        },
+        "legacy": {
+          "input": {
+            "enabledMcps": [
+              "igniteui",
+              "theming"
+            ],
+            "generated": {
+              "file": ".vscode/mcp.json",
+              "doc": {
+                "servers": {
+                  "igniteui-cli": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-cli",
+                      "mcp"
+                    ]
+                  },
+                  "igniteui-theming": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "igniteui-theming",
+                      "igniteui-theming-mcp"
+                    ],
+                    "env": {
+                      "ROOT": "${workspaceFolder}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {
+                "igniteui-cli": {
+                  "type": "local",
+                  "command": [
+                    "/opt/local-mcp/bin/igniteui-mcp",
+                    "--stdio"
+                  ],
+                  "disabled": false,
+                  "codemode": false
+                },
+                "igniteui-theming": {
+                  "type": "local",
+                  "command": [
+                    "igniteui-theming-mcp"
+                  ],
+                  "environment": {
+                    "ROOT": "/work/app"
+                  },
+                  "disabled": false,
+                  "codemode": false
+                }
+              }
+            }
+          },
+          "logs": [
+            "no .mcp.json found; using legacy .vscode/mcp.json",
+            "mcp \"igniteui-cli\" → igniteui → enabled",
+            "mcp \"igniteui-theming\" → theming → enabled",
+            "mcp \"igniteui-cli\" command → /opt/local-mcp/bin/igniteui-mcp --stdio",
+            "mcp \"igniteui-theming\" command → igniteui-theming-mcp",
+            "opencode.json written (2 MCP servers, 2 enabled)"
+          ]
+        },
+        "missing": {
+          "input": {
+            "enabledMcps": [
+              "igniteui"
+            ],
+            "generated": null
+          },
+          "opencode": {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "anthropic/claude-x",
+            "permissions": [
+              {
+                "action": "*",
+                "resource": "*",
+                "effect": "allow"
+              },
+              {
+                "action": "websearch",
+                "resource": "*",
+                "effect": "deny"
+              }
+            ],
+            "mcp": {
+              "servers": {}
+            }
+          },
+          "logs": [
+            "no .mcp.json found; continuing with empty MCP set",
+            "opencode.json written (0 MCP servers, 0 enabled)"
+          ]
+        }
+      },
+      "dev": {
+        "cmd": "dotnet",
+        "argv": [
+          "watch",
+          "--no-hot-reload",
+          "run",
+          "--urls",
+          "http://0.0.0.0:5000"
+        ],
+        "env": {
+          "DOTNET_USE_POLLING_FILE_WATCHER": "true"
+        }
+      },
+      "prepare": {
+        "Directory.Build.props": "<Project>\n  <PropertyGroup>\n    <BaseIntermediateOutputPath>/tmp/blazor-build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>\n    <BaseOutputPath>/tmp/blazor-build/bin/$(MSBuildProjectName)/</BaseOutputPath>\n  </PropertyGroup>\n</Project>\n"
+      },
+      "install": [],
+      "routes": {
+        "kind": "razor"
+      }
+    }
+  }
+}

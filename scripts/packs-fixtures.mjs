@@ -19,6 +19,8 @@ process.env.SECRET_REVEAL_KEY = 'sk-reveal-0123456789';
 process.env.SECRET_SHORT = 'abc';
 
 const reg = await import('../src/provider-registry.ts');
+// The built-in Ignite UI pack, as server.ts loads it before anything else.
+reg.loadBuiltins();
 const { normMcpClass } = await import('../src/mcp-class.ts');
 
 let passed = 0;
@@ -99,7 +101,7 @@ const v2 = {
   check('v2: no mcp block ⇒ empty', reg.validatePack({ ...structuredClone(v2), mcp: undefined }).mcp, { classes: [], servers: [] });
 
   const mut = (f) => { const b = structuredClone(v2); f(b); return b; };
-  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.configure = []; })), /unknown field "configure"/);
+  throws('v2: unknown top-level field', () => reg.validatePack(mut((b) => { b.templates = []; })), /unknown field "templates"/);
   throws('v2: unsupported schemaVersion', () => reg.validatePack(mut((b) => { b.schemaVersion = 3; })), /unsupported schemaVersion/);
   throws('v2: server class must be declared', () => reg.validatePack(mut((b) => { b.mcp.servers[0].class = 'other'; })), /not declared in mcp\.classes/);
   throws('v2: duplicate class', () => reg.validatePack(mut((b) => { b.mcp.classes.push({ id: 'docs', label: 'again' }); })), /declared twice/);
@@ -157,7 +159,8 @@ const v2 = {
   reg.loadAll();
   console.warn = warn; console.log = log;
 
-  check('loadAll: loads the file and folder packs', reg.listPacks().map((p) => [p.name, p.origin]).sort(), [['mat', 'file'], ['reveal', 'folder']]);
+  check('loadAll: built-in first, then the file and folder packs', reg.listPacks().map((p) => [p.name, p.origin]),
+    [['igniteui', 'builtin'], ['mat', 'file'], ['reveal', 'folder']]);
   check('loadAll: folder pack keeps its dir', reg.getPack('reveal').dir, path.join(providersDir, 'reveal'));
   check('loadAll: folder name must match pack name', warnings.some((w) => /misnamed.*rename one/.test(w)), true);
   check('loadAll: igniteui reserved', warnings.some((w) => /igniteui.*reserved/.test(w)), true);
@@ -166,7 +169,7 @@ const v2 = {
   check('framework registered', !!reg.getFramework('reveal-node'), true);
 
   check('canonical: bare → qualified', reg.canonicalMcpClasses('mat-ng', ['angular', 'custom']), ['mat/angular', 'custom']);
-  check('canonical: built-in framework untouched', reg.canonicalMcpClasses('angular', ['igniteui', 'theming']), ['igniteui', 'theming']);
+  check('canonical: built-in pack qualified too', reg.canonicalMcpClasses('angular', ['igniteui', 'theming', 'custom']), ['igniteui/igniteui', 'igniteui/theming', 'custom']);
 
   throws('deletePack refuses folder packs', () => reg.deletePack('reveal'), /folder pack/);
   throws('savePack refuses to shadow a folder pack', () => reg.savePack(v2, reg.validatePack(structuredClone(v2))), /folder pack/);
@@ -454,7 +457,7 @@ const v2 = {
 
   const stored = history.redact({ framework: 'reveal-node', enabledMcps: [] });
   check('redact: pack provenance', stored.pack, { name: 'reveal', hash: reg.getPack('reveal').hash, origin: 'folder' });
-  check('redact: built-in has no pack', 'pack' in history.redact({ framework: 'angular' }), false);
+  check('redact: built-in pack provenance', history.redact({ framework: 'angular' }).pack, { name: 'igniteui', hash: reg.getPack('igniteui').hash, origin: 'builtin' });
 }
 
 // ── provider data for the UI (2) ────────────────────────────────────────────
@@ -489,7 +492,7 @@ const v2 = {
   const ui = reg.listProvidersForUi();
   check('ui: built-in first', [ui[0].name, ui[0].origin], ['igniteui', 'builtin']);
   check('ui: built-in frameworks in UI order', ui[0].frameworks.map((f) => f.id), ['angular', 'blazor', 'react', 'webcomponents']);
-  check('ui: built-in classes stay bare', ui[0].mcp.classes.map((c) => c.id), ['igniteui', 'theming', 'angular']);
+  check('ui: built-in classes qualified', ui[0].mcp.classes.map((c) => c.id), ['igniteui/igniteui', 'igniteui/theming', 'igniteui/angular']);
   check('ui: angular class only for angular', ui[0].mcp.classes[2].frameworks, ['angular']);
   check('ui: packs follow', ui.slice(1).some((p) => p.name === 'op'), true);
   check('ui: no container paths', JSON.stringify(ui).includes(providersDir.replace(/\\/g, '\\\\')), false);
@@ -504,6 +507,53 @@ const v2 = {
   reg.unregisterPack('op');
 }
 
+// ── built-in pack and the unified configure path (3) ────────────────────────
+{
+  const { classifyByRules } = await import('../src/pipeline/mcp-config.ts');
+  const { expandEnvRefs } = await import('../src/frameworks.ts');
+
+  const ig = reg.getPack('igniteui');
+  check('builtin: origin and frameworks', [ig.origin, ig.frameworks.map((f) => f.id)], ['builtin', ['angular', 'blazor', 'react', 'webcomponents']]);
+  check('builtin: framework ids registered', ['angular', 'react', 'webcomponents', 'blazor'].every((f) => reg.providerFor(f) === 'igniteui'), true);
+  throws('builtin: cannot be removed', () => reg.deletePack('igniteui'), /built-in/);
+  throws('builtin: cannot be replaced by an upload', () => reg.savePack({}, { ...structuredClone(ig), origin: 'file' }), /reserved/);
+  throws('builtin: name reserved for other packs', () => reg.registerPack({ ...reg.validatePack({ ...structuredClone(v2), name: 'igniteui', frameworks: [fw('ig-y')] }) }), /reserved/);
+  throws('builtin: framework ids reserved', () => reg.registerPack(reg.validatePack({ ...structuredClone(v2), name: 'thief2', frameworks: [fw('react')] })), /built-in framework id/);
+
+  const rules = ig.mcp.source.rules;
+  check('rules: theming before ignite', classifyByRules('igniteui-theming', { command: 'npx', args: ['igniteui-theming'] }, rules), 'igniteui/theming');
+  check('rules: angular before ignite', classifyByRules('angular-cli', { command: 'npx', args: ['@angular/cli', 'mcp'] }, rules), 'igniteui/angular');
+  check('rules: generic ignite', classifyByRules('igniteui-cli', { command: 'npx', args: ['igniteui-cli', 'mcp'] }, rules), 'igniteui/igniteui');
+  check('rules: no match ⇒ other', classifyByRules('github', { command: 'gh-mcp' }, rules), 'other');
+
+  check('commands: pack default', reg.resolveMcpCommand('igniteui/igniteui'), ['ig', 'mcp']);
+  check('commands: class without a default', reg.resolveMcpCommand('igniteui/angular'), undefined);
+  check('commands: custom', reg.resolveMcpCommand('custom'), undefined);
+  check('commands: no env override ⇒ nothing to stamp', [reg.mcpOverrideFor('igniteui/igniteui'), reg.mcpOverridesForStatus()], [undefined, {}]);
+
+  const base = () => ({ ...structuredClone(v2), name: 'p3', frameworks: [fw('p3-fw')] });
+  check('configure: kept', reg.validatePack({ ...base(), configure: [{ cmd: 'x', argv: ['--fw', '{{name}}'], frameworks: ['p3-fw'] }] }).configure,
+    [{ cmd: 'x', argv: ['--fw', '{{name}}'], frameworks: ['p3-fw'] }]);
+  throws('configure: unknown framework', () => reg.validatePack({ ...base(), configure: [{ cmd: 'x', argv: [], frameworks: ['nope'] }] }), /framework ids/);
+  throws('configure: secret in argv', () => reg.validatePack({ ...base(), configure: [{ cmd: 'x', argv: ['{{secret:A}}'] }] }), /secret/);
+  throws('configure: builtin hook not supported', () => reg.validatePack({ ...base(), configure: [{ builtin: 'x' }] }), /not a valid field/);
+  const withSource = (source, commands) => reg.validatePack({ ...base(), mcp: { classes: [{ id: 'docs', label: 'D' }], servers: [], source, ...(commands ? { commands } : {}) } });
+  check('source: qualified rules', withSource({ files: ['.mcp.json'], rules: [{ match: 'docs', class: 'docs' }] }).mcp.source.rules, [{ match: 'docs', class: 'p3/docs' }]);
+  throws('source: undeclared class', () => withSource({ files: ['.mcp.json'], rules: [{ match: 'x', class: 'other' }] }), /one of mcp.classes/);
+  throws('source: file climb', () => withSource({ files: ['../x.json'], rules: [] }), /must not leave/);
+  check('commands: qualified keys', withSource({ files: ['.mcp.json'], rules: [] }, { docs: ['docs-mcp'] }).mcp.commands, { 'p3/docs': ['docs-mcp'] });
+  throws('commands: undeclared class', () => withSource({ files: ['.mcp.json'], rules: [] }, { nope: ['x'] }), /not one of mcp.classes/);
+  throws('mcp: unknown field', () => reg.validatePack({ ...base(), mcp: { classes: [], servers: [], extra: 1 } }), /mcp.extra/);
+
+  const withVars = (vars) => reg.validatePack({ ...base(), frameworks: [{ ...fw('p3-fw'), vars }] });
+  check('vars: kept', withVars({ tpl: '{{env:BLAZOR_TEMPLATE|igb-blazor}}' }).frameworks[0].vars, { tpl: '{{env:BLAZOR_TEMPLATE|igb-blazor}}' });
+  throws('vars: reserved name', () => withVars({ port: '1' }), /reserved/);
+  throws('vars: reading a secret', () => withVars({ k: '{{env:SECRET_X}}' }), /isn't allowed/);
+  process.env.P3_TEMPLATE = 'from-env';
+  check('expandEnvRefs', [expandEnvRefs('{{env:P3_TEMPLATE|d}}'), expandEnvRefs('{{env:P3_UNSET|d}}'), expandEnvRefs('{{env:P3_UNSET}}x')], ['from-env', 'd', 'x']);
+  delete process.env.P3_TEMPLATE;
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));
@@ -511,7 +561,7 @@ const v2 = {
   const schema = JSON.parse(fs.readFileSync(new URL('../provider.schema.json', import.meta.url), 'utf8'));
   // validatePack's v2 top-level keys and the schema's must not drift apart.
   check('schema top-level keys', Object.keys(schema.properties).sort(),
-    ['$schema', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'options', 'schemaVersion', 'secrets', 'skills', 'version', 'versions']);
+    ['$schema', 'configure', 'containerDeps', 'description', 'displayName', 'frameworks', 'mcp', 'name', 'options', 'schemaVersion', 'secrets', 'skills', 'version', 'versions']);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

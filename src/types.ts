@@ -62,11 +62,22 @@ export interface DevDef {
   env?: Record<string, string>;
 }
 
-// 'igniteui'  (default) — runs `ig ai-config`, writes .mcp.json + .agents/skills/.
-// 'external'            — drives config from a ProviderPack (MCP servers + skills via
-//                         git clone); opencode.json is written directly, no translate step.
-// 'none'                — skips configure entirely, writes bare opencode.json.
-export type ConfigureStrategy = 'igniteui' | 'external' | 'none';
+// A command run in the app dir after scaffold + install, e.g. `ig ai-config …`.
+export interface PackConfigureStep {
+  cmd: string;
+  argv: string[];
+  /** Only for these framework ids (default: all of the pack's). */
+  frameworks?: string[];
+}
+
+// MCP servers read from a file the configure steps generated, instead of listed in the
+// pack. Each server is classified by the first rule whose `match` occurs in its name +
+// command line (case-insensitive); unmatched servers are class `other`, never enabled.
+export interface PackMcpSource {
+  /** Tried in order; the first that exists is read (`mcpServers` or `servers` wrapper). */
+  files: string[];
+  rules: { match: string; class: string }[];
+}
 
 // ── Provider Pack ─────────────────────────────────────────────────────────────
 // A JSON file (one per 3rd-party library) that describes how to scaffold, install,
@@ -79,6 +90,8 @@ export interface ProviderPackFramework {
   install?: string[];
   dev: DevDef;
   prepare?: Record<string, string>;
+  /** Per-framework {{vars}}; a value may use {{env:NAME|default}}. */
+  vars?: Record<string, string>;
   /** Regex sources; a match in the fresh dev-server log means the build failed. */
   buildFailed?: string[];
   routes?: RouteSpec;
@@ -176,8 +189,8 @@ export interface PackProvenance {
   origin: PackOrigin;
 }
 
-// 'builtin' is Ignite UI's metadata-only description (src/builtin-pack.ts) until it
-// becomes a real pack.
+// 'builtin' packs ship in the image (packs/ → BUILTIN_PACKS_DIR) and can't be replaced
+// or removed from the UI.
 export type PackOrigin = 'file' | 'folder' | 'inline' | 'builtin';
 
 export interface ProviderPack {
@@ -187,7 +200,14 @@ export interface ProviderPack {
   description?: string;
   version?: string;
   frameworks: ProviderPackFramework[];
-  mcp: { classes: PackMcpClass[]; servers: PackMcpServer[] };
+  mcp: {
+    classes: PackMcpClass[];
+    servers: PackMcpServer[];
+    source?: PackMcpSource;
+    /** Class → the command its servers launch with (an MCP_CMD_* env override wins). */
+    commands?: Record<string, string[]>;
+  };
+  configure?: PackConfigureStep[];
   skills?: PackSkills;
   options?: PackOption[];
   secrets?: PackSecretDecl[];
@@ -204,9 +224,8 @@ export interface FrameworkDef {
   scaffold: ScaffoldDef;
   // npm packages to install into the scaffolded project after scaffold (e.g. @angular/material).
   install?: string[];
-  // How to set up AI tooling. Defaults to 'igniteui' when omitted.
-  configure?: ConfigureStrategy;
-  aiFramework: string;
+  /** Per-framework {{vars}} (values may use {{env:NAME|default}}). */
+  vars?: Record<string, string>;
   dev: DevDef;
   prepare?: Record<string, string>;
   /** Added to BUILD_FAILED_RE for this framework's runs. */

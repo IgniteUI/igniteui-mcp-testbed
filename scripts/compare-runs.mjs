@@ -32,6 +32,7 @@
 // but travels only with that folder. --inline embeds the PNGs and is portable.
 
 import { providerOf } from '../src/provider-of.ts';
+import { bareMcpClass } from '../src/mcp-class.ts';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -149,7 +150,7 @@ function imageUrl(runId, file) {
 }
 
 const variantOf = (c = {}) => {
-  const mcps = (c.enabledMcps || []).length ? c.enabledMcps.join('+') : 'no mcp';
+  const mcps = (c.enabledMcps || []).length ? c.enabledMcps.map(bareMcpClass).join('+') : 'no mcp';
   const oc = c.opencodeVersion ? ' · oc ' + c.opencodeVersion + (c.codemode ? ' codemode' : '') : '';
   return mcps + ' · ' + (c.skills ? 'skills' : 'no skills') + oc;
 };
