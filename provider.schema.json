@@ -246,7 +246,8 @@
     "containerDeps": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "npmGlobal": { "type": "array", "items": { "type": "string" } } }
+      "description": "Installed when the pack loads into /opt/pack-deps/<pack> and put on PATH; the versions installed are recorded with each run.",
+      "properties": { "npmGlobal": { "type": "array", "items": { "type": "string", "pattern": "^(?!-)(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9._~^<>=*|+-]+)?$" }, "description": "Registry package names, optionally @version. Pin them." } }
     }
   }
 }

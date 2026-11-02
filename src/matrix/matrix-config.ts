@@ -6,6 +6,7 @@ import { PROVIDER_ENV, PROVIDERS_DIR } from '../config.ts';
 import { registerPack, validatePack, getPackForFramework, getPack, readPackFrom } from '../provider-registry.ts';
 import { bareMcpClass } from '../mcp-class.ts';
 import { missingSecrets } from '../secrets.ts';
+import { startPackDeps } from '../pack-deps.ts';
 import type { ProviderPack } from '../types.ts';
 import { sharedTests, frameworkTests } from '../verify/tests.ts';
 import * as matrix from './matrix.ts';
@@ -79,12 +80,7 @@ export function loadMatrixConfig(filePath: string): LoadedMatrixConfig {
         for (const m of missingSecrets(pack)) {
           warnings.push(`provider '${pack.name}' is missing required secret ${m.name} (${m.source}) — its entries will fail`);
         }
-        if (pack.containerDeps?.npmGlobal?.length) {
-          warnings.push(
-            `provider '${pack.name}' needs global npm package(s) ${pack.containerDeps.npmGlobal.join(', ')} ` +
-            'baked into the image (see the Containerfile "3rd-party provider dependencies" section) — ' +
-            'scaffold/dev commands may fail without a rebuild');
-        }
+        startPackDeps(pack);
       } catch (e: any) {
         throw new Error(`matrix config ${filePath}: providers[${i}]: ${e.message}`);
       }

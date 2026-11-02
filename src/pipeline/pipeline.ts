@@ -30,6 +30,7 @@ import type { FrameworkDef, RunConfig, Emit, InteractiveResult, HeadlessResult, 
 import { installPackSkills } from './pack-skills.ts';
 import { copyTemplate } from './template.ts';
 import { maskingEmit, missingSecrets, secretEnv } from '../secrets.ts';
+import { ensurePackDeps } from '../pack-deps.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
@@ -118,6 +119,10 @@ export async function runPipeline(
       missing.map((m) => `${m.name} (${m.source})`).join(', '));
   }
   const stepEnv = (extra?: Record<string, string>) => secretEnv(pack, extra || {});
+  // The pack's containerDeps (src/pack-deps.ts): usually already installed at load; the
+  // first run of a freshly loaded pack waits here. A failed install fails the run now.
+  if (pack.containerDeps?.npmGlobal?.length) emit('log', `pack deps: ${pack.containerDeps.npmGlobal.join(', ')}`);
+  const depVersions = await ensurePackDeps(pack);
 
   // MCP servers the agent will actually be offered, recorded so the tool-usage report
   // can say which of them were never called. Filled in by whichever configure branch runs.
@@ -163,8 +168,9 @@ export async function runPipeline(
 
   // 1c. What the pack's tools actually resolved to, since a pack's `version` is only what
   // its author typed. A probe that fails is recorded as such rather than failing the run.
+  const found: Record<string, string> = Object.fromEntries(
+    Object.entries(depVersions).map(([name, v]) => [`npm:${name}`, v]));
   if (pack.versions?.length) {
-    const found: Record<string, string> = {};
     for (const v of pack.versions) {
       if (v.frameworks && !v.frameworks.includes(cfg.framework)) continue;
       try {
@@ -174,6 +180,8 @@ export async function runPipeline(
         found[v.name] = `error: ${String(e?.message ?? e).split('\n')[0].slice(0, 160)}`;
       }
     }
+  }
+  if (Object.keys(found).length) {
     emit('log', `tool versions: ${Object.entries(found).map(([k, v]) => `${k} ${v}`).join(', ')}`);
     onToolVersions?.(found);
   }

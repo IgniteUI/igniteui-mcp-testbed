@@ -23,6 +23,8 @@ export interface ProviderPack {
   origin: 'file' | 'folder' | 'inline' | 'builtin';
   // Status only; values never leave the server.
   secrets: { name: string; kind: 'env' | 'file'; required: boolean; description?: string; set: boolean; source: string }[];
+  // containerDeps install state (src/pack-deps.ts).
+  deps?: { state: 'none' | 'pending' | 'installing' | 'ok' | 'failed'; error?: string; versions?: Record<string, string> };
 }
 
 let cachedPacks: ProviderPack[] = [];

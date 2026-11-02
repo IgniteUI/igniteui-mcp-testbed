@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { PROVIDERS_DIR, MCP_COMMAND_OVERRIDES } from './config.ts';
 import { bareMcpClass, normMcpClass, qualifyMcpClass } from './mcp-class.ts';
 import { secretStatus, type SecretStatus } from './secrets.ts';
+import { packDepsStatus, type PackDepsStatus } from './pack-deps.ts';
 import type {
   FrameworkDef, PackConfigureStep, PackMcpClass, PackMcpServer, PackMcpSource, PackOption, PackOrigin,
   PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack,
@@ -362,10 +363,17 @@ function validateServer(s: any, label: string): void {
   if (s.args !== undefined && !isStrArray(s.args)) throw new Error(`${label}.args must be an array of strings when provided`);
 }
 
+// A registry package name with an optional version or range — no git/URL/file specs,
+// since each one is handed to `npm install` at runtime.
+export const NPM_SPEC = /^(?!-)(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9._~^<>=*|+-]+)?$/;
+
 function validateContainerDeps(cd: unknown): ProviderPack['containerDeps'] {
   if (cd === undefined) return undefined;
   if (!isObj(cd) || (cd.npmGlobal !== undefined && !isStrArray(cd.npmGlobal))) {
     throw new Error('containerDeps.npmGlobal must be an array of strings');
+  }
+  for (const spec of cd.npmGlobal || []) {
+    if (!NPM_SPEC.test(spec)) throw new Error(`containerDeps.npmGlobal "${spec}" must be a registry package name, optionally @version`);
   }
   return cd.npmGlobal ? { npmGlobal: [...cd.npmGlobal] } : {};
 }
@@ -616,9 +624,9 @@ export function hashPackFolder(dir: string): string {
 
 /** The pack as the browser sees it: no container paths, and secret status (set /
  * missing) in place of the declarations. Never a value. */
-export function publicPack(p: ProviderPack): Omit<ProviderPack, 'dir' | 'secrets'> & { secrets: SecretStatus[] } {
+export function publicPack(p: ProviderPack): Omit<ProviderPack, 'dir' | 'secrets'> & { secrets: SecretStatus[]; deps: PackDepsStatus } {
   const { dir: _dir, secrets: _s, ...rest } = p;
-  return { ...rest, secrets: secretStatus(p) };
+  return { ...rest, secrets: secretStatus(p), deps: packDepsStatus(p) };
 }
 
 // Without `routes`, a pack gets route-config with the state-nav fallback: the fallback

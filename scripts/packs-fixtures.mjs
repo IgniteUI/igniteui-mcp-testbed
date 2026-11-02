@@ -554,6 +554,72 @@ const v2 = {
   delete process.env.P3_TEMPLATE;
 }
 
+// ── container deps and pack validation (4) ──────────────────────────────────
+{
+  const deps = await import('../src/pack-deps.ts');
+  const { validatePackCli } = await import('../src/pack-validate.ts');
+
+  const withDeps = (npmGlobal) => reg.validatePack({ ...structuredClone(v2), name: 'd4', frameworks: [fw('d4-fw')], containerDeps: { npmGlobal } });
+  check('deps: registry names and versions accepted',
+    withDeps(['reveal-cli', '@scope/pkg@^1.2.3', 'x@1.0.0', 'y@latest']).containerDeps.npmGlobal.length, 4);
+  for (const bad of ['git+https://github.com/a/b.git', '../local', '-g', 'file:x', 'a b', 'https://x/y.tgz', 'UPPER']) {
+    throws(`deps: rejects ${bad}`, () => withDeps([bad]), /registry package name/);
+  }
+
+  const none = reg.validatePack(structuredClone(v2));
+  check('deps: none declared ⇒ nothing to install', [await deps.ensurePackDeps(none), deps.packDepsStatus(none).state], [{}, 'none']);
+  const declared = withDeps(['left-pad@1.3.0']);
+  check('deps: declared, not started ⇒ pending', deps.packDepsStatus(declared).state, 'pending');
+  process.env.MATRIX_VALIDATE = '1';
+  deps.startPackDeps(declared);
+  check('deps: validate-only modes never start an install', deps.packDepsStatus(declared).state, 'pending');
+  delete process.env.MATRIX_VALIDATE;
+  check('deps: per-pack prefix', deps.packDepsDir('d4').split(path.sep).join('/').endsWith('/d4'), true);
+
+  const run = async (target) => {
+    const out = [], log = console.log, err = console.error;
+    console.log = (m) => out.push(String(m)); console.error = (m) => out.push(String(m));
+    try { return { code: await validatePackCli(target), out }; } finally { console.log = log; console.error = err; }
+  };
+  const mkPack = (name, body, files = {}) => {
+    const dir = path.join(root, 'vp', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({ schemaVersion: 2, name, displayName: name, ...body }));
+    for (const [rel, c] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), c); }
+    return dir;
+  };
+  const node = { cmd: 'node', argv: [] };
+  const good = mkPack('vp-good', {
+    frameworks: [{ id: 'vp-good-fw', label: 'G', scaffold: { kind: 'template', from: 'template' }, dev: node }],
+    mcp: { classes: [{ id: 'docs', label: 'D' }], servers: [{ name: 'docs', class: 'docs', command: 'node' }] },
+  }, { 'template/package.json': '{}', 'tests/vp-good-fw/a.spec.ts': '' });
+  const g = await run(good);
+  check('validate: good pack exits 0', g.code, 0);
+  check('validate: good pack reports no ✗', g.out.filter((l) => l.startsWith('✗')), []);
+  check('validate: reports tests and the template', [g.out.some((l) => /tests for vp-good-fw/.test(l)), g.out.some((l) => /folder template present/.test(l))], [true, true]);
+
+  const bad = mkPack('vp-bad', {
+    frameworks: [{ id: 'vp-bad-fw', label: 'B', scaffold: { kind: 'template', from: 'missing' }, dev: { cmd: 'no-such-cmd-xyz', argv: [] } }],
+    mcp: { classes: [{ id: 'docs', label: 'D' }, { id: 'unused', label: 'U' }], servers: [{ name: 'docs', class: 'docs', command: 'node' }] },
+    secrets: [{ name: 'VP_LICENSE', file: 'license.key' }],
+  });
+  const b = await run(bad);
+  check('validate: broken pack exits 1', b.code, 1);
+  check('validate: names each problem', [
+    b.out.some((l) => /✗ folder missing not found/.test(l)),
+    b.out.some((l) => /✗ secret VP_LICENSE missing/.test(l)),
+    b.out.some((l) => /✗ command no-such-cmd-xyz not found/.test(l)),
+    b.out.some((l) => /⚠ MCP class vp-bad\/unused has no server/.test(l)),
+  ], [true, true, true, true]);
+  const clash = mkPack('vp-clash', { frameworks: [{ id: 'react', label: 'R', scaffold: node, dev: node }] });
+  check('validate: framework id collision', (await run(clash)).out.some((l) => /✗ collision: .*built-in framework id/.test(l)), true);
+  const broken = mkPack('vp-schema', { frameworks: [] });
+  const s = await run(broken);
+  check('validate: schema error exits 1 with the reason', [s.code, s.out.some((l) => /frameworks must be a non-empty array/.test(l))], [1, true]);
+  check('validate: missing path is misuse', (await run(path.join(root, 'vp', 'nope'))).code, 2);
+  for (const n of ['vp-good', 'vp-bad']) reg.unregisterPack(n);
+}
+
 // ── the shipped example + schema ────────────────────────────────────────────
 {
   const example = JSON.parse(fs.readFileSync(new URL('../provider.example.angular-material.json', import.meta.url), 'utf8'));

@@ -3,6 +3,7 @@
 import type { Express } from 'express';
 import { getPack, savePack, deletePack, validatePack, publicPack, listProvidersForUi } from '../provider-registry.ts';
 import type { ProviderPack } from '../types.ts';
+import { startPackDeps } from '../pack-deps.ts';
 
 export default function registerProviderRoutes(app: Express): void {
   /** Every provider: the built-in Ignite UI metadata first, then the loaded packs. */
@@ -25,6 +26,7 @@ export default function registerProviderRoutes(app: Express): void {
     }
     try {
       savePack(req.body, pack);
+      startPackDeps(getPack(pack.name) ?? pack);
       res.json({ ok: true, provider: publicPack(getPack(pack.name) ?? pack) });
     } catch (e: any) {
       res.status(400).json({ ok: false, error: e.message });

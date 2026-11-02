@@ -13,6 +13,8 @@
 #   ./run.sh --matrix-config <file> --validate
 #                                       validate the config and exit (no matrix run,
 #                                       no ports published); exit 0 = valid, 1 = invalid
+#   ./run.sh --validate-pack <dir|file> check a provider pack (schema, collisions, secrets,
+#                                       container deps, commands) and exit; nothing runs
 set -euo pipefail
 
 usage() {
@@ -31,6 +33,10 @@ Usage:
   ./run.sh --matrix-config <file> --validate
                                    validate the config and exit — no matrix run,
                                    no ports published (exit 0 = valid, 1 = invalid)
+  ./run.sh --validate-pack <dir|file>
+                                   check a provider pack folder (with pack.json) or
+                                   single-file pack inside the image and exit — nothing
+                                   is scaffolded or installed (exit 0 = OK, 1 = problems)
   ./run.sh -h | --help | help      show this help
 
 Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app dev server
@@ -77,6 +83,7 @@ Examples:
   ./run.sh
   ./run.sh --matrix-config ./matrix.example.json
   ./run.sh --matrix-config ./matrix.json --validate
+  ./run.sh --validate-pack ./providers-data/reveal
 EOF
 }
 
@@ -164,8 +171,11 @@ fi
 # Run-mode arguments.
 MATRIX_CONFIG_FILE=""
 VALIDATE=0
+PACK_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --validate-pack)
+      PACK_PATH="${2:?--validate-pack needs a pack folder or .json file}"; shift 2 ;;
     --matrix-config)
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
     --validate)
@@ -187,6 +197,14 @@ if [[ "$VALIDATE" == 1 && -z "$MATRIX_CONFIG_FILE" ]]; then
   echo "--validate requires --matrix-config <file>" >&2
   exit 2
 fi
+if [[ -n "$PACK_PATH" ]]; then
+  [[ -n "$MATRIX_CONFIG_FILE" ]] && { echo "--validate-pack can't be combined with --matrix-config" >&2; exit 2; }
+  [[ -e "$PACK_PATH" ]] || { echo "pack not found: $PACK_PATH" >&2; exit 2; }
+  PACK_PATH="$(cd "$(dirname "$PACK_PATH")" && pwd)/$(basename "$PACK_PATH")"
+fi
+# Either validate mode: report and exit, no ports, no session left behind.
+CHECK_ONLY=0
+[[ "$VALIDATE" == 1 || -n "$PACK_PATH" ]] && CHECK_ONLY=1
 
 # Provider API keys: read them from .env (the same file the build reads) and forward
 # any set key vars into the container so a matrix config's apiKeyEnv — or the provider
@@ -269,6 +287,8 @@ done
 
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
 [[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
+# The pack is mounted under its own name, since a folder pack's name must match it.
+[[ -n "$PACK_PATH" ]] && ENVFLAGS+=(-e "PACK_VALIDATE=/validate-pack/$(basename "$PACK_PATH")")
 
 mkdir -p "$OUT"
 # Run history persists across containers, so it lives in a stable shared dir
@@ -300,7 +320,9 @@ mkdir -p "$IMAGES"
 # at /secrets — outside the app dir, so the agent's project never contains them.
 SECRETS="$PWD/secrets"
 mkdir -p "$SECRETS"
-if [[ "$VALIDATE" == 1 ]]; then
+if [[ -n "$PACK_PATH" ]]; then
+  echo "Validating provider pack: $PACK_PATH"
+elif [[ "$VALIDATE" == 1 ]]; then
   echo "Validating matrix config: $MATRIX_CONFIG_FILE"
 else
   echo "Session artifacts -> $OUT"
@@ -348,6 +370,9 @@ case "$(uname -s)" in
       MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
       VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
     fi
+    if [[ -n "$PACK_PATH" ]]; then
+      VOL+=("-v" "$(cygpath -m "$PACK_PATH"):/validate-pack/$(basename "$PACK_PATH"):ro")
+    fi
     USERNS=()
     ;;
   *)
@@ -355,6 +380,9 @@ case "$(uname -s)" in
     VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z" "-v" "${SECRETS}:/secrets:ro,Z")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
+    fi
+    if [[ -n "$PACK_PATH" ]]; then
+      VOL+=("-v" "${PACK_PATH}:/validate-pack/$(basename "$PACK_PATH"):ro,Z")
     fi
     USERNS=("--userns=keep-id")
     ;;
@@ -367,13 +395,13 @@ PORTS=(
 )
 # Validate mode publishes no ports (it exits immediately and must not conflict with a
 # testbed that is already running).
-[[ "$VALIDATE" == 1 ]] && PORTS=()
+[[ "$CHECK_ONLY" == 1 ]] && PORTS=()
 
 # Allocate a TTY only when we actually have one, so CI / piped invocations
 # (e.g. a matrix-config run driven from a script) don't fail on `-t`.
 if [[ -t 0 ]]; then TTY=(-it); else TTY=(-i); fi
 
-if [[ "$VALIDATE" == 1 ]]; then
+if [[ "$CHECK_ONLY" == 1 ]]; then
   # Not exec: reap the (empty) session dir the mount needed, then forward the exit code.
   podman run --rm "${TTY[@]}" \
     --name "igniteui-testbed-validate-$SESSION" \

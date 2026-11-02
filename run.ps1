@@ -13,6 +13,8 @@
 #   .\run.ps1 -MatrixConfig <file> -Validate
 #                                        validate the config and exit (no matrix run,
 #                                        no ports published); exit 0 = valid, 1 = invalid
+#   .\run.ps1 -ValidatePack <dir|file>   check a provider pack (schema, collisions, secrets,
+#                                        container deps, commands) and exit; nothing runs
 
 <#
 .SYNOPSIS
@@ -74,6 +76,11 @@ headlessly unless the file sets "autoRun": false (the UI prefills from it either
 With -MatrixConfig: validate the config and exit — no matrix run, no ports published.
 Exit code 0 = valid, 1 = invalid.
 
+.PARAMETER ValidatePack
+Path to a provider pack folder (with pack.json) or single-file pack. Checks it inside the
+image — schema, name/framework collisions, secrets, container deps, commands — and exits;
+nothing is scaffolded or installed. Exit code 0 = OK, 1 = problems.
+
 .PARAMETER Help
 Show this help and exit.
 
@@ -91,9 +98,12 @@ Show this help and exit.
 
 .EXAMPLE
 .\run.ps1 -MatrixConfig .\matrix.json -Validate
+
+.EXAMPLE
+.\run.ps1 -ValidatePack .\providers-data\reveal
 #>
 [CmdletBinding()]
-param([string]$Command, [switch]$Prune, [string[]]$BuildArg, [string]$MatrixConfig, [switch]$Validate, [switch]$Help)
+param([string]$Command, [switch]$Prune, [string[]]$BuildArg, [string]$MatrixConfig, [switch]$Validate, [string]$ValidatePack, [switch]$Help)
 
 $ErrorActionPreference = 'Stop'
 
@@ -186,6 +196,14 @@ if ($Validate -and -not $mcAbs) {
   Write-Host '-Validate requires -MatrixConfig <file>'
   exit 2
 }
+if ($ValidatePack) {
+  if ($mcAbs) { Write-Host "-ValidatePack can't be combined with -MatrixConfig"; exit 2 }
+  if (-not (Test-Path $ValidatePack)) { Write-Host "pack not found: $ValidatePack"; exit 2 }
+  $packAbs = (Resolve-Path $ValidatePack).Path.TrimEnd('\', '/')
+  $packName = Split-Path $packAbs -Leaf
+}
+# Either validate mode: report and exit, no ports, no session left behind.
+$checkOnly = $Validate -or [bool]$ValidatePack
 
 # Provider API keys: read them from .env (the same file the build reads) and forward
 # any set key vars into the container so a matrix config's apiKeyEnv — or the provider
@@ -260,6 +278,8 @@ foreach ($v in (Get-ChildItem env: | Where-Object { $_.Name -like 'SECRET_*' -an
 
 if ($mcAbs) { $envFlags += @('-e', 'MATRIX_CONFIG=/matrix-config.json') }
 if ($Validate) { $envFlags += @('-e', 'MATRIX_VALIDATE=1') }
+# The pack is mounted under its own name, since a folder pack's name must match it.
+if ($ValidatePack) { $envFlags += @('-e', "PACK_VALIDATE=/validate-pack/$packName") }
 
 $Session = Get-Date -Format "yyyyMMdd'T'HHmmss"
 $Out  = Join-Path $PSScriptRoot "sessions/$Session"
@@ -288,7 +308,9 @@ $Images = Join-Path $PSScriptRoot 'prompt-images'
 $Secrets = Join-Path $PSScriptRoot 'secrets'
 New-Item -ItemType Directory -Force -Path $Out, $Hist, $Skills, $Providers, $Tests, $Images, $Secrets | Out-Null
 
-if ($Validate) {
+if ($ValidatePack) {
+  Write-Host "Validating provider pack: $packAbs"
+} elseif ($Validate) {
   Write-Host "Validating matrix config: $mcAbs"
 } else {
   Write-Host "Session artifacts -> $Out"
@@ -319,6 +341,7 @@ if ($IsLinux -or $IsMacOS) {
   # Linux / macOS (pwsh): SELinux relabel + keep host UID for a writable bind mount.
   $vol    = @('-v', "${Out}:/work:Z", '-v', "${Hist}:/history:Z", '-v', "${Skills}:/local-skills:ro,Z", '-v', "${Providers}:/providers:Z", '-v', "${Tests}:/tests:ro,Z", '-v', "${Images}:/prompt-images:Z", '-v', "${Secrets}:/secrets:ro,Z")
   if ($mcAbs) { $vol += @('-v', "${mcAbs}:/matrix-config.json:ro,Z") }
+  if ($ValidatePack) { $vol += @('-v', "${packAbs}:/validate-pack/${packName}:ro,Z") }
   $userns = @('--userns=keep-id')
 }
 else {
@@ -335,6 +358,10 @@ else {
     $mcHost = $mcAbs -replace '\\', '/'
     $vol += @('-v', "${mcHost}:/matrix-config.json:ro")
   }
+  if ($ValidatePack) {
+    $packHost = $packAbs -replace '\\', '/'
+    $vol += @('-v', "${packHost}:/validate-pack/${packName}:ro")
+  }
   $userns = @()
 }
 
@@ -344,7 +371,7 @@ if ([Console]::IsInputRedirected) { $tty = @('-i') } else { $tty = @('-it') }
 
 # Validate mode publishes no ports (it exits immediately and must not conflict with a
 # testbed that is already running).
-if ($Validate) {
+if ($checkOnly) {
   $podmanArgs = @('run', '--rm') + $tty + @('--name', "igniteui-testbed-validate-$Session") +
     $vol + $userns + $envFlags + $Image
   podman @podmanArgs

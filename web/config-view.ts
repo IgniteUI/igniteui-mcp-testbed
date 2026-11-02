@@ -44,6 +44,21 @@ async function removePack(pack: ProviderPack) {
   } catch (e: any) { alert(e.message); }
 }
 
+// containerDeps are installed when the pack loads (src/pack-deps.ts); show how that went.
+const depsNote = (pack: ProviderPack) => {
+  const d = pack.deps || { state: 'pending' };
+  const list = (pack.containerDeps?.npmGlobal || []).join(', ');
+  if (d.state === 'ok') {
+    const v = Object.entries(d.versions || {}).map(([k, x]) => `${k}@${x}`).join(', ');
+    return html`<p class="note" style="margin:.25rem 0 0">Container deps: ✓ ${v || list}</p>`;
+  }
+  if (d.state === 'failed') {
+    return html`<p class="note warn" style="margin:.25rem 0 0">Container deps: ✗ install failed — ${d.error || list}.
+      The next run on this pack retries the install, and fails if it fails again.</p>`;
+  }
+  return html`<p class="note" style="margin:.25rem 0 0">Container deps: installing ${list}…</p>`;
+};
+
 const packCard = (pack: ProviderPack) => html`
   <div class="provider-card ${pack.origin === 'builtin' ? 'builtin' : ''}">
     <div class="provider-card-head">
@@ -66,14 +81,7 @@ const packCard = (pack: ProviderPack) => html`
           title=${`${s.description ? s.description + ' — ' : ''}${s.source}`}>${s.name}
           ${s.set ? '✓ set' : s.required ? '✗ missing' : '— not set (optional)'}</span>`)}
       </p>` : nothing}
-    ${pack.containerDeps?.npmGlobal?.length ? html`
-      <p class="note warn" style="margin:.25rem 0 0">
-        ⚠ <strong>Container rebuild required.</strong> This pack needs global npm packages that must be baked into the image.<br>
-        1. Open <code>Containerfile</code> and find the <em>3rd-party provider dependencies</em> section.<br>
-        2. Uncomment the <code>RUN</code> line and replace the placeholder with:<br>
-        &nbsp;&nbsp;&nbsp;<code>npm install -g ${pack.containerDeps.npmGlobal.join(' ')}</code><br>
-        3. Rebuild: <code>.\\run.ps1 build</code> (Windows) · <code>./run.sh build</code> (Linux/macOS)
-      </p>` : nothing}
+    ${pack.containerDeps?.npmGlobal?.length ? depsNote(pack) : nothing}
   </div>`;
 
 function tpl() {

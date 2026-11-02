@@ -44,7 +44,10 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 ./run.sh                  # run a fresh container; publishes ports 8080 / 4096 / 5000
 ./run.sh --matrix-config ./matrix.json  # run + execute a matrix from a JSON config (no UI needed)
 ./run.sh --matrix-config ./matrix.json --validate  # just validate the config and exit
+./run.sh --validate-pack ./providers-data/reveal    # check a provider pack and exit
 ```
+
+Adding your own library? See [ADDING-A-LIBRARY.md](ADDING-A-LIBRARY.md).
 
 Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
 each). The `-Prune` / `--prune` flag runs `podman image prune -f` after a successful
@@ -241,7 +244,7 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `platforms` | yes | Built-in framework ids (`angular`, `blazor`, `react`, `webcomponents`) **or any registered provider pack's framework ids** (from `./providers-data/` or this file's `providers` field). Unknown names are ignored with a warning. |
 | `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. For built-in platforms `mcps` ⊆ `igniteui` / `theming` / `custom`; for provider platforms use the pack's MCP server `class` names (+ `custom`). Classes no selected platform declares warn at load. `localSkills` without `skills` = local-only. Deduped. |
 | `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
-| `providers` | no | Array of packs the config uses. Each entry is a **pack name** already in `./providers-data/` (`"reveal"`), a **path** to a pack file or folder (relative to `/providers`, e.g. `"experimental/reveal"`), or an **inline pack body** (same JSON the Configuration tab uploads; inline packs can't be folder packs). Registered *before* the request is validated, so `platforms`/`mcps` can reference them. Paths and inline bodies are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
+| `providers` | no | Array of packs the config uses. Each entry is a **pack name** already in `./providers-data/` (`"reveal"`), a **path** to a pack file or folder (relative to `/providers`, e.g. `"experimental/reveal"`), or an **inline pack body** (same JSON the Configuration tab uploads; inline packs can't be folder packs). Registered *before* the request is validated, so `platforms`/`mcps` can reference them. Paths and inline bodies are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` get them installed at load. |
 | `prompt` | yes | The shared prompt every entry runs. |
 | `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
 | `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
@@ -268,9 +271,13 @@ which is the thing being tested) with the Angular CLI MCP as its toggleable serv
 ./run.sh --matrix-config ./matrix.example.angular-material.json
 ```
 
-Its `containerDeps.npmGlobal` lists `@angular/cli`; the scaffold works without baking it
-in (npx fetches on demand, slower per entry) — add it to the Containerfile's
-"3rd-party provider dependencies" section and rebuild to skip the per-session fetch.
+Its `containerDeps.npmGlobal` lists `@angular/cli`, which the server installs when the
+pack loads (into `/opt/pack-deps/<pack>`, put on `PATH`) — no rebuild. A pack's
+`containerDeps` must be registry package names, optionally `@version`; pin them, since the
+install happens per container and the versions it got are recorded with each run
+(`config.toolVersions`, as `npm:<package>`). The first run on a freshly loaded pack waits
+for the install, and a failed install fails the run before it scaffolds anything. This
+needs npm reachable from the container.
 
 ## How a session works
 
