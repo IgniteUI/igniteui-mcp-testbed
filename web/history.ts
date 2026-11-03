@@ -391,7 +391,7 @@ function bindGridTemplates() {
           ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
             gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
           <dt>opencode</dt><dd>${opencodeSummary(c)}</dd>
-          <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
+          <dt>Tests selected</dt><dd>${!Array.isArray(c.selectedTests) ? 'all discovered' : c.selectedTests.length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}

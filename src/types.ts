@@ -269,7 +269,7 @@ export interface StoredConfig {
   excludedSkills: string[];
   overrideSkills: boolean;
   localSkillsOnly: boolean;
-  selectedTests: string[];
+  selectedTests?: string[];
   promptImages: string[];
   models: string[];
   customBaseUrl: string | null;

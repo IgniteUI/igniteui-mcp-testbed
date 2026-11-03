@@ -55,7 +55,8 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     excludedSkills: Array.isArray(c.excludedSkills) ? c.excludedSkills.slice() : [],
     overrideSkills: !!c.overrideSkills,
     localSkillsOnly: !!c.localSkillsOnly,
-    selectedTests: Array.isArray(c.selectedTests) ? c.selectedTests.slice() : [],
+    // Absent = "run all discovered"; [] = "run none". Never collapse the two.
+    ...(Array.isArray(c.selectedTests) ? { selectedTests: c.selectedTests.slice() } : {}),
     promptImages: Array.isArray(c.promptImages) ? c.promptImages.slice() : [],
     models: c.model ? [c.model] : [],
     customBaseUrl: c.customBaseUrl || null,
