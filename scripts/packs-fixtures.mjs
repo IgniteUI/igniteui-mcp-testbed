@@ -331,6 +331,18 @@ const v2 = {
   check('maskingEmit: log/error masked, others untouched', seen,
     [['log', 'echo ***'], ['error', { msg: '***' }], ['done', { v: 'sk-reveal-0123456789' }]]);
 
+  // secretEnv above resolved the license file, which registers its contents.
+  check('mask: file secret contents', sec.maskSecrets('cat → LICENSE-BODY'), 'cat → ***');
+  const lm = sec.lineMasker();
+  const parts = [lm.push('key=sk-rev'), lm.push('eal-0123456789\nnext'), lm.flush()];
+  check('lineMasker: secret split across chunks is masked', parts, ['', 'key=***\n', 'next']);
+
+  const { run } = await import('../src/proc/exec.ts');
+  const logs = [];
+  const script = "process.stdout.write('k=sk-rev');setTimeout(()=>process.stdout.write('eal-0123456789\\ndone'),150)";
+  await run(process.execPath, ['-e', script], root, (t, m) => { if (t === 'log') logs.push(m); }, { maskOutput: true });
+  check('run maskOutput: split secret never emitted', logs.slice(1).join('|'), 'k=***|done');
+
   // Registered so writeOpencodeConfig and publicPack find it by framework.
   reg.registerPack(ok);
   const pub = JSON.stringify(reg.publicPack(reg.getPack('lic')));
@@ -618,6 +630,74 @@ const v2 = {
   check('validate: schema error exits 1 with the reason', [s.code, s.out.some((l) => /frameworks must be a non-empty array/.test(l))], [1, true]);
   check('validate: missing path is misuse', (await run(path.join(root, 'vp', 'nope'))).code, 2);
   for (const n of ['vp-good', 'vp-bad']) reg.unregisterPack(n);
+}
+
+// ── PR #34 review fixes ─────────────────────────────────────────────────────
+{
+  check('options: legacy projectType/theme fill unset options',
+    reg.resolveRunOptions('angular', {}, { type: 'igx-ts', theme: 'dark' }), { type: 'igx-ts', theme: 'dark' });
+  check('options: explicit option beats legacy',
+    reg.resolveRunOptions('angular', { type: 'x' }, { type: 'igx-ts' }).type, 'x');
+
+  const bfPack = (re) => ({ ...structuredClone(v2), name: 'bf', frameworks: [{ ...fw('bf-fw'), buildFailed: [re] }] });
+  throws('buildFailed: nested quantifier rejected', () => reg.validatePack(bfPack('(a+)+$')), /nests quantifiers/);
+  check('buildFailed: ordinary alternation kept', reg.validatePack(bfPack('(error|fail)+ in')).frameworks[0].buildFailed, ['(error|fail)+ in']);
+
+  const { buildMcpConfig } = await import('../src/pipeline/mcp-config.ts');
+  const scoped = reg.validatePack({
+    schemaVersion: 2, name: 'scoped', displayName: 'Scoped', frameworks: [fw('sc-ng'), fw('sc-react')],
+    mcp: {
+      classes: [{ id: 'ngonly', label: 'NG', frameworks: ['sc-ng'] }, { id: 'all', label: 'All' }],
+      servers: [{ name: 'ng-srv', class: 'ngonly', command: 'ng-mcp' }, { name: 'all-srv', class: 'all', command: 'all-mcp' }],
+    },
+  });
+  const mcpApp = path.join(root, 'mcp-app');
+  fs.mkdirSync(mcpApp);
+  const enabledFor = (framework) => {
+    const { mcp } = buildMcpConfig(scoped, { framework, enabledMcps: ['ngonly', 'all'] }, mcpApp, () => {});
+    return Object.entries(mcp).filter(([, d]) => d.enabled !== false).map(([n]) => n).sort();
+  };
+  check('mcp: framework-limited class on for its framework', enabledFor('sc-ng'), ['all-srv', 'ng-srv']);
+  check('mcp: framework-limited class off elsewhere', enabledFor('sc-react'), ['all-srv']);
+
+  const { copyTemplate } = await import('../src/pipeline/template.ts');
+  const tplSrc = path.join(root, 'tpl-src'), tplDest = path.join(root, 'tpl-dest');
+  fs.mkdirSync(tplSrc);
+  fs.writeFileSync(path.join(tplSrc, 'run.sh'), '#!/bin/sh\necho {{name}}\n');
+  fs.chmodSync(path.join(tplSrc, 'run.sh'), 0o755);
+  copyTemplate(tplSrc, tplDest, { name: 'app' }, () => {});
+  if (process.platform !== 'win32') {
+    check('template: executable bit kept', fs.statSync(path.join(tplDest, 'run.sh')).mode & 0o777, 0o755);
+  }
+  check('template: vars filled', fs.readFileSync(path.join(tplDest, 'run.sh'), 'utf8'), '#!/bin/sh\necho app\n');
+
+  const livePack = path.join(providersDir, 'live');
+  fs.mkdirSync(livePack);
+  const liveBody = { schemaVersion: 2, name: 'live', displayName: 'Live', version: '1', frameworks: [fw('live-fw')] };
+  fs.writeFileSync(path.join(livePack, 'pack.json'), JSON.stringify(liveBody));
+  reg.registerPack(reg.readPackFrom(livePack));
+  const before = reg.getPack('live').hash;
+  check('refresh: unchanged folder keeps the same object', reg.refreshFolderPack('live') === reg.getPack('live'), true);
+  fs.writeFileSync(path.join(livePack, 'pack.json'), JSON.stringify({ ...liveBody, version: '2' }));
+  const after = reg.refreshFolderPack('live');
+  check('refresh: edit reloads the pack', [after.hash !== before, reg.getPack('live').version], [true, '2']);
+  fs.writeFileSync(path.join(livePack, 'pack.json'), '{ broken');
+  throws('refresh: broken edit fails the run', () => reg.refreshFolderPack('live'), /changed on disk and no longer loads/);
+  reg.unregisterPack('live');
+  reg.unregisterPack('scoped');
+
+  const { probeVersion } = await import('../src/pipeline/pipeline.ts');
+  check('versions: banner skipped', probeVersion(' _____  _ _\r\n|_   _|\r\n\r\nIgnite UI CLI version: 15.8.2\nOS: Linux\n'), '15.8.2');
+  check('versions: v-prefixed', probeVersion('v20.11.1\n'), '20.11.1');
+  check('versions: prerelease kept', probeVersion('my-lib 2.0.0-beta.3'), '2.0.0-beta.3');
+  check('versions: no number ⇒ first line', probeVersion('\n  unknown build\nmore'), 'unknown build');
+
+  const { packPathEnv } = await import('../src/pack-deps.ts');
+  const depsPack = { name: 'withdeps', containerDeps: { npmGlobal: ['x@1.0.0'] } };
+  check('deps PATH: pack bin first, global PATH untouched',
+    [packPathEnv(depsPack).PATH.split(path.delimiter)[0].endsWith(path.join('withdeps', 'bin')), process.env.PATH.includes('withdeps')],
+    [true, false]);
+  check('deps PATH: no deps ⇒ no PATH', packPathEnv({ name: 'none' }), {});
 }
 
 // ── the shipped example + schema ────────────────────────────────────────────

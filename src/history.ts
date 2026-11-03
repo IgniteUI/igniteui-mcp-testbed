@@ -2,9 +2,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord } from './types.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord, PackProvenance } from './types.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
-import { getPackForFramework, providerFor, mcpOverrideFor } from './provider-registry.ts';
+import { getPackForFramework, providerFor, mcpOverrideFor, canonicalMcpClasses } from './provider-registry.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -68,10 +68,12 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     // entirely when nothing is overridden, so the field's presence is itself the signal.
     ...(() => {
       const cmds: Record<string, string> = {};
-      for (const cls of Array.isArray(c.enabledMcps) ? c.enabledMcps : []) {
-        const cmd = mcpOverrideFor(cls);
+      const own = Array.isArray(c.enabledMcps) ? c.enabledMcps : [];
+      const qualified = c.framework ? canonicalMcpClasses(c.framework, own) : own;
+      own.forEach((cls: string, i: number) => {
+        const cmd = mcpOverrideFor(qualified[i]);
         if (cmd) cmds[cls] = cmd;
-      }
+      });
       return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
     })(),
     // Packs are loaded at startup, so this is the pack the run will actually use.
@@ -211,6 +213,11 @@ export function updateSkillSources(id: string | null, sources: SkillSourceRecord
 
 // The pack's `versions` probes run after install, so (like skill sources) they land on a
 // record that already exists.
+export function updatePack(id: string | null, pack: PackProvenance | null): HistoryRecord | null {
+  if (!id || !pack) return null;
+  return update(id, (r) => { r.config.pack = { ...pack }; });
+}
+
 export function updateToolVersions(id: string | null, versions: Record<string, string> | null): HistoryRecord | null {
   if (!id || !versions || !Object.keys(versions).length) return null;
   return update(id, (r) => { r.config.toolVersions = { ...versions }; });

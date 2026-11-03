@@ -1,9 +1,10 @@
 'use strict';
 
 // Installs a pack's `containerDeps.npmGlobal` at runtime, into its own prefix under
-// PACK_DEPS_DIR, and puts that prefix's bin/ on the wizard's PATH so every later child —
-// the pack's steps, the dev server, opencode and the MCP servers it launches — finds the
-// tools. Started when the pack loads, awaited before the pack's first run step, so a
+// PACK_DEPS_DIR. That prefix's bin/ goes on the PATH of that pack's runs only
+// (`packPathEnv`): its steps, the dev server, opencode and the MCP servers it launches.
+// Never on the wizard's own PATH, or two packs pinning different versions of one CLI
+// would both get whichever installed last. Started when the pack loads, awaited before the pack's first run step, so a
 // failed install fails the run up front instead of as a mid-run `command not found`.
 //
 // Trade-off (decided in docs/plan-provider-packs.md): runs need npm reachable, and an
@@ -40,9 +41,11 @@ export function packDepsDir(packName: string): string {
   return path.join(PACK_DEPS_DIR, packName);
 }
 
-function addToPath(bin: string): void {
-  const parts = (process.env.PATH || '').split(path.delimiter);
-  if (!parts.includes(bin)) process.env.PATH = [bin, ...parts].filter(Boolean).join(path.delimiter);
+/** PATH for a child of one of this pack's runs; empty when the pack has no deps. */
+export function packPathEnv(pack: ProviderPack | undefined): Record<string, string> {
+  if (!pack || !depsOf(pack).length) return {};
+  const bin = path.join(packDepsDir(pack.name), 'bin');
+  return { PATH: [bin, process.env.PATH || ''].filter(Boolean).join(path.delimiter) };
 }
 
 async function installedVersions(prefix: string): Promise<Record<string, string>> {
@@ -70,7 +73,6 @@ export function ensurePackDeps(pack: ProviderPack): Promise<Record<string, strin
     try {
       fs.mkdirSync(prefix, { recursive: true });
       await capture('npm', ['install', '-g', '--prefix', prefix, '--no-fund', '--no-audit', ...deps], prefix, null, INSTALL_TIMEOUT_MS);
-      addToPath(path.join(prefix, 'bin'));
       status.versions = await installedVersions(prefix);
       status.state = 'ok';
       return status.versions;

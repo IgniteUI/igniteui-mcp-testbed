@@ -2,6 +2,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import type { Emit } from '../types.ts';
+import { lineMasker } from '../secrets.ts';
 
 export type OutputStream = 'stdout' | 'stderr';
 
@@ -30,6 +31,8 @@ export interface RunOpts {
   stallMs?: number;
   onStall?: ((silentMs: number) => void) | null;
   onResume?: ((silentMs: number) => void) | null;
+  /** The step was given pack secrets: emit whole lines, masked (src/secrets.ts). */
+  maskOutput?: boolean;
 }
 
 /** Error from a `run()` that hit `timeoutMs`. Flagged rather than identified by its
@@ -239,13 +242,21 @@ export function run(cmd: string, argv: string[], cwd: string, emit: Emit, opts: 
         if (opts.onResume) guard(() => opts.onResume!(silent));
       }
       if (opts.onOutput) guard(() => opts.onOutput!(stream, chunk));
-      emit('log', chunk.trimEnd());
+      const out = maskers ? maskers[stream].push(chunk) : chunk;
+      if (out) emit('log', out.trimEnd());
     };
+    const maskers = opts.maskOutput ? { stdout: lineMasker(), stderr: lineMasker() } : null;
     child.stdout?.on('data', (d: string) => feed('stdout', d));
     child.stderr?.on('data', (d: string) => feed('stderr', d));
 
     child.on('error', (e) => settle(e));
     child.on('close', (code) => {
+      if (maskers) {
+        for (const m of [maskers.stdout, maskers.stderr]) {
+          const rest = m.flush();
+          if (rest.trim()) emit('log', rest.trimEnd());
+        }
+      }
       // On the timeout path the launcher's close proves nothing about its descendants,
       // so it must NOT settle — terminateTree does, once the tree is confirmed gone or
       // the bounded fallback expires. Either way settlement is guaranteed.

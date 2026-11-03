@@ -22,12 +22,33 @@ import type { PackSecretDecl } from './types.ts';
 export const SECRET_ENV_PREFIX = 'SECRET_';
 export const SECRETS_DIR = process.env.SECRETS_DIR || '/secrets';
 
+// Values shorter than this aren't masked: "true" or "1" would shred every log line.
+const MIN_MASK_LEN = 6;
+const MAX_SECRET_FILE_BYTES = 64 * 1024;
+
+const masks = new Set<string>();
+const addMask = (v: string) => { if (v.length >= MIN_MASK_LEN) masks.add(v); };
+
 const envSecrets = new Map<string, string>();
 for (const k of Object.keys(process.env)) {
   if (!k.startsWith(SECRET_ENV_PREFIX)) continue;
   const v = process.env[k];
   delete process.env[k];
-  if (v) envSecrets.set(k.slice(SECRET_ENV_PREFIX.length), v);
+  if (v) { envSecrets.set(k.slice(SECRET_ENV_PREFIX.length), v); addMask(v); }
+}
+
+// A file secret's contents are masked too, whole and line by line, since a step that
+// prints a license file usually prints it a line at a time.
+const registeredFiles = new Set<string>();
+function registerFileSecret(abs: string): void {
+  if (registeredFiles.has(abs)) return;
+  registeredFiles.add(abs);
+  try {
+    if (fs.statSync(abs).size > MAX_SECRET_FILE_BYTES) return;
+    const text = fs.readFileSync(abs, 'utf8');
+    addMask(text.trim());
+    for (const line of text.split(/\r?\n/)) addMask(line.trim());
+  } catch { /* unreadable: secretFile already said it is set, the step will fail on it */ }
 }
 
 
@@ -86,7 +107,9 @@ function resolved(pack: PackLike): Map<string, string> {
   const out = new Map<string, string>();
   for (const s of pack.secrets || []) {
     const v = s.file ? secretFile(pack, s) : envSecrets.get(s.name);
-    if (v) out.set(s.name, v);
+    if (!v) continue;
+    if (s.file) registerFileSecret(v);
+    out.set(s.name, v);
   }
   return out;
 }
@@ -104,15 +127,43 @@ export function secretEnv(pack: PackLike | undefined, extra: Record<string, stri
   return env;
 }
 
-// Values shorter than this aren't masked: "true" or "1" would shred every log line.
-const MIN_MASK_LEN = 6;
+export function hasMasks(): boolean {
+  return masks.size > 0;
+}
 
 export function maskSecrets(text: string): string {
+  if (!masks.size) return text;
   let out = text;
-  for (const v of envSecrets.values()) {
-    if (v.length >= MIN_MASK_LEN && out.includes(v)) out = out.split(v).join('***');
+  // Longest first, so a whole file is masked before its lines are.
+  for (const v of [...masks].sort((a, b) => b.length - a.length)) {
+    if (out.includes(v)) out = out.split(v).join('***');
   }
   return out;
+}
+
+const MAX_PENDING = 64 * 1024;
+
+/** Masks a stream that arrives in arbitrary chunks: output is held back to the last
+ * newline, so a secret split across two chunks is masked once whole. Masks never
+ * contain a newline (file secrets are also registered line by line). */
+export function lineMasker(): { push(chunk: string): string; flush(): string } {
+  let pending = '';
+  return {
+    push(chunk) {
+      pending += chunk;
+      const nl = pending.lastIndexOf('\n');
+      if (nl < 0 && pending.length < MAX_PENDING) return '';
+      const cut = nl < 0 ? pending.length : nl + 1;
+      const ready = pending.slice(0, cut);
+      pending = pending.slice(cut);
+      return maskSecrets(ready);
+    },
+    flush() {
+      const rest = pending;
+      pending = '';
+      return maskSecrets(rest);
+    },
+  };
 }
 
 const maskDeep = (v: any): any =>
@@ -123,9 +174,9 @@ const maskDeep = (v: any): any =>
 
 /** Wrap an emit so a secret a step happens to print never reaches the log or history. */
 export function maskingEmit<T extends (type: string, payload?: any) => void>(emit: T): T {
-  if (!envSecrets.size) return emit;
+  // Checked per call: file secrets register only when a step first resolves them.
   return ((type: string, payload?: any) =>
-    emit(type, type === 'log' || type === 'error' ? maskDeep(payload) : payload)) as T;
+    emit(type, masks.size && (type === 'log' || type === 'error') ? maskDeep(payload) : payload)) as T;
 }
 
 /** Test seam: the scrub ran at import, so fixtures set SECRET_* before importing. */

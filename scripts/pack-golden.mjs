@@ -21,6 +21,11 @@ import { fileURLToPath } from 'url';
 
 const variant = process.argv[2] || 'plain';
 if (variant === 'override' && !process.env.MCP_CMD_IGNITEUI) throw new Error('override run needs MCP_CMD_IGNITEUI');
+// The operator's own settings must not change the result; only the tested override stays.
+for (const k of Object.keys(process.env)) {
+  if (/^(MCP_CMD_|SECRET_)/.test(k) && !(variant === 'override' && k === 'MCP_CMD_IGNITEUI')) delete process.env[k];
+}
+for (const k of ['IGNITEUI_MCP_CMD', 'OPENCODE_CODEMODE', 'BLAZOR_TEMPLATE', 'SECRETS_DIR', 'BUILTIN_PACKS_DIR']) delete process.env[k];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-golden-'));
 process.env.WORK_DIR = tmp;
 process.env.HISTORY_DIR = tmp;

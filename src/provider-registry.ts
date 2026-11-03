@@ -98,12 +98,16 @@ export function resolvePackPath(pack: ProviderPack, rel: string): string {
 }
 
 // A pattern goes into a RegExp run over every poll of the dev-server log, so it must
-// compile and stay short.
+// compile, stay short, and not nest quantifiers (`(a+)+`), the usual catastrophic-
+// backtracking shape that would hang the server on a long log line.
+const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]/;
+
 function validateBuildFailed(v: unknown, label: string): void {
   if (v === undefined) return;
   if (!isStrArray(v) || !v.length) throw new Error(`${label} must be a non-empty array of regex strings`);
   for (const src of v) {
     if (!src || src.length > 200) throw new Error(`${label} entries must be 1–200 characters`);
+    if (NESTED_QUANTIFIER.test(src)) throw new Error(`${label} "${src}" nests quantifiers — rewrite it without a repeated group that itself repeats`);
     try { new RegExp(src, 'i'); } catch (e: any) { throw new Error(`${label} "${src}" is not a valid regex (${e.message})`); }
   }
 }
@@ -693,9 +697,13 @@ export function readPackFrom(p: string, folderOrigin: 'folder' | 'builtin' = 'fo
   const abs = path.resolve(p);
   const st = fs.statSync(abs);
   if (st.isDirectory()) {
-    const manifest = path.join(abs, PACK_MANIFEST);
-    if (!fs.existsSync(manifest)) throw new Error(`folder has no ${PACK_MANIFEST}`);
-    const pack = validatePack(JSON.parse(fs.readFileSync(manifest, 'utf8')), { origin: folderOrigin, dir: abs });
+    let text: string;
+    try {
+      text = fs.readFileSync(path.join(abs, PACK_MANIFEST), 'utf8');
+    } catch (e: any) {
+      throw new Error(e?.code === 'ENOENT' ? `folder has no ${PACK_MANIFEST}` : String(e?.message ?? e));
+    }
+    const pack = validatePack(JSON.parse(text), { origin: folderOrigin, dir: abs });
     // The folder name is the pack's identity on disk (deletePack, matrix references),
     // so it must agree with the manifest.
     if (path.basename(abs) !== pack.name) {
@@ -749,6 +757,23 @@ export function loadAll(): void {
   }
   if (loaded) console.log(`provider-registry: loaded ${loaded} pack(s) from ${PROVIDERS_DIR}`);
   warnAmbiguousOverrides();
+}
+
+/** A folder pack is read live from the host mount (template, tests, skills), so its
+ * load-time hash can go stale. Re-hash it and, if it changed, reload it, so the run and
+ * its recorded hash use the same content. Throws if the edited pack no longer loads. */
+export function refreshFolderPack(name: string): ProviderPack | undefined {
+  const pack = packs.get(name);
+  if (pack?.origin !== 'folder' || !pack.dir) return pack;
+  if (hashPackFolder(pack.dir) === pack.hash) return pack;
+  let fresh: ProviderPack;
+  try {
+    fresh = readPackFrom(pack.dir);
+  } catch (err: any) {
+    throw new Error(`pack "${name}" changed on disk and no longer loads: ${err?.message ?? err}`);
+  }
+  registerPack(fresh);
+  return fresh;
 }
 
 /** Persist an uploaded single-file pack as PROVIDERS_DIR/<name>.json and register it.
@@ -816,7 +841,9 @@ export function optionsFor(frameworkId: string): PackOption[] {
 /** A run's option values checked against its provider's declarations, with defaults
  * filled in. Values reach argv (never a shell), but they are logged and stored, so they
  * stay short single-line strings. Throws on an undeclared id or an invalid value. */
-export function resolveRunOptions(frameworkId: string, raw: unknown): Record<string, string> {
+/** `legacy` holds the older projectType/theme fields as `type`/`theme`; they fill an
+ * option the caller didn't set, ahead of its default. */
+export function resolveRunOptions(frameworkId: string, raw: unknown, legacy: Record<string, unknown> = {}): Record<string, string> {
   const decls = optionsFor(frameworkId);
   const given: Record<string, unknown> = raw == null ? {} : (isObj(raw) ? raw : (() => { throw new Error('options must be an object'); })());
   for (const k of Object.keys(given)) {
@@ -824,7 +851,8 @@ export function resolveRunOptions(frameworkId: string, raw: unknown): Record<str
   }
   const out: Record<string, string> = {};
   for (const d of decls) {
-    const v = given[d.id] ?? d.default ?? '';
+    const old = legacy[d.id];
+    const v = given[d.id] ?? (typeof old === 'string' && old !== '' ? old : undefined) ?? d.default ?? '';
     if (typeof v !== 'string' || v.length > MAX_OPTION_VALUE || /[\u0000-\u001f\u007f]/.test(v)) {
       throw new Error(`option "${d.id}" must be a single-line string of at most ${MAX_OPTION_VALUE} characters`);
     }

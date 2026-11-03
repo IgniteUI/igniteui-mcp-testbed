@@ -157,7 +157,7 @@ The header switches between four views:
     `route-config` with the `state-nav` fallback).
 
   A pack may list `versions` probes (`{ "name", "cmd", "argv", "frameworks"? }`): each
-  runs in the project after install and its first output line is stored as
+  runs in the project after install and the version it prints is stored as
   `config.toolVersions`, since a pack's `version` field is only what its author typed.
   Every run on a pack also records `config.pack` (name, version and a content hash of the
   whole pack folder, template and tests included). Both show in the History detail, and
@@ -273,7 +273,7 @@ which is the thing being tested) with the Angular CLI MCP as its toggleable serv
 ```
 
 Its `containerDeps.npmGlobal` lists `@angular/cli`, which the server installs when the
-pack loads (into `/opt/pack-deps/<pack>`, put on `PATH`) — no rebuild. A pack's
+pack loads (into `/opt/pack-deps/<pack>`, put on the `PATH` of that pack's runs) — no rebuild. A pack's
 `containerDeps` must be registry package names, optionally `@version`; pin them, since the
 install happens per container and the versions it got are recorded with each run
 (`config.toolVersions`, as `npm:<package>`). The first run on a freshly loaded pack waits

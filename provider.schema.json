@@ -230,7 +230,7 @@
     },
     "versions": {
       "type": "array",
-      "description": "Commands whose first output line is an installed tool's version, run in the app dir after install and stored in history (config.toolVersions).",
+      "description": "Commands that print an installed tool's version (the first x.y.z found is kept, else the first line), run in the app dir after install and stored in history (config.toolVersions).",
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { LOG_DIR } from '../config.ts';
 import { terminateTree } from './exec.ts';
 import type { OutputStream } from './exec.ts';
+import { lineMasker } from '../secrets.ts';
 
 export type WatcherName = 'app' | 'opencode' | 'opencode-agent';
 
@@ -37,6 +38,9 @@ export interface WatcherOpts {
    */
   onClose?: (() => void) | null;
   logPath?: string;
+  /** The watcher was given pack secrets: pipe its output and mask it before it reaches
+   * the log file, instead of handing the child the file directly. */
+  maskOutput?: boolean;
 }
 
 export function spawnWatcher(
@@ -50,7 +54,7 @@ export function spawnWatcher(
   const logPath = opts.logPath || path.join(LOG_DIR, `${name}.log`);
   const env = { ...process.env, ...extraEnv, ...(opts.env || {}) };
 
-  if (!opts.onOutput) {
+  if (!opts.onOutput && !opts.maskOutput) {
     const out = fs.openSync(logPath, 'a');
     const child = spawn(cmd, argv, { cwd, env, stdio: ['ignore', out, out], detached: true });
     procs[name] = child;
@@ -64,14 +68,16 @@ export function spawnWatcher(
   // is an unparseable payload rather than a merely ugly log line.
   child.stdout?.setEncoding('utf8');
   child.stderr?.setEncoding('utf8');
+  const maskers = opts.maskOutput ? { stdout: lineMasker(), stderr: lineMasker() } : null;
   const tee = (stream: OutputStream) => (chunk: string) => {
-    try { log.write(chunk); } catch (_) {}
+    try { log.write(maskers ? maskers[stream].push(chunk) : chunk); } catch (_) {}
     // An observer must never be able to take down the watcher it is watching.
-    try { opts.onOutput!(stream, chunk); } catch (_) {}
+    if (opts.onOutput) { try { opts.onOutput(stream, chunk); } catch (_) {} }
   };
   child.stdout?.on('data', tee('stdout'));
   child.stderr?.on('data', tee('stderr'));
   child.once('close', () => {
+    if (maskers) { try { log.write(maskers.stdout.flush() + maskers.stderr.flush()); } catch (_) {} }
     try { log.end(); } catch (_) {}
     if (opts.onClose) { try { opts.onClose(); } catch (_) {} }
   });

@@ -87,7 +87,7 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
   // local-only (wipe the generated set); with skills it merges (local overlaid on top).
   return {
     framework: c.platform,
-    options: resolveRunOptions(c.platform, fixed.options),
+    options: resolveRunOptions(c.platform, fixed.options, { type: fixed.projectType, theme: fixed.theme }),
     projectType: fixed.projectType || '',
     theme: fixed.theme || '',
     enabledMcps: canonicalMcpClasses(c.platform, c.variant.mcps),
@@ -201,6 +201,7 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
         isCancelled: () => matrixCancelled || cancelledEntries.has(runId),
         onSkillSources: (s) => history.updateSkillSources(runId, s),
         onToolVersions: (v) => history.updateToolVersions(runId, v),
+        onPackReloaded: (p) => history.updatePack(runId, p),
       });
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);

@@ -93,10 +93,16 @@ export function buildMcpConfig(pack: ProviderPack, cfg: RunConfig, appDir: strin
   // A bare class (`igniteui`, from a config or record written before classes were
   // qualified) still selects this pack's own class.
   const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
+  // A matrix applies one variant to every platform, so a class limited to some
+  // frameworks must stay off for the others.
+  const applies = (cls: string) => {
+    const decl = pack.mcp.classes.find((k) => k.id === cls);
+    return !decl?.frameworks?.length || decl.frameworks.includes(cfg.framework);
+  };
   const enabled = new Set<string>();
   for (const name of Object.keys(servers)) {
     const cls = classByName[name];
-    const on = cls !== 'other' && (selected.has(cls.toLowerCase()) || selected.has(bareMcpClass(cls).toLowerCase()));
+    const on = cls !== 'other' && applies(cls) && (selected.has(cls.toLowerCase()) || selected.has(bareMcpClass(cls).toLowerCase()));
     if (on) enabled.add(name);
     emit('log', `mcp "${name.replace(/[\r\n]/g, ' ')}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
   }

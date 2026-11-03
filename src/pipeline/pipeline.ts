@@ -25,12 +25,12 @@ import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
-import { getPackForFramework, getFramework, resolvePackPath } from '../provider-registry.ts';
-import type { FrameworkDef, RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord } from '../types.ts';
+import { getPackForFramework, getFramework, resolvePackPath, refreshFolderPack } from '../provider-registry.ts';
+import type { FrameworkDef, RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord, PackProvenance } from '../types.ts';
 import { installPackSkills } from './pack-skills.ts';
 import { copyTemplate } from './template.ts';
 import { maskingEmit, missingSecrets, secretEnv } from '../secrets.ts';
-import { ensurePackDeps } from '../pack-deps.ts';
+import { ensurePackDeps, packPathEnv } from '../pack-deps.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
@@ -68,11 +68,24 @@ export interface PipelineOpts {
   onSkillSources?: ((sources: SkillSourceRecord[]) => void) | null;
   /** Output of the pack's `versions` probes, by name, for the history record. */
   onToolVersions?: ((versions: Record<string, string>) => void) | null;
+  /** The pack was edited on disk since it loaded and has been reloaded for this run. */
+  onPackReloaded?: ((pack: PackProvenance) => void) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
 // servers in the block with `enabled:false`, and those tools never reach the agent.
 const VERSION_PROBE_TIMEOUT_MS = 30_000;
+
+/** The first version number a probe prints, else its first line. Some CLIs print a
+ * banner first (`ig --version` opens with an ASCII-art logo). */
+export function probeVersion(out: string): string {
+  const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const l of lines) {
+    const m = l.match(/\bv?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)\b/);
+    if (m) return m[1];
+  }
+  return (lines[0] || '(no output)').slice(0, 200);
+}
 
 /** The {{vars}} a run's commands see. Later entries win: the framework's own `vars`, then
  * the provider's options, then the run's fixed names. `type`/`theme` are also still
@@ -101,8 +114,14 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null }: PipelineOpts,
+  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null, onPackReloaded = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
+  const loaded = getPackForFramework(cfg.framework);
+  const refreshed = loaded && refreshFolderPack(loaded.name);
+  if (refreshed && loaded && refreshed.hash !== loaded.hash) {
+    rawEmit('log', `pack "${refreshed.name}" changed on disk since it loaded — reloaded (hash ${loaded.hash} → ${refreshed.hash})`);
+    onPackReloaded?.({ name: refreshed.name, ...(refreshed.version ? { version: refreshed.version } : {}), hash: refreshed.hash, origin: refreshed.origin });
+  }
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
 
@@ -118,7 +137,9 @@ export async function runPipeline(
     throw new Error(`missing required secret(s) for "${pack.name}": ` +
       missing.map((m) => `${m.name} (${m.source})`).join(', '));
   }
-  const stepEnv = (extra?: Record<string, string>) => secretEnv(pack, extra || {});
+  const depsEnv = packPathEnv(pack);
+  const stepEnv = (extra?: Record<string, string>) => ({ ...depsEnv, ...secretEnv(pack, extra || {}) });
+  const maskOutput = !!pack.secrets?.length;
   // The pack's containerDeps (src/pack-deps.ts): usually already installed at load; the
   // first run of a freshly loaded pack waits here. A failed install fails the run now.
   if (pack.containerDeps?.npmGlobal?.length) emit('log', `pack deps: ${pack.containerDeps.npmGlobal.join(', ')}`);
@@ -149,7 +170,7 @@ export async function runPipeline(
     const n = copyTemplate(resolvePackPath(pack, scaffold.from), appDir, vars, emit);
     emit('log', `scaffolded from template ${scaffold.from} (${n} file(s))`);
   } else {
-    await runStep(scaffold.cmd, subst(scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(scaffold.env) });
+    await runStep(scaffold.cmd, subst(scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(scaffold.env), maskOutput });
   }
 
   // Drop any framework-specific files into the fresh project (e.g. Blazor's
@@ -163,7 +184,7 @@ export async function runPipeline(
   const templateDeps = scaffold.kind === 'template' && fs.existsSync(path.join(appDir, 'package.json'));
   if ((fw.install && fw.install.length) || templateDeps) {
     emit('log', `installing packages${fw.install?.length ? `: ${fw.install.join(' ')}` : ' from package.json'}`);
-    await runStep('npm', ['install', ...(fw.install || [])], appDir, emit, { env: stepEnv(scaffold.env) });
+    await runStep('npm', ['install', ...(fw.install || [])], appDir, emit, { env: stepEnv(scaffold.env), maskOutput });
   }
 
   // 1c. What the pack's tools actually resolved to, since a pack's `version` is only what
@@ -174,8 +195,8 @@ export async function runPipeline(
     for (const v of pack.versions) {
       if (v.frameworks && !v.frameworks.includes(cfg.framework)) continue;
       try {
-        const out = await capture(v.cmd, v.argv, appDir, null, VERSION_PROBE_TIMEOUT_MS);
-        found[v.name] = (out.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '(no output)').slice(0, 200);
+        const out = await capture(v.cmd, v.argv, appDir, depsEnv, VERSION_PROBE_TIMEOUT_MS);
+        found[v.name] = probeVersion(out);
       } catch (e: any) {
         found[v.name] = `error: ${String(e?.message ?? e).split('\n')[0].slice(0, 160)}`;
       }
@@ -194,14 +215,14 @@ export async function runPipeline(
   emit('step', { step: 'configure' });
   for (const step of pack.configure || []) {
     if (step.frameworks && !step.frameworks.includes(cfg.framework)) continue;
-    await runStep(step.cmd, subst(step.argv, vars), appDir, emit, { env: stepEnv() });
+    await runStep(step.cmd, subst(step.argv, vars), appDir, emit, { env: stepEnv(), maskOutput });
   }
 
   if (cfg.skills && pack.skills?.sources.length) {
     const records: SkillSourceRecord[] = [];
     try {
       await installPackSkills(pack, path.join(appDir, '.agents', 'skills'),
-        emit, (cmd, argv, cwd) => runStep(cmd, argv, cwd, emit), records);
+        emit, (cmd, argv, cwd) => runStep(cmd, argv, cwd, emit, { env: depsEnv }), records);
     } finally {
       // Reported even when a source failed, so the record shows what did resolve.
       onSkillSources?.(records);
@@ -274,7 +295,7 @@ export async function runPipeline(
   // the slow bind mount. We build the app once, after the agent, just to screenshot.
   if (!headless) {
     emit('step', { step: 'launch-app' });
-    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env));
+    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env), { maskOutput });
     try {
       await waitForPort(APP_PORT, 180000, emit);
       emit('log', `app is serving on :${APP_PORT}`);
@@ -284,7 +305,7 @@ export async function runPipeline(
 
     // 6a. Interactive: launch the opencode web server and hand off.
     emit('step', { step: 'launch-opencode' });
-    const ocEnv = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
+    const ocEnv = { ...depsEnv, ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
     if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
     spawnWatcher('opencode', 'opencode', serverArgv(OPENCODE_PORT), appDir, ocEnv,
       // Teeing (rather than redirecting) opencode's output is what makes provider errors
@@ -301,7 +322,7 @@ export async function runPipeline(
 
   // 6b. Headless: run the agent once with the prompt — with NO dev server running.
   emit('step', { step: 'agent' });
-  const ocEnv: Record<string, string> = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
+  const ocEnv: Record<string, string> = { ...depsEnv, ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
   if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
@@ -487,7 +508,7 @@ export async function runPipeline(
   }
   const appLog = path.join(LOG_DIR, 'app.log');
   const logOffset = fs.existsSync(appLog) ? fs.statSync(appLog).size : 0;
-  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env));
+  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env), { maskOutput });
   const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit, buildFailedRe(fw.buildFailed));
   if (ready.ready) {
     emit('log', `app is serving on :${APP_PORT}`);

@@ -82,9 +82,15 @@ function mcpDefsForProvider(): Array<[string, string]> {
   return [...defs, ['custom', 'Custom MCP']];
 }
 
+// A framework-limited class is seeded when it applies to a checked platform; before the
+// platform group has rendered, the pack's first framework stands in for the selection.
 function defaultVariantPreset(): VariantRow {
-  const classes = (activePack()?.mcp.classes || [])
-    .filter((c) => c.default !== false && !c.frameworks).map((c) => c.id);
+  const pack = activePack();
+  const checked = mxPlatforms();
+  const platforms = checked.length ? checked : (pack?.frameworks[0] ? [pack.frameworks[0].id] : []);
+  const classes = (pack?.mcp.classes || [])
+    .filter((c) => c.default !== false && (!c.frameworks || c.frameworks.some((f) => platforms.includes(f))))
+    .map((c) => c.id);
   return newRow(classes, classes.length ? 'default' : 'off');
 }
 

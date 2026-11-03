@@ -33,6 +33,8 @@ export function copyTemplate(src: string, dest: string, vars: Record<string, str
       if (!e.isFile()) continue;
       const buf = fs.readFileSync(s);
       fs.writeFileSync(d, isBinary(buf) ? buf : fillVars(buf.toString('utf8'), vars));
+      // Keep the executable bit (gradlew, shell scripts).
+      fs.chmodSync(d, fs.statSync(s).mode & 0o777);
       files++;
     }
   };

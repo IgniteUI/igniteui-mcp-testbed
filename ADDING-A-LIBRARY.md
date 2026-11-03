@@ -111,7 +111,7 @@ Any other `{{…}}` (an Angular or Handlebars binding, say) is left exactly as w
     "servers": [{ "name": "reveal-docs", "class": "docs", "command": "your-reveal-docs-mcp" }]
   },
 
-  // First output line of each is stored with every run (History → detail).
+  // The version each prints (first x.y.z found) is stored with every run (History → detail).
   "versions": [
     { "name": "reveal-sdk-node", "cmd": "node", "argv": ["-p", "require('reveal-sdk-node/package.json').version"] }
   ]

@@ -345,7 +345,7 @@ Tools the steps need that aren't in the image:
 ```
 
 - **Install:** these are installed when the pack loads, into `/opt/pack-deps/<pack>`,
-  and put on `PATH` for everything (steps, dev server, opencode, MCP servers).
+  and put on `PATH` for that pack's runs only (steps, dev server, opencode, MCP servers).
 - **Failures:** the first run waits for the install. A failed install fails the run
   before scaffold, and the next run retries.
 - **Allowed specs:** registry package names only, optionally `@version`. Git, URL and
@@ -363,7 +363,7 @@ Tools the steps need that aren't in the image:
 - **Tests:** Playwright specs in `<pack>/tests/<framework id>/` run in the verify stage
   together with `./tests/shared/` and `./tests/<framework id>/`. They're listed as
   `@<pack>/<file>`. Specs get `APP_BASE_URL` and `APP_DIR`.
-- **Versions:** the first output line of each probe is stored in the run's history.
+- **Versions:** the first version number each probe prints (or, without one, its first output line) is stored in the run's history.
   `frameworks` limits a probe to some platforms. A failing probe is recorded, not fatal.
   ```jsonc
   "versions": [ { "name": "my-lib", "cmd": "node", "argv": ["-p", "require('my-lib/package.json').version"] } ]
@@ -375,7 +375,9 @@ Tools the steps need that aren't in the image:
   - its container-dep and tool versions.
 
   The History re-run dialog warns when this container's copy of the pack differs from
-  the recorded one.
+  the recorded one. A folder pack edited on the host while the container runs is
+  re-hashed and reloaded at the start of the next run, so the recorded hash is always
+  the content that run used; an edit that breaks the pack fails that run.
 
 ---
 
