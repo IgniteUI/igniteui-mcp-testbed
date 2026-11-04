@@ -32,7 +32,7 @@
       "vars": { "aiFramework": "blazor", "template": "{{env:BLAZOR_TEMPLATE|igb-blazor}}" },
       "scaffold": {
         "cmd": "dotnet", "cwdIsParent": true,
-        "argv": ["new", "{{template}}", "-o", ".", "-n", "{{name}}", "--force", "--IncludeWeatherSample", "false"]
+        "argv": ["new", "{{template}}", "-o", ".", "-n", "{{name}}", "--force", "--Empty", "true"]
       },
       "prepare": {
         "Directory.Build.props": "<Project>\n  <PropertyGroup>\n    <BaseIntermediateOutputPath>/tmp/blazor-build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>\n    <BaseOutputPath>/tmp/blazor-build/bin/$(MSBuildProjectName)/</BaseOutputPath>\n  </PropertyGroup>\n</Project>\n"

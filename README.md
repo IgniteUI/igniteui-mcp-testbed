@@ -500,8 +500,7 @@ setup, so they're the most likely to need tuning:
    and the default MCP launch commands. The dev servers assume `npm run start`
    (Angular `ng serve`, React / Web Components on Vite) and `dotnet watch run` for
    Blazor, all forced onto `0.0.0.0:5000`. Match these to the scripts your scaffolds
-   actually generate; `npm run packs:test` checks the pack still produces what the
-   pre-pack code did.
+   actually generate.
 2. **`Containerfile`** — the global package names (`@opencode/cli` or, for 1.x, `opencode-ai`; `igniteui-cli`,
    `igniteui-theming`) and the Blazor template install line (`dotnet new install
    <YourTemplateId>`).
