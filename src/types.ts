@@ -6,6 +6,8 @@ export type Emit = (type: string, payload?: any) => void;
 
 export interface RunConfig {
   framework: string;
+  /** The provider's option values, by option id (see PackOption). */
+  options?: Record<string, string>;
   projectType?: string;
   theme?: string;
   enabledMcps?: string[];
@@ -25,10 +27,33 @@ export interface RunConfig {
   customBaseUrl?: string | null;
 }
 
-export interface ScaffoldDef {
+export interface CommandScaffold {
+  kind?: 'command';
   cmd: string;
   argv: string[];
   cwdIsParent?: boolean;
+  env?: Record<string, string>;
+}
+
+// Copies a folder of a folder pack into the app dir, filling in the known {{vars}}.
+export interface TemplateScaffold {
+  kind: 'template';
+  from: string;
+  env?: Record<string, string>;
+}
+
+export type ScaffoldDef = CommandScaffold | TemplateScaffold;
+
+// How the screenshot stage finds the app's pages.
+//   route-config  string-literal `path:` entries in *rout* source files (Angular/React/WC)
+//   razor         `@page` directives in .razor files (Blazor)
+//   state-nav     click through the app's nav items (apps without URL routes)
+//   static        exactly `paths`
+// `fallback: 'state-nav'` is tried when the primary kind finds no routes.
+export interface RouteSpec {
+  kind: 'route-config' | 'razor' | 'state-nav' | 'static';
+  fallback?: 'state-nav';
+  paths?: string[];
 }
 
 export interface DevDef {
@@ -37,11 +62,22 @@ export interface DevDef {
   env?: Record<string, string>;
 }
 
-// 'igniteui'  (default) — runs `ig ai-config`, writes .mcp.json + .agents/skills/.
-// 'external'            — drives config from a ProviderPack (MCP servers + skills via
-//                         git clone); opencode.json is written directly, no translate step.
-// 'none'                — skips configure entirely, writes bare opencode.json.
-export type ConfigureStrategy = 'igniteui' | 'external' | 'none';
+// A command run in the app dir after scaffold + install, e.g. `ig ai-config …`.
+export interface PackConfigureStep {
+  cmd: string;
+  argv: string[];
+  /** Only for these framework ids (default: all of the pack's). */
+  frameworks?: string[];
+}
+
+// MCP servers read from a file the configure steps generated, instead of listed in the
+// pack. Each server is classified by the first rule whose `match` occurs in its name +
+// command line (case-insensitive); unmatched servers are class `other`, never enabled.
+export interface PackMcpSource {
+  /** Tried in order; the first that exists is read (`mcpServers` or `servers` wrapper). */
+  files: string[];
+  rules: { match: string; class: string }[];
+}
 
 // ── Provider Pack ─────────────────────────────────────────────────────────────
 // A JSON file (one per 3rd-party library) that describes how to scaffold, install,
@@ -54,52 +90,147 @@ export interface ProviderPackFramework {
   install?: string[];
   dev: DevDef;
   prepare?: Record<string, string>;
+  /** Per-framework {{vars}}; a value may use {{env:NAME|default}}. */
+  vars?: Record<string, string>;
+  /** Regex sources; a match in the fresh dev-server log means the build failed. */
+  buildFailed?: string[];
+  routes?: RouteSpec;
 }
 
-export interface ProviderPackMcpServer {
+// The in-memory shape is always schema v2; v1 bodies are upgraded on load
+// (provider-registry.ts normalizePack). Class ids are qualified `<pack>/<class>`.
+export interface PackMcpClass {
+  id: string;
+  label: string;
+  description?: string;
+  /** Checked by default in the wizard and the matrix seed row (default true). */
+  default?: boolean;
+  /** Only offered for these framework ids (default: all of the pack's). */
+  frameworks?: string[];
+}
+
+// A wizard input whose value becomes the {{id}} placeholder in the pack's argv.
+// `choices` renders a select; without it the input is free text.
+export interface PackOption {
+  id: string;
+  label: string;
+  description?: string;
+  placeholder?: string;
+  choices?: string[];
+  default?: string;
+}
+
+export interface PackMcpServer {
   name: string;
+  class: string;
   command: string;
   args?: string[];
-  /** Logical class used for enable/disable toggling (e.g. 'igniteui'). */
-  class: string;
+}
+
+// Exactly one of:
+//   github  'owner/repo', fetched at `ref` (branch, tag or commit; default HEAD). `path` is
+//           the skills folder inside the repo (default: skills/ if present, else root).
+//   dir     a folder inside the pack (folder packs only).
+//   command run in .agents/skills/ (no provenance beyond the command line).
+// `include` filters skill folder names with `*` globs (github and dir only).
+export interface PackSkillSource {
+  github?: string;
+  ref?: string;
+  path?: string;
+  dir?: string;
+  include?: string[];
+  command?: string[];
+}
+
+// What a run's skill sources resolved to, stored as `config.skillSources`.
+export interface SkillSourceRecord {
+  /** `github:owner/repo@ref/path`, `dir:<path>` or `command:<argv>`. */
+  source: string;
+  /** Full commit sha (github sources). */
+  commit?: string;
+  /** sha256 over the installed skill files (github and dir sources). */
+  hash?: string;
+  skills: string[];
+  error?: string;
+}
+
+export interface PackSkills {
   label: string;
+  sources: PackSkillSource[];
+}
+
+// A license key or similar. `file` is relative to ./secrets/<pack>/ (mounted read-only at
+// /secrets/<pack>/); without it the value comes from SECRET_<name>. See src/secrets.ts.
+export interface PackSecretDecl {
+  name: string;
+  file?: string;
+  /** Default true: the run fails before it starts when the secret is missing. */
+  required?: boolean;
   description?: string;
 }
 
-export interface ProviderPackSkills {
-  /** 'owner/repo' on GitHub — cloned with `git clone --depth 1` and skill folders copied. */
-  github?: string;
-  /** Alternative: run a command directly (e.g. a custom install script). */
-  installCommand?: string[];
-  /** Human label shown in the wizard skills checkbox. */
-  label: string;
+// A command whose first output line is the installed version of a tool the pack uses,
+// e.g. { "name": "reveal-sdk", "cmd": "npm", "argv": ["ls", "reveal-sdk", "--depth=0"] }.
+// Run in the app dir after install; `frameworks` limits it to some of the pack's frameworks.
+export interface PackVersionProbe {
+  name: string;
+  cmd: string;
+  argv: string[];
+  frameworks?: string[];
 }
 
-export interface ProviderPackConfigure {
-  mcpServers: ProviderPackMcpServer[];
-  skills?: ProviderPackSkills;
+// Which pack a run used, stored as `config.pack`. `version` is whatever the author typed;
+// `hash` covers the whole pack (the folder, template included), so it is what tells two
+// runs apart.
+export interface PackProvenance {
+  name: string;
+  version?: string;
+  hash: string;
+  origin: PackOrigin;
 }
+
+// 'builtin' packs ship in the image (packs/ → BUILTIN_PACKS_DIR) and can't be replaced
+// or removed from the UI.
+export type PackOrigin = 'file' | 'folder' | 'inline' | 'builtin';
 
 export interface ProviderPack {
+  schemaVersion: 2;
   name: string;
   displayName: string;
   description?: string;
   version?: string;
   frameworks: ProviderPackFramework[];
-  configure: ProviderPackConfigure;
-  /** npm packages that must be installed globally in the container image. */
+  mcp: {
+    classes: PackMcpClass[];
+    servers: PackMcpServer[];
+    source?: PackMcpSource;
+    /** Class → the command its servers launch with (an MCP_CMD_* env override wins). */
+    commands?: Record<string, string[]>;
+  };
+  configure?: PackConfigureStep[];
+  skills?: PackSkills;
+  options?: PackOption[];
+  secrets?: PackSecretDecl[];
+  versions?: PackVersionProbe[];
   containerDeps?: { npmGlobal?: string[] };
+  origin: PackOrigin;
+  /** sha256 (16 hex) of the pack folder, or of the pack JSON for a file/inline pack. */
+  hash: string;
+  /** Absolute pack folder (folder packs only). Never sent to the browser. */
+  dir?: string;
 }
 
 export interface FrameworkDef {
   scaffold: ScaffoldDef;
   // npm packages to install into the scaffolded project after scaffold (e.g. @angular/material).
   install?: string[];
-  // How to set up AI tooling. Defaults to 'igniteui' when omitted.
-  configure?: ConfigureStrategy;
-  aiFramework: string;
+  /** Per-framework {{vars}} (values may use {{env:NAME|default}}). */
+  vars?: Record<string, string>;
   dev: DevDef;
   prepare?: Record<string, string>;
+  /** Added to BUILD_FAILED_RE for this framework's runs. */
+  buildFailed?: string[];
+  routes: RouteSpec;
 }
 
 export interface Tokens {
@@ -138,7 +269,7 @@ export interface StoredConfig {
   excludedSkills: string[];
   overrideSkills: boolean;
   localSkillsOnly: boolean;
-  selectedTests: string[];
+  selectedTests?: string[];
   promptImages: string[];
   models: string[];
   customBaseUrl: string | null;
@@ -149,6 +280,16 @@ export interface StoredConfig {
    * "no key" means "released", not "unknown".
    */
   mcpCommands?: Record<string, string>;
+  /** Where the run's pack skills came from. Absent on Ignite UI runs and older records. */
+  skillSources?: SkillSourceRecord[];
+  /** Absent on built-in (Ignite UI) runs and on records from before packs were recorded. */
+  pack?: PackProvenance;
+  /** The provider's name. Absent on older records, which readers treat as Ignite UI
+   * unless `pack` says otherwise (src/provider-meta.ts providerOf). */
+  provider?: string;
+  options?: Record<string, string>;
+  /** Output of the pack's `versions` probes, by name. */
+  toolVersions?: Record<string, string>;
   opencodeVersion?: string;
   codemode?: boolean;
 }
@@ -341,6 +482,7 @@ export interface Variant {
 export interface MatrixFixed {
   projectType?: string;
   theme?: string;
+  options?: Record<string, string>;
   model: string;
   apiKey?: string;
   customBaseUrl?: string;

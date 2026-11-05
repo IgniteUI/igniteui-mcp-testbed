@@ -1,18 +1,30 @@
 'use strict';
 
+// First: takes SECRET_* out of process.env before any other module can copy it.
+import './secrets.ts';
 import { MATRIX_CONFIG, WIZARD_PORT } from './config.ts';
 import { ensureDirs } from './proc/fsutil.ts';
 import * as history from './history.ts';
 import { attachConsoleMirror } from './matrix/console-mirror.ts';
 import { loadMatrixConfig, startAutoRun, type LoadedMatrixConfig } from './matrix/matrix-config.ts';
-import { loadAll } from './provider-registry.ts';
+import { loadAll, loadBuiltins, listPacks } from './provider-registry.ts';
+import { startPackDeps } from './pack-deps.ts';
+import { validatePackCli } from './pack-validate.ts';
 import app from './app.ts';
 import { opencodeVersion } from './pipeline/opencode-cli.ts';
 
 ensureDirs();
 
 // Load any provider packs (3rd-party library configs) from the /providers bind mount.
+// Built-in packs first (Ignite UI): without them there is no default provider, so a
+// broken one stops the server rather than starting it half-working.
+try { loadBuiltins(); } catch (e: any) { console.error(`built-in pack failed to load: ${e.message}`); process.exit(1); }
 try { loadAll(); } catch (e: any) { console.error(`provider-registry load failed: ${e.message}`); }
+
+// Pack-validate mode (./run.sh --validate-pack <path>): report on one pack and exit.
+if (process.env.PACK_VALIDATE) {
+  process.exit(await validatePackCli(process.env.PACK_VALIDATE));
+}
 
 // Validate-only mode (./run.sh --matrix-config <file> --validate): load + validate the
 // config, print what it resolves to, and exit — no server started and no history
@@ -55,6 +67,9 @@ if (process.env.MATRIX_VALIDATE === '1') {
 
 if (opencodeVersion() === 'unknown') console.warn('opencode: version unknown (probe failed) — assuming 2.x; set OPENCODE_MAJOR to override');
 else console.log(`opencode: v${opencodeVersion()}`);
+
+// Install the packs' containerDeps in the background; each run awaits its own pack's.
+for (const p of listPacks()) startPackDeps(p);
 
 // Settle any records left 'running' by a previous container that stopped mid-run.
 try {

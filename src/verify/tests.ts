@@ -6,7 +6,7 @@ import { createRequire } from 'module';
 import { spawn, type ChildProcess } from 'child_process';
 import { APP_PORT } from '../frameworks.ts';
 import { TESTS_DIR, TEST_TIMEOUT_MS } from '../config.ts';
-import { getFramework } from '../provider-registry.ts';
+import { getFramework, getPackForFramework, resolvePackPath } from '../provider-registry.ts';
 import { killTree } from '../proc/exec.ts';
 import { stripAnsi } from '../ansi.ts';
 import type { Emit, TestResult, TestFailure } from '../types.ts';
@@ -37,7 +37,22 @@ function listSpecs(dir: string, base = dir, out: string[] = []): string[] {
 // show what the verify stage would run. `shared/` applies to every platform; the
 // per-framework overlay is listed separately.
 export function sharedTests(): string[] { return listSpecs(path.join(TESTS_DIR, 'shared')); }
-export function frameworkTests(framework: string): string[] { return listSpecs(path.join(TESTS_DIR, framework)); }
+
+// Where a framework's overlay specs live: ./tests/<fw>/, plus <pack>/tests/<fw>/ for a
+// folder pack. Pack specs are listed under an `@<pack>/` prefix, so a host spec and a
+// pack spec with the same file name stay two separate, separately selectable entries.
+export function frameworkTestRoots(framework: string): { dir: string; prefix: string }[] {
+  const roots = [{ dir: path.join(TESTS_DIR, framework), prefix: '' }];
+  const pack = getPackForFramework(framework);
+  if (pack?.dir) {
+    try { roots.push({ dir: resolvePackPath(pack, `tests/${framework}`), prefix: `@${pack.name}/` }); } catch { /* escapes the pack */ }
+  }
+  return roots;
+}
+
+export function frameworkTests(framework: string): string[] {
+  return frameworkTestRoots(framework).flatMap(({ dir, prefix }) => listSpecs(dir).map((rel) => prefix + rel));
+}
 
 // Resolve the node_modules root that holds `@playwright/test` (the wizard's own deps),
 // so the harness can borrow it via a symlink regardless of container vs host-dev layout.
@@ -160,16 +175,16 @@ export async function runVerification(
   // for, so it can be toggled per framework. The overlay is copied under a separate
   // specs/<category>/ dir so a same-named shared spec is never silently shadowed.
   const selected = selectedTests == null ? null : new Set(selectedTests);
-  const categories: { category: string; dir: string }[] = [
-    { category: 'shared', dir: path.join(TESTS_DIR, 'shared') },
-    { category: framework, dir: path.join(TESTS_DIR, framework) },
+  const categories: { category: string; dir: string; prefix: string }[] = [
+    { category: 'shared', dir: path.join(TESTS_DIR, 'shared'), prefix: '' },
+    ...frameworkTestRoots(framework).map((r) => ({ category: framework, ...r })),
   ];
   const chosen: { category: string; rel: string; src: string }[] = [];
-  for (const { category, dir } of categories) {
+  for (const { category, dir, prefix } of categories) {
     for (const rel of listSpecs(dir)) {
-      const key = `${framework}::${category}/${rel}`;
+      const key = `${framework}::${category}/${prefix}${rel}`;
       if (selected && !selected.has(key)) continue;
-      chosen.push({ category, rel, src: path.join(dir, rel) });
+      chosen.push({ category, rel: prefix + rel, src: path.join(dir, rel) });
     }
   }
   if (!chosen.length) {
@@ -225,7 +240,8 @@ export async function runVerification(
   fs.writeFileSync(path.join(harness, 'package.json'), JSON.stringify({ name: 'verify-harness', private: true }) + '\n');
 
   emit('log', `verify: ${files.length} test file(s) → ${baseURL}`);
-  const env: Record<string, string> = { NODE_PATH: nmRoot, CI: '1', APP_BASE_URL: baseURL };
+  // APP_DIR lets a spec check the generated source as well as the served app.
+  const env: Record<string, string> = { NODE_PATH: nmRoot, CI: '1', APP_BASE_URL: baseURL, APP_DIR: appDir };
 
   let res: { code: number | null; timedOut: boolean };
   try {

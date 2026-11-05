@@ -8,6 +8,7 @@
     "start": "node src/server.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "diagnostics:test": "node scripts/diagnostics-fixtures.mjs && node scripts/loop-store-check.mjs",
+    "packs:test": "node scripts/packs-fixtures.mjs",
     "diagnostics:replay": "node scripts/replay-diagnostics.mjs",
     "exec:smoke": "node scripts/exec-smoke.mjs",
     "compare": "node scripts/compare-runs.mjs",

@@ -44,7 +44,11 @@ ephemeral rootless Podman container**, so nothing leaks between runs.
 ./run.sh                  # run a fresh container; publishes ports 8080 / 4096 / 5000
 ./run.sh --matrix-config ./matrix.json  # run + execute a matrix from a JSON config (no UI needed)
 ./run.sh --matrix-config ./matrix.json --validate  # just validate the config and exit
+./run.sh --validate-pack ./providers-data/reveal    # check a provider pack and exit
 ```
+
+Adding your own library? See [ADDING-A-LIBRARY.md](ADDING-A-LIBRARY.md) for a walkthrough
+and [PROVIDER-PACKS.md](PROVIDER-PACKS.md) for every pack field.
 
 Each rebuild leaves the previous image untagged (`<none>`), which adds up fast (~3 GB
 each). The `-Prune` / `--prune` flag runs `podman image prune -f` after a successful
@@ -105,11 +109,77 @@ The header switches between four views:
 - **Configuration** — manage **provider packs**: JSON files that teach the testbed how
   to scaffold and configure a 3rd-party library (its own scaffold / dev-server
   commands, MCP servers, and skills source). Packs loaded here persist in
-  `./providers-data/` on the host (you can also drop pack `.json` files there
-  directly), and their frameworks appear as extra platforms in the Interactive and
-  Matrix views. [`provider.example.angular-material.json`](provider.example.angular-material.json)
-  is a ready-to-load example (Angular Material). A matrix config file can alternatively
-  carry packs inline via its `providers` field — see below.
+  `./providers-data/` on the host, and their frameworks appear as extra platforms in
+  the Interactive and Matrix views. A pack is either a single `<name>.json` file or a
+  `<name>/pack.json` folder (the folder name must match the pack's `name`); folder
+  packs are managed on the host and can't be removed from the UI.
+  [`provider.example.angular-material.json`](provider.example.angular-material.json)
+  is a ready-to-load example (Angular Material), and
+  [`provider.schema.json`](provider.schema.json) gives editors autocomplete and
+  validation (add `"$schema": "./provider.schema.json"`). The schema describes
+  format v2 (`schemaVersion: 2`, `mcp.classes` / `mcp.servers`, `skills.sources`);
+  v1 packs (`configure.mcpServers` / `configure.skills`) still load and are upgraded
+  in memory. A matrix config file can also name packs, or carry them inline, via its
+  `providers` field — see below.
+
+  A pack's `skills.sources` are installed in order, and a later source replaces a
+  same-named skill from an earlier one:
+  `{ "github": "owner/repo", "ref": "v1.2.0", "path": "skills", "include": ["ig-*"] }`
+  (`ref` is a branch, tag or commit; `path` defaults to `skills/` if the repo has one),
+  `{ "dir": "skills", "include": [...] }` (a folder inside a folder pack), or
+  `{ "command": [...] }` (run in `.agents/skills/`). Each run records what every source
+  resolved to (the commit for GitHub, a content hash for `dir`) as
+  `config.skillSources`, shown in the History detail, so two runs of the same pack can
+  be checked for using the same skills. The wizard's "Exclude skills" field works for
+  every provider.
+
+  `options` declares inputs the wizard and the Matrix tab show for the provider —
+  `{ "id": "theme", "label": "Theme", "choices": ["light", "dark"], "default": "light" }`
+  (a select with `choices`, free text without) — and each value becomes the `{{id}}`
+  placeholder in the pack's commands (`name`, `dir`, `port` and `agents` are reserved).
+  An MCP class with `"frameworks": [...]` is only offered for those framework ids.
+  Ignite UI itself is described in the same shape (its project type and theme are its
+  options), so all providers render the same way.
+
+  A pack framework can also:
+  - scaffold from a folder instead of a command —
+    `"scaffold": { "kind": "template", "from": "template/node" }` (folder packs only)
+    copies that folder into the project, fills in `{{name}}`, `{{dir}}`, `{{port}}` and
+    `{{agents}}` in text files and file names (any other `{{…}}`, such as an Angular
+    binding, is left alone), then runs `npm install` if there is a `package.json`;
+  - ship its own verification specs in `<pack>/tests/<framework>/`, listed next to
+    `./tests/<framework>/` with an `@<pack>/` prefix (specs also get `APP_DIR`, the
+    generated project's path, besides `APP_BASE_URL`);
+  - add build-failure markers — `"buildFailed": ["error TS\\d+"]`, case-insensitive
+    regexes checked against the dev-server log along with the built-in ones;
+  - say how screenshots find its pages — `"routes": { "kind": "route-config" | "razor" |
+    "state-nav" | "static", "fallback": "state-nav", "paths": [...] }` (default:
+    `route-config` with the `state-nav` fallback).
+
+  A pack may list `versions` probes (`{ "name", "cmd", "argv", "frameworks"? }`): each
+  runs in the project after install and the version it prints is stored as
+  `config.toolVersions`, since a pack's `version` field is only what its author typed.
+  Every run on a pack also records `config.pack` (name, version and a content hash of the
+  whole pack folder, template and tests included). Both show in the History detail, and
+  the re-run dialog warns when this container's copy of the pack differs from the
+  recorded one.
+
+  **Pack secrets** (license keys and the like) are declared in the pack's `secrets`
+  array: `{ "name": "REVEAL_LICENSE", "file": "license.key" }` reads
+  `./secrets/reveal/license.key` (mounted read-only at `/secrets`), and
+  `{ "name": "REVEAL_KEY" }` reads `SECRET_REVEAL_KEY` from your environment or `.env`.
+  A secret is passed only to that pack's scaffold, install and dev-server steps, as an
+  env var named after it (the value, or the file's path), or through
+  `{{secret:NAME}}` in those steps' `env` — never on a command line, since those are
+  logged into history. The wizard removes `SECRET_*` from its own environment at
+  startup, so the agent's opencode process doesn't inherit them; nothing is copied into
+  the project; `opencode.json` denies read/edit access to `/secrets`; and a secret value
+  a step prints is masked in the log. A missing required secret fails the run before it
+  starts, and the Configuration tab shows each secret as set or missing (never the
+  value). **This stops accidental reads, not a determined agent**: the agent runs as the
+  same user in the same container with shell access, and could, for instance, read the
+  dev server's environment from `/proc`. Real isolation would need the secret-consuming
+  steps to run as a different user, which the testbed doesn't do.
 - **Interactive** (default) — scaffold one project, wire the config, and hand off to
   opencode web for a live session with streaming token / cost stats. This is the flow
   in "How a session works" below.
@@ -175,7 +245,7 @@ Copy [`matrix.example.json`](matrix.example.json) as a starting point:
 | `platforms` | yes | Built-in framework ids (`angular`, `blazor`, `react`, `webcomponents`) **or any registered provider pack's framework ids** (from `./providers-data/` or this file's `providers` field). Unknown names are ignored with a warning. |
 | `variants` | yes | Rows of `{ "mcps": [...], "skills": bool, "localSkills": bool }`. For built-in platforms `mcps` ⊆ `igniteui` / `theming` / `custom`; for provider platforms use the pack's MCP server `class` names (+ `custom`). Classes no selected platform declares warn at load. `localSkills` without `skills` = local-only. Deduped. |
 | `model` | yes | Model id, e.g. `anthropic/claude-sonnet-4-5`. |
-| `providers` | no | Array of **provider pack definitions** (same JSON shape the Configuration tab uploads: `name`, `displayName`, `frameworks[]`, `configure.mcpServers[]`, …). Registered in-memory at startup *before* the request is validated, so `platforms`/`mcps` can reference them — a terminal run is fully self-contained in one file. Unlike UI uploads they are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` warn: those packages must be baked into the image. |
+| `providers` | no | Array of packs the config uses. Each entry is a **pack name** already in `./providers-data/` (`"reveal"`), a **path** to a pack file or folder (relative to `/providers`, e.g. `"experimental/reveal"`), or an **inline pack body** (same JSON the Configuration tab uploads; inline packs can't be folder packs). Registered *before* the request is validated, so `platforms`/`mcps` can reference them. Paths and inline bodies are **not** persisted to `./providers-data/`; the config re-registers them each start (a same-named disk pack is replaced for that container). Packs with `containerDeps.npmGlobal` get them installed at load. |
 | `prompt` | yes | The shared prompt every entry runs. |
 | `apiKey` | no | Provider API key **in plaintext — discouraged**; prefer one of the two below. |
 | `apiKeyEnv` | no | Name of an env var (inside the container) holding the key. |
@@ -202,9 +272,13 @@ which is the thing being tested) with the Angular CLI MCP as its toggleable serv
 ./run.sh --matrix-config ./matrix.example.angular-material.json
 ```
 
-Its `containerDeps.npmGlobal` lists `@angular/cli`; the scaffold works without baking it
-in (npx fetches on demand, slower per entry) — add it to the Containerfile's
-"3rd-party provider dependencies" section and rebuild to skip the per-session fetch.
+Its `containerDeps.npmGlobal` lists `@angular/cli`, which the server installs when the
+pack loads (into `/opt/pack-deps/<pack>`, put on the `PATH` of that pack's runs) — no rebuild. A pack's
+`containerDeps` must be registry package names, optionally `@version`; pin them, since the
+install happens per container and the versions it got are recorded with each run
+(`config.toolVersions`, as `npm:<package>`). The first run on a freshly loaded pack waits
+for the install, and a failed install fails the run before it scaffolds anything. This
+needs npm reachable from the container.
 
 ## How a session works
 
@@ -249,7 +323,7 @@ is `--rm`.
 - **Skills** — `--agents generic` writes them to `.agents/skills/`, which opencode
   auto-discovers. The master checkbox switches `--agents generic` vs `--agents none`; the
   "Exclude skills" field deletes individual skill folders after generation (granular
-  on/off). The flag is passed to **both** `ig new` and `ig ai-config`: `ig new` runs its
+  on/off; this works for provider packs too). The flag is passed to **both** `ig new` and `ig ai-config`: `ig new` runs its
   own `ai-config` pass and, without the flag, falls back to the CLI's interactive
   defaults — so the scaffold would install the full skill set before the configure stage
   could say no. With the toggle off, stage 4 also sweeps `.agents/skills/`, `AGENTS.md`
@@ -421,10 +495,12 @@ selected platform, and each entry runs only its own group's selected specs. See
 These integration points depend on the exact packages and generated scripts in your
 setup, so they're the most likely to need tuning:
 
-1. **`src/frameworks.ts`** — the dev-server command per framework. The defaults assume
-   `npm run start` / `npm run dev` (Angular `ng serve`, React / Web Components on Vite)
-   and `dotnet watch run` for Blazor, all forced onto `0.0.0.0:5000`. Match these to the
-   scripts your scaffolds actually generate.
+1. **`packs/igniteui/pack.json`** — Ignite UI's built-in provider pack: the scaffold,
+   dev-server and `ig ai-config` commands per framework, the MCP classification rules
+   and the default MCP launch commands. The dev servers assume `npm run start`
+   (Angular `ng serve`, React / Web Components on Vite) and `dotnet watch run` for
+   Blazor, all forced onto `0.0.0.0:5000`. Match these to the scripts your scaffolds
+   actually generate.
 2. **`Containerfile`** — the global package names (`@opencode/cli` or, for 1.x, `opencode-ai`; `igniteui-cli`,
    `igniteui-theming`) and the Blazor template install line (`dotnet new install
    <YourTemplateId>`).
@@ -463,11 +539,15 @@ MCP_CMD_THEMING="/opt/local-mcp/bin/my-theming-mcp --stdio" ./run.sh
 ./run.sh --matrix-config ./matrix.json     # unset => the released servers
 ```
 
-Any class works — `igniteui`, `theming`, `angular`, `custom`, or whatever `class` a
-provider pack declares. The suffix is matched case-insensitively with non-alphanumerics
-folded to `_`, so a pack class `mui-docs` is set with `MCP_CMD_MUI_DOCS`. The value is a
-whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains an alias for
-`MCP_CMD_IGNITEUI`.
+Any class works, `custom` included. Classes are qualified with their pack's name
+(`<pack>/<class>`, so Ignite UI's are `igniteui/igniteui`, `igniteui/theming` and
+`igniteui/angular`), and two packs can both declare `docs`. The full name is
+`MCP_CMD_<PACK>_<CLASS>` (`MCP_CMD_IGNITEUI_IGNITEUI`); the short `MCP_CMD_<CLASS>`
+(`MCP_CMD_IGNITEUI`, `MCP_CMD_THEMING`) works too while only one loaded pack declares
+that class — if two do, it applies to neither and the server logs a warning at
+startup. The suffix is matched case-insensitively with non-alphanumerics folded to
+`_`. The value is a whole command line, so flags are fine. `IGNITEUI_MCP_CMD` remains
+an alias for `MCP_CMD_IGNITEUI`.
 
 This replaces the *command* of the existing server rather than adding a second one, so the
 server name — and therefore every tool name the model sees — is identical in both arms,

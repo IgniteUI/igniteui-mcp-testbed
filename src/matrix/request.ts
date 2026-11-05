@@ -1,7 +1,7 @@
 'use strict';
 
 import { MATRIX_MAX_ENTRIES, MATRIX_MAX_PASSES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
-import { getFramework } from '../provider-registry.ts';
+import { getFramework, resolveRunOptions } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, MatrixPass, Variant } from '../types.ts';
@@ -101,8 +101,18 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     }
   }
 
+  // One set of option values for every entry, checked against each platform's provider.
+  let options: Record<string, string> | undefined;
+  if (body.options != null) {
+    for (const p of platforms) {
+      try { resolveRunOptions(p, body.options); } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+    options = { ...body.options };
+  }
+
   const fixed: MatrixFixed = {
     model,
+    ...(options ? { options } : {}),
     apiKey: body.apiKey || undefined,
     customBaseUrl: body.customBaseUrl || undefined,
     customMcp: body.customMcp || undefined,

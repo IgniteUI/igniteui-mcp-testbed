@@ -3,8 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ChildProcess } from 'child_process';
-import { APP_PORT, subst } from '../frameworks.ts';
-import { translate } from '../mcp-translate.ts';
+import { APP_PORT, subst, expandEnvRefs } from '../frameworks.ts';
 import { discoverRoutes } from '../capture/route-discovery.ts';
 import { shoot } from '../capture/screenshots.ts';
 import { parseOpencodeStats } from '../capture/usage.ts';
@@ -12,22 +11,26 @@ import { agentRunArgv, isV2, serverArgv, serverEnv, serverPassword, statsArgv } 
 import { collectToolUsage, installedSkills, summarizeToolUsage } from '../capture/tool-usage.ts';
 import { openStore, readUsage } from '../capture/opencode-store.ts';
 import {
-  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, mcpCommandFor, AGENT_SERVER_PORT, MCP_READY_TIMEOUT_MS,
+  APP_DIR, LOG_DIR, OPENCODE_PORT, AGENT_TIMEOUT_MS, APP_READY_TIMEOUT_MS, AGENT_SERVER_PORT, MCP_READY_TIMEOUT_MS,
   LOCAL_SKILLS_DIR, OPENCODE_DATA_DIR, STATS_TIMEOUT_MS, DIAGNOSTICS_STREAM_DEBUG, AGENT_STALL_MS, AGENT_LOOP_REPEATS,
 } from '../config.ts';
 import { run, capture, type RunOpts } from '../proc/exec.ts';
 import { spawnWatcher, killWatcher, killAllWatchers } from '../proc/watcher.ts';
-import { waitForPort, waitForPortFree, waitForAppReady } from '../proc/ports.ts';
+import { waitForPort, waitForPortFree, waitForAppReady, buildFailedRe } from '../proc/ports.ts';
 import { ensureDirs, sleep, rmrf } from '../proc/fsutil.ts';
 import { writeOpencodeConfig, providerEnvFor, writePrepareFile } from './opencode-config.ts';
-import { classify } from './mcp-classify.ts';
+import { buildMcpConfig } from './mcp-config.ts';
 import { waitForMcp } from './mcp-ready.ts';
 import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
-import { getPackForFramework, getFramework } from '../provider-registry.ts';
-import type { RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage } from '../types.ts';
+import { getPackForFramework, getFramework, resolvePackPath, refreshFolderPack } from '../provider-registry.ts';
+import type { FrameworkDef, RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord, PackProvenance } from '../types.ts';
+import { installPackSkills } from './pack-skills.ts';
+import { copyTemplate } from './template.ts';
+import { maskingEmit, missingSecrets, secretEnv } from '../secrets.ts';
+import { ensurePackDeps, packPathEnv } from '../pack-deps.ts';
 import { createDiagnosticsCollector, modelDiagnostic, summarizeDiagnostics, type OutputStream } from '../capture/diagnostics.ts';
 
 export interface PipelineOpts {
@@ -61,10 +64,44 @@ export interface PipelineOpts {
    * passes the same closure `onChild` already evaluates. Interactive runs pass nothing.
    */
   isCancelled?: (() => boolean) | null;
+  /** What a pack's skill sources resolved to (commit / hash per source), for the history record. */
+  onSkillSources?: ((sources: SkillSourceRecord[]) => void) | null;
+  /** Output of the pack's `versions` probes, by name, for the history record. */
+  onToolVersions?: ((versions: Record<string, string>) => void) | null;
+  /** The pack was edited on disk since it loaded and has been reloaded for this run. */
+  onPackReloaded?: ((pack: PackProvenance) => void) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
 // servers in the block with `enabled:false`, and those tools never reach the agent.
+const VERSION_PROBE_TIMEOUT_MS = 30_000;
+
+/** The first version number a probe prints, else its first line. Some CLIs print a
+ * banner first (`ig --version` opens with an ASCII-art logo). */
+export function probeVersion(out: string): string {
+  const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const l of lines) {
+    const m = l.match(/\bv?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)\b/);
+    if (m) return m[1];
+  }
+  return (lines[0] || '(no output)').slice(0, 200);
+}
+
+/** The {{vars}} a run's commands see. Later entries win: the framework's own `vars`, then
+ * the provider's options, then the run's fixed names. `type`/`theme` are also still
+ * accepted as the older projectType/theme fields (matrix configs, history re-runs).
+ * `agents` feeds `ig new --agents=` so the scaffold's built-in ai-config pass honours the
+ * skills toggle instead of falling back to the CLI's checkbox defaults. */
+export function runVars(fw: FrameworkDef, cfg: RunConfig, appDir: string): Record<string, string | number> {
+  const fwVars = Object.fromEntries(Object.entries(fw.vars || {}).map(([k, v]) => [k, expandEnvRefs(v)]));
+  return {
+    type: cfg.projectType || '', theme: cfg.theme || '',
+    ...fwVars,
+    ...(cfg.options || {}),
+    name: 'app', dir: appDir, port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
+  };
+}
+
 const activeMcpServers = (block: Record<string, any>): string[] =>
   Object.entries(block).filter(([, def]) => !def || def.enabled !== false).map(([name]) => name);
 
@@ -77,10 +114,36 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null }: PipelineOpts,
+  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null, onPackReloaded = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
+  const loaded = getPackForFramework(cfg.framework);
+  const refreshed = loaded && refreshFolderPack(loaded.name);
+  if (refreshed && loaded && refreshed.hash !== loaded.hash) {
+    rawEmit('log', `pack "${refreshed.name}" changed on disk since it loaded — reloaded (hash ${loaded.hash} → ${refreshed.hash})`);
+    onPackReloaded?.({ name: refreshed.name, ...(refreshed.version ? { version: refreshed.version } : {}), hash: refreshed.hash, origin: refreshed.origin });
+  }
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
+
+  // A step that prints a secret must not get it into the log or the history record.
+  const emit = maskingEmit(rawEmit);
+  // Every framework belongs to a pack (Ignite UI's is built in).
+  const pack = getPackForFramework(cfg.framework);
+  if (!pack) throw new Error(`no provider pack found for framework "${cfg.framework}" — is the pack loaded?`);
+  // Pack secrets reach only the pack's scaffold / install / configure / dev-server steps
+  // (src/secrets.ts).
+  const missing = missingSecrets(pack);
+  if (missing.length) {
+    throw new Error(`missing required secret(s) for "${pack.name}": ` +
+      missing.map((m) => `${m.name} (${m.source})`).join(', '));
+  }
+  const depsEnv = packPathEnv(pack);
+  const stepEnv = (extra?: Record<string, string>) => ({ ...depsEnv, ...secretEnv(pack, extra || {}) });
+  const maskOutput = !!pack.secrets?.length;
+  // The pack's containerDeps (src/pack-deps.ts): usually already installed at load; the
+  // first run of a freshly loaded pack waits here. A failed install fails the run now.
+  if (pack.containerDeps?.npmGlobal?.length) emit('log', `pack deps: ${pack.containerDeps.npmGlobal.join(', ')}`);
+  const depVersions = await ensurePackDeps(pack);
 
   // MCP servers the agent will actually be offered, recorded so the tool-usage report
   // can say which of them were never called. Filled in by whichever configure branch runs.
@@ -101,13 +164,14 @@ export async function runPipeline(
   // 1. Scaffold
   emit('step', { step: 'scaffold' });
   fs.mkdirSync(path.dirname(appDir), { recursive: true });
-  // `agents` feeds `ig new --agents=` so the scaffold's built-in ai-config pass honours
-  // the skills toggle instead of falling back to the CLI's checkbox defaults.
-  const vars = {
-    name: 'app', dir: appDir, type: cfg.projectType || '', theme: cfg.theme || '',
-    port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
-  };
-  await runStep(fw.scaffold.cmd, subst(fw.scaffold.argv, vars), path.dirname(appDir), emit);
+  const vars = runVars(fw, cfg, appDir);
+  const scaffold = fw.scaffold;
+  if (scaffold.kind === 'template') {
+    const n = copyTemplate(resolvePackPath(pack, scaffold.from), appDir, vars, emit);
+    emit('log', `scaffolded from template ${scaffold.from} (${n} file(s))`);
+  } else {
+    await runStep(scaffold.cmd, subst(scaffold.argv, vars), path.dirname(appDir), emit, { env: stepEnv(scaffold.env), maskOutput });
+  }
 
   // Drop any framework-specific files into the fresh project (e.g. Blazor's
   // Directory.Build.props that relocates obj/bin off the bind mount).
@@ -115,246 +179,69 @@ export async function runPipeline(
     writePrepareFile(path.join(appDir, rel), subst([body], vars)[0], emit, appDir);
   }
 
-  // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project).
-  if (fw.install && fw.install.length) {
-    emit('log', `installing packages: ${fw.install.join(' ')}`);
-    await runStep('npm', ['install', ...fw.install], appDir, emit);
+  // 1b. Post-scaffold package install (e.g. MUI into a plain Vite project). A template
+  // ships a package.json but not its node_modules, so it always gets an install.
+  const templateDeps = scaffold.kind === 'template' && fs.existsSync(path.join(appDir, 'package.json'));
+  if ((fw.install && fw.install.length) || templateDeps) {
+    emit('log', `installing packages${fw.install?.length ? `: ${fw.install.join(' ')}` : ' from package.json'}`);
+    await runStep('npm', ['install', ...(fw.install || [])], appDir, emit, { env: stepEnv(scaffold.env), maskOutput });
   }
 
-  // 2. AI config — branches on the framework's configure strategy.
+  // 1c. What the pack's tools actually resolved to, since a pack's `version` is only what
+  // its author typed. A probe that fails is recorded as such rather than failing the run.
+  const found: Record<string, string> = Object.fromEntries(
+    Object.entries(depVersions).map(([name, v]) => [`npm:${name}`, v]));
+  if (pack.versions?.length) {
+    for (const v of pack.versions) {
+      if (v.frameworks && !v.frameworks.includes(cfg.framework)) continue;
+      try {
+        const out = await capture(v.cmd, v.argv, appDir, depsEnv, VERSION_PROBE_TIMEOUT_MS);
+        found[v.name] = probeVersion(out);
+      } catch (e: any) {
+        found[v.name] = `error: ${String(e?.message ?? e).split('\n')[0].slice(0, 160)}`;
+      }
+    }
+  }
+  if (Object.keys(found).length) {
+    emit('log', `tool versions: ${Object.entries(found).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+    onToolVersions?.(found);
+  }
+
+  // 2. Configure — the pack's own steps (Ignite UI: `ig ai-config`), which may generate
+  // skills and an MCP config file. For `ig new` frameworks this mostly re-runs what the
+  // scaffold did, but after `npm install`, so it upgrades the scaffold's bundled skills to
+  // the installed package's; Blazor (`dotnet new`) has no built-in pass, so this is its
+  // only one.
   emit('step', { step: 'configure' });
-  const configureStrategy = fw.configure ?? 'igniteui';
-
-  if (configureStrategy === 'igniteui') {
-    // Existing IgniteUI flow: ig ai-config writes .mcp.json + .agents/skills/.
-    const agents = cfg.skills ? ['generic'] : ['none'];
-    await runStep('ig', [
-      'ai-config',
-      '--framework', fw.aiFramework,
-      '--agents', ...agents,
-      '--assistants', 'generic',
-    ], appDir, emit);
-
-  } else if (configureStrategy === 'external') {
-    // External provider flow: driven entirely by the ProviderPack definition.
-    // Write .mcp.json from the pack's MCP server list, then optionally
-    // clone + copy the pack's skills from GitHub. opencode.json is written here
-    // directly (no translate step needed — the pack supplies correct commands).
-    const pack = getPackForFramework(cfg.framework);
-    if (!pack) throw new Error(`no provider pack found for framework "${cfg.framework}" — is the pack loaded?`);
-
-    // Write .mcp.json at the project root (used as a record; opencode.json is
-    // written below), in the standard shape: servers under `mcpServers`.
-    // Object.create(null) gives a null-prototype object so writing '__proto__' is
-    // harmless (it becomes a plain enumerable key rather than the prototype setter).
-    // The explicit forbidden-key guard is the barrier CodeQL requires to resolve
-    // js/remote-property-injection — Object.fromEntries() is not recognised.
-    const packServers: Record<string, any> = Object.create(null);
-    for (const s of pack.configure.mcpServers) {
-      if (s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
-        packServers[s.name] = { type: 'stdio', command: s.command, args: s.args || [] };
-      }
-    }
-    fs.writeFileSync(path.join(appDir, '.mcp.json'), JSON.stringify({ mcpServers: packServers }, null, 2));
-    emit('log', `wrote .mcp.json (${Object.keys(packServers).length} server(s) from pack "${pack.name}")`);
-
-    // Optionally install skills.
-    if (cfg.skills) {
-      const skillsDir = path.join(appDir, '.agents', 'skills');
-      fs.mkdirSync(skillsDir, { recursive: true });
-      const skillsConf = pack.configure.skills;
-      if (skillsConf?.github) {
-        // Clone the GitHub repo and copy every top-level skill folder.
-        // Validate the ref before embedding it in a git argument to prevent
-        // second-order command injection (e.g. "--upload-pack=malicious").
-        const githubRef = skillsConf.github;
-        if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(githubRef)) {
-          throw new Error(`invalid skills.github value "${githubRef}" — expected "owner/repo" with only safe characters`);
-        }
-        const tmpDir = fs.mkdtempSync(path.join('/tmp', 'skills-clone-'));
-        emit('log', `cloning skills from github.com/${githubRef}`);
-        await runStep('git', ['clone', '--depth', '1', `https://github.com/${githubRef}.git`, tmpDir], appDir, emit);
-        // The default branch moves, so record which commit this run actually tested — the
-        // entry log is persisted into the history record, so the run stays attributable.
-        const head = (await capture('git', ['-C', tmpDir, 'log', '-1', '--format=%h %cs'], appDir).catch(() => '')).trim();
-        // Repos that ship more than skills keep them under skills/ (the Agent Skills
-        // convention); only a folder holding a SKILL.md is a skill opencode can load.
-        const skillsRoot = fs.existsSync(path.join(tmpDir, 'skills')) ? path.join(tmpDir, 'skills') : tmpDir;
-        let count = 0;
-        for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
-          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-          if (!fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))) continue;
-          fs.cpSync(path.join(skillsRoot, entry.name), path.join(skillsDir, entry.name), { recursive: true });
-          count++;
-        }
-        emit('log', `installed ${count} skill(s) from github.com/${githubRef}${head ? ` @ ${head}` : ''}`);
-        await rmrf(tmpDir);
-      } else if (skillsConf?.installCommand?.length) {
-        const [cmd, ...args] = skillsConf.installCommand;
-        emit('log', `installing skills: ${[cmd, ...args].join(' ')}`);
-        await runStep(cmd, args, skillsDir, emit);
-      }
-    }
-
-    // Write opencode.json directly — pack commands are already correct,
-    // so the translate step is not needed.
-    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-    // Null-prototype object + explicit forbidden-key guard: same pattern as vsServers
-    // above. The guard is the barrier CodeQL needs to close js/remote-property-injection.
-    const mcpBlock: Record<string, any> = Object.create(null);
-    for (const s of pack.configure.mcpServers) {
-      const on = selected.has(s.class.toLowerCase());
-      // Sanitize server name and class before emitting to logs (CodeQL js/log-injection).
-      const safeName = s.name.replace(/[\r\n]/g, ' ');
-      const safeClass = s.class.replace(/[\r\n]/g, ' ');
-      emit('log', `mcp "${safeName}" → class "${safeClass}" → ${on ? 'enabled' : 'disabled'}`);
-      if (on && s.name !== '__proto__' && s.name !== 'constructor' && s.name !== 'prototype') {
-        // A pack's own command is already runnable, so unlike the igniteui branch there is
-        // nothing to repair here — but MCP_CMD_<CLASS> must still win, or the override is
-        // advertised for pack classes and silently inert for exactly them, while
-        // history.redact stamps it anyway and the History MCPs column reports a released
-        // run as `(local)`. Same resolver as the translate stage, same log line.
-        const override = mcpCommandFor(s.class);
-        mcpBlock[s.name] = { type: 'local', command: override ?? [s.command, ...(s.args || [])] };
-        if (override) emit('log', `mcp "${safeName}" command → ${override.join(' ')}`);
-      }
-    }
-    // Custom MCP servers are provider-agnostic: inject them on top of any pack's MCPs
-    // when the 'custom' class is enabled. Uses translate() to convert from the
-    // .mcp.json server format to opencode format.
-    if (selected.has('custom') && cfg.customMcp?.trim()) {
-      try {
-        const parsed = JSON.parse(cfg.customMcp);
-        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
-        const rawCustom: Record<string, any> =
-          parsed?.servers && typeof parsed.servers === 'object' ? parsed.servers :
-          parsed?.mcpServers && typeof parsed.mcpServers === 'object' ? parsed.mcpServers :
-          isServerDef(parsed) ? { custom: parsed } :
-          parsed;
-        const tempMcpDoc: any = { servers: {} };
-        for (const [rawName, def] of Object.entries(rawCustom || {})) {
-          let key = 'custom-' + rawName, n = 1;
-          while (Object.prototype.hasOwnProperty.call(tempMcpDoc.servers, key)) key = `custom-${rawName}-${n++}`;
-          tempMcpDoc.servers[key] = def;
-        }
-        const { mcp: customMcp } = translate(tempMcpDoc, {
-          enabled: new Set(Object.keys(tempMcpDoc.servers)),
-          workspaceFolder: appDir,
-        });
-        // MCP_CMD_CUSTOM applies here too. The igniteui branch already rewrites custom
-        // servers (they are classed 'custom' and go through the same fixup loop), so
-        // skipping it here would make the override work or not depending purely on which
-        // framework the entry used — and redact() would stamp it either way.
-        const customOverride = mcpCommandFor('custom');
-        for (const [name, def] of Object.entries(customMcp)) {
-          if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
-            mcpBlock[name] = customOverride && (def as any).type === 'local'
-              ? { ...(def as any), command: customOverride.slice() }
-              : def;
-          }
-          emit('log', `mcp "${name}" → custom → enabled`);
-          if (customOverride && (def as any).type === 'local') {
-            emit('log', `mcp "${name}" command → ${customOverride.join(' ')}`);
-          }
-        }
-      } catch (e: any) {
-        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
-      }
-    }
-    writeOpencodeConfig(cfg, mcpBlock, appDir);
-    mcpServers = activeMcpServers(mcpBlock);
-    emit('log', `opencode.json written (${Object.keys(mcpBlock).length} MCP server(s) enabled)`);
-
-  } else {
-    // 'none': write a bare opencode.json now (no MCPs, no skills) and skip translate.
-    writeOpencodeConfig(cfg, {}, appDir);
-    emit('log', 'configure=none: wrote bare opencode.json, skipping translate');
+  for (const step of pack.configure || []) {
+    if (step.frameworks && !step.frameworks.includes(cfg.framework)) continue;
+    await runStep(step.cmd, subst(step.argv, vars), appDir, emit, { env: stepEnv(), maskOutput });
   }
 
-  // 3. Translate .mcp.json -> opencode.json (IgniteUI only).
-  // The 'external' strategy already wrote opencode.json in step 2.
-  // The 'none' strategy wrote a bare opencode.json in step 2 as well.
-  if (configureStrategy === 'igniteui') {
-    emit('step', { step: 'translate' });
-    let mcpDoc: any = {};
-    const mcpPath = path.join(appDir, '.mcp.json');
-    const legacyMcpPath = path.join(appDir, '.vscode', 'mcp.json');
-    if (fs.existsSync(mcpPath)) {
-      mcpDoc = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
-    } else if (fs.existsSync(legacyMcpPath)) {
-      // Older igniteui-cli versions wrote the VS Code file instead.
-      mcpDoc = JSON.parse(fs.readFileSync(legacyMcpPath, 'utf8'));
-      emit('log', 'no .mcp.json found; using legacy .vscode/mcp.json');
-    } else {
-      emit('log', 'no .mcp.json found; continuing with empty MCP set');
+  if (cfg.skills && pack.skills?.sources.length) {
+    const records: SkillSourceRecord[] = [];
+    try {
+      await installPackSkills(pack, path.join(appDir, '.agents', 'skills'),
+        emit, (cmd, argv, cwd) => runStep(cmd, argv, cwd, emit, { env: depsEnv }), records);
+    } finally {
+      // Reported even when a source failed, so the record shows what did resolve.
+      onSkillSources?.(records);
     }
-    // Normalize: the standard .mcp.json wraps servers in `mcpServers`, the legacy
-    // VS Code file in `servers`. Everything downstream works on the `servers` map.
-    mcpDoc.servers = mcpDoc.servers || mcpDoc.mcpServers || {};
-    // Inject user-supplied custom MCP servers (pasted JSON) into mcpDoc before classify/translate.
-    const customNames = new Set<string>();
-    if (cfg.customMcp && cfg.customMcp.trim()) {
-      try {
-        const parsed = JSON.parse(cfg.customMcp);
-        const isServerDef = (o: any) => o && typeof o === 'object' && (o.command || o.url);
-        const customServers: Record<string, any> =
-          (parsed && parsed.servers && typeof parsed.servers === 'object') ? parsed.servers :
-          (parsed && parsed.mcpServers && typeof parsed.mcpServers === 'object') ? parsed.mcpServers :
-          isServerDef(parsed) ? { custom: parsed } :
-          parsed;
-        // rawName is attacker/user-controlled (pasted JSON). Per CodeQL's guidance for
-        // js/remote-property-injection, a fixed non-empty marker prefix is prepended
-        // before the untrusted string is ever used as an object property key. This
-        // guarantees the resulting key can never equal a dangerous name such as
-        // "__proto__" / "constructor" / "prototype", closing off prototype pollution
-        // regardless of what the pasted JSON contains.
-        for (const [rawName, def] of Object.entries(customServers || {})) {
-          let key = 'custom-' + rawName, n = 1;
-          while (Object.prototype.hasOwnProperty.call(mcpDoc.servers, key)) key = `custom-${rawName}-${n++}`;
-          mcpDoc.servers[key] = def;
-          customNames.add(key);
-        }
-      } catch (e: any) {
-        emit('log', `warning: could not parse custom MCP JSON (${e.message}); skipped`);
-      }
-    }
-    // The user toggles MCPs by class (igniteui / theming / angular / custom); `classify`
-    // maps each server with explicit precedence. Only classes the caller explicitly
-    // selected are enabled — everything else stays off, so a variant with no MCPs is a
-    // true clean baseline.
-    const selected = new Set((cfg.enabledMcps || []).map((t) => t.toLowerCase()));
-    const servers = mcpDoc.servers;
-    const enabled = new Set<string>();
-    const classByName: Record<string, string> = {};
-    for (const [name, s] of Object.entries(servers)) {
-      const cls = customNames.has(name) ? 'custom' : classify(name, s);
-      classByName[name] = cls;
-      const on = selected.has(cls);
-      if (on) enabled.add(name);
-      emit('log', `mcp "${name}" → ${cls} → ${on ? 'enabled' : 'disabled'}`);
-    }
-    const { mcp, warnings } = translate(mcpDoc, { enabled, workspaceFolder: appDir });
-    warnings.forEach((w) => emit('log', `warning: ${w}`));
-    // Rewrite `npx` invocations that cold-fetch from npm to globally-installed bins
-    // (ig mcp, igniteui-theming-mcp).
-    for (const [name, def] of Object.entries(mcp)) {
-      const fix = mcpCommandFor(classByName[name]);
-      if (fix && def.type === 'local') {
-        def.command = fix.slice();
-        emit('log', `mcp "${name}" command → ${fix.join(' ')}`);
-      }
-    }
-    writeOpencodeConfig(cfg, mcp, appDir);
-    mcpServers = activeMcpServers(mcp);
-    emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${[...enabled].length} enabled)`);
-  } // end if (configureStrategy !== 'none')
+  }
+
+  // 3. MCP servers → opencode.json (src/pipeline/mcp-config.ts).
+  emit('step', { step: 'translate' });
+  const { mcp, enabledCount } = buildMcpConfig(pack, cfg, appDir, emit);
+  writeOpencodeConfig(cfg, mcp, appDir);
+  mcpServers = activeMcpServers(mcp);
+  emit('log', `opencode.json written (${Object.keys(mcp).length} MCP servers, ${enabledCount} enabled)`);
 
   // 4. Prune skills. With the toggle off, sweep away anything the scaffold or ai-config
   // wrote anyway (the flags above should have prevented it — this is the guarantee, not
   // the mechanism). With it on, drop just the folders the caller deselected.
   if (!cfg.skills) {
     stripGeneratedAgentConfig(appDir, emit);
-  } else if (configureStrategy === 'igniteui' && Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
+  } else if (Array.isArray(cfg.excludedSkills) && cfg.excludedSkills.length) {
     emit('step', { step: 'prune' });
     pruneSkills(cfg.excludedSkills, emit, appDir);
   }
@@ -408,7 +295,7 @@ export async function runPipeline(
   // the slow bind mount. We build the app once, after the agent, just to screenshot.
   if (!headless) {
     emit('step', { step: 'launch-app' });
-    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, fw.dev.env || {});
+    spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env), { maskOutput });
     try {
       await waitForPort(APP_PORT, 180000, emit);
       emit('log', `app is serving on :${APP_PORT}`);
@@ -418,7 +305,7 @@ export async function runPipeline(
 
     // 6a. Interactive: launch the opencode web server and hand off.
     emit('step', { step: 'launch-opencode' });
-    const ocEnv = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
+    const ocEnv = { ...depsEnv, ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
     if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
     spawnWatcher('opencode', 'opencode', serverArgv(OPENCODE_PORT), appDir, ocEnv,
       // Teeing (rather than redirecting) opencode's output is what makes provider errors
@@ -435,7 +322,7 @@ export async function runPipeline(
 
   // 6b. Headless: run the agent once with the prompt — with NO dev server running.
   emit('step', { step: 'agent' });
-  const ocEnv: Record<string, string> = { ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
+  const ocEnv: Record<string, string> = { ...depsEnv, ...providerEnvFor(cfg.model, cfg.apiKey), ...serverEnv() };
   if (cfg.customBaseUrl && cfg.apiKey) ocEnv.CUSTOM_API_KEY = cfg.apiKey;
   // Isolate this entry's opencode storage so `opencode stats` reflects only it.
   if (dataDir) { fs.mkdirSync(dataDir, { recursive: true }); ocEnv.XDG_DATA_HOME = dataDir; }
@@ -621,8 +508,8 @@ export async function runPipeline(
   }
   const appLog = path.join(LOG_DIR, 'app.log');
   const logOffset = fs.existsSync(appLog) ? fs.statSync(appLog).size : 0;
-  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, fw.dev.env || {});
-  const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit);
+  const appChild = spawnWatcher('app', fw.dev.cmd, subst(fw.dev.argv, vars), appDir, stepEnv(fw.dev.env), { maskOutput });
+  const ready = await waitForAppReady(APP_PORT, APP_READY_TIMEOUT_MS, 'app', logOffset, appChild, emit, buildFailedRe(fw.buildFailed));
   if (ready.ready) {
     emit('log', `app is serving on :${APP_PORT}`);
   } else {
@@ -637,7 +524,7 @@ export async function runPipeline(
     return { appPort: APP_PORT, stats: entryStats, tools: entryTools, screenshots: [], routes: [], skipped: [], appReady: false, appError: ready.reason, diagnostics };
   }
   await sleep(Number(process.env.SCREENSHOT_SETTLE_MS || 5000));
-  const disc = discoverRoutes(appDir, cfg.framework);
+  const disc = discoverRoutes(appDir, fw.routes);
   emit('log', `routes: ${disc.routes.length} found${disc.skipped.length ? `, ${disc.skipped.length} skipped` : ''}${disc.stateNav ? ' (state-nav, will click through)' : ''}`);
   disc.skipped.forEach((s) => emit('log', `  skip ${s.path} (${s.reason})`));
   // When no routes are discovered (e.g. a plain Vite React app with no router, or an

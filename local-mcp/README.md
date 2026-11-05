@@ -42,7 +42,8 @@ MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp ./run.sh
 
 Any class works — `igniteui`, `theming`, `angular`, `custom`, or whatever `class` string a
 provider pack declares. The suffix is matched case-insensitively with non-alphanumerics
-folded to `_`, so a pack class `mui-docs` is set with `MCP_CMD_MUI_DOCS`. The value is a
+folded to `_`, so class `mui-docs` of pack `mui` is set with `MCP_CMD_MUI_MUI_DOCS` (or the
+bare `MCP_CMD_MUI_DOCS` while no other loaded pack declares a `mui-docs` class). The value is a
 whole command line, so flags are fine:
 `MCP_CMD_THEMING="/opt/local-mcp/bin/x --stdio"`. An empty value counts as unset.
 

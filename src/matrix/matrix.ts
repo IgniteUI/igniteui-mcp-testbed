@@ -11,6 +11,7 @@ import { cleanupAppDir } from './cleanup.ts';
 import { entryDirName, newMatrixId } from './variants.ts';
 import { writeMatrixReport } from './report.ts';
 import { runPipeline } from '../pipeline/pipeline.ts';
+import { canonicalMcpClasses, resolveRunOptions } from '../provider-registry.ts';
 import type { Combo, MatrixEntry, MatrixPass, MatrixState, MatrixFixed as Fixed, RunConfig, Diagnostic, DiagnosticKind, AgentRunError } from '../types.ts';
 import { deriveStatus, summarizeDiagnostics, isActive, kindPriority } from '../capture/diagnostics.ts';
 import { DIAGNOSTIC_AGGREGATE_THRESHOLD } from '../config.ts';
@@ -86,9 +87,10 @@ function buildCfg(c: Combo, fixed: Fixed): RunConfig {
   // local-only (wipe the generated set); with skills it merges (local overlaid on top).
   return {
     framework: c.platform,
+    options: resolveRunOptions(c.platform, fixed.options, { type: fixed.projectType, theme: fixed.theme }),
     projectType: fixed.projectType || '',
     theme: fixed.theme || '',
-    enabledMcps: c.variant.mcps,
+    enabledMcps: canonicalMcpClasses(c.platform, c.variant.mcps),
     customMcp: fixed.customMcp,
     skills: !!c.variant.skills,
     excludedSkills: [],
@@ -197,6 +199,9 @@ async function runMatrix(combos: Combo[], { prompt, matrixId, fixed, name }: { p
       const result = await runPipeline(cfg, {
         emit, headless: true, prompt, dataDir, artifactDir, onChild, appDir,
         isCancelled: () => matrixCancelled || cancelledEntries.has(runId),
+        onSkillSources: (s) => history.updateSkillSources(runId, s),
+        onToolVersions: (v) => history.updateToolVersions(runId, v),
+        onPackReloaded: (p) => history.updatePack(runId, p),
       });
       closeStep();
       if (result.stats) history.updateStats(runId, result.stats);

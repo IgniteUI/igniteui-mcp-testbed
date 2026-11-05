@@ -1,5 +1,7 @@
 'use strict';
 
+import { resolveRunOptions, getPackForFramework } from '../provider-registry.ts';
+import { packPathEnv } from '../pack-deps.ts';
 import type { Express } from 'express';
 import { APP_DIR, OPENCODE_PORT } from '../config.ts';
 import * as history from '../history.ts';
@@ -36,6 +38,14 @@ export default function registerRunRoutes(app: Express): void {
     };
 
     const cfg = req.body || {};
+    // Checked before the record exists, so a bad option is a plain 400, not a failed run.
+    try {
+      cfg.options = resolveRunOptions(String(cfg.framework || ''), cfg.options, { type: cfg.projectType, theme: cfg.theme });
+    } catch (e: any) {
+      emit('error', e.message);
+      res.end();
+      return;
+    }
     const runId = session.beginRun(cfg);
     // Bound to the collector beginRun just installed, so a previous watcher still dying
     // in the background cannot feed its output into this run.
@@ -47,6 +57,9 @@ export default function registerRunRoutes(app: Express): void {
         onToolContext: session.setToolContext,
         onAgentOutput: agent.onOutput,
         onAgentClose: agent.onClose,
+        onSkillSources: (s) => history.updateSkillSources(runId, s),
+        onToolVersions: (v) => history.updateToolVersions(runId, v),
+        onPackReloaded: (p) => history.updatePack(runId, p),
       });
       // Begin gathering live stats (messages / tokens / cost) into /work/stats.json,
       // plus the MCP-tool / skill usage the tool context above scopes to this run.
@@ -91,7 +104,7 @@ export default function registerRunRoutes(app: Express): void {
         error: `port ${OPENCODE_PORT} is still in use by the previous opencode; model not switched`,
       });
     }
-    const ocEnv = { ...providerEnvFor(lastConfig.model, lastConfig.apiKey), ...serverEnv() };
+    const ocEnv = { ...packPathEnv(getPackForFramework(lastConfig.framework)), ...providerEnvFor(lastConfig.model, lastConfig.apiKey), ...serverEnv() };
     if (lastConfig.customBaseUrl && lastConfig.apiKey) ocEnv.CUSTOM_API_KEY = lastConfig.apiKey;
     // Same tee as the initial spawn in runPipeline. Without it the session's diagnostics
     // collector goes deaf the moment the user switches model — which is precisely when a

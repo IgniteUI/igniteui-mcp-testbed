@@ -44,26 +44,44 @@ async function removePack(pack: ProviderPack) {
   } catch (e: any) { alert(e.message); }
 }
 
+// containerDeps are installed when the pack loads (src/pack-deps.ts); show how that went.
+const depsNote = (pack: ProviderPack) => {
+  const d = pack.deps || { state: 'pending' };
+  const list = (pack.containerDeps?.npmGlobal || []).join(', ');
+  if (d.state === 'ok') {
+    const v = Object.entries(d.versions || {}).map(([k, x]) => `${k}@${x}`).join(', ');
+    return html`<p class="note" style="margin:.25rem 0 0">Container deps: ✓ ${v || list}</p>`;
+  }
+  if (d.state === 'failed') {
+    return html`<p class="note warn" style="margin:.25rem 0 0">Container deps: ✗ install failed — ${d.error || list}.
+      The next run on this pack retries the install, and fails if it fails again.</p>`;
+  }
+  return html`<p class="note" style="margin:.25rem 0 0">Container deps: installing ${list}…</p>`;
+};
+
 const packCard = (pack: ProviderPack) => html`
-  <div class="provider-card">
+  <div class="provider-card ${pack.origin === 'builtin' ? 'builtin' : ''}">
     <div class="provider-card-head">
       <strong>${pack.displayName}</strong>
       ${pack.version ? html`<span class="note">v${pack.version}</span>` : nothing}
-      <button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>
+      ${pack.origin === 'builtin'
+        ? html`<span class="pill success">built-in</span>`
+        : pack.origin === 'folder'
+          ? html`<span class="note" title="Folder packs are managed on the host">folder</span>`
+          : html`<button class="icon-btn del-pack" title="Remove pack" @click=${() => removePack(pack)}>✕</button>`}
     </div>
     ${pack.description ? html`<p class="note" style="margin:.2rem 0 0">${pack.description}</p>` : nothing}
     <p class="note" style="margin:.25rem 0 0">
       Frameworks: ${pack.frameworks.map((f) => f.label).join(', ')} ·
-      MCPs: ${(pack.configure.mcpServers || []).map((s) => s.label).join(', ') || '—'}
+      MCPs: ${pack.mcp.classes.map((c) => c.label).join(', ') || '—'}
     </p>
-    ${pack.containerDeps?.npmGlobal?.length ? html`
-      <p class="note warn" style="margin:.25rem 0 0">
-        ⚠ <strong>Container rebuild required.</strong> This pack needs global npm packages that must be baked into the image.<br>
-        1. Open <code>Containerfile</code> and find the <em>3rd-party provider dependencies</em> section.<br>
-        2. Uncomment the <code>RUN</code> line and replace the placeholder with:<br>
-        &nbsp;&nbsp;&nbsp;<code>npm install -g ${pack.containerDeps.npmGlobal.join(' ')}</code><br>
-        3. Rebuild: <code>.\\run.ps1 build</code> (Windows) · <code>./run.sh build</code> (Linux/macOS)
+    ${(pack.secrets || []).length ? html`
+      <p class="note" style="margin:.25rem 0 0">Secrets:
+        ${pack.secrets.map((s, i) => html`${i ? ', ' : ''}<span class=${s.set ? '' : s.required ? 'warn' : ''}
+          title=${`${s.description ? s.description + ' — ' : ''}${s.source}`}>${s.name}
+          ${s.set ? '✓ set' : s.required ? '✗ missing' : '— not set (optional)'}</span>`)}
       </p>` : nothing}
+    ${pack.containerDeps?.npmGlobal?.length ? depsNote(pack) : nothing}
   </div>`;
 
 function tpl() {
@@ -73,14 +91,6 @@ function tpl() {
     <p class="note">Ignite UI is built-in and always available. Load a provider pack to enable an additional
     library (frameworks + MCP server + skills) in the Interactive and Matrix tabs.</p>
     <div id="providerList">
-      <div class="provider-card builtin">
-        <div class="provider-card-head">
-          <strong>Ignite UI</strong>
-          <span class="pill success">built-in</span>
-        </div>
-        <p class="note" style="margin:.2rem 0 0">Frameworks: Angular · Blazor · React · Web Components<br>
-        MCPs: Ignite UI CLI · Theming</p>
-      </div>
       ${repeat(st.packs, (p) => p.name, packCard)}
     </div>
     <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">

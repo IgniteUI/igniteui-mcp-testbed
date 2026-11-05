@@ -13,6 +13,8 @@
 #   ./run.sh --matrix-config <file> --validate
 #                                       validate the config and exit (no matrix run,
 #                                       no ports published); exit 0 = valid, 1 = invalid
+#   ./run.sh --validate-pack <dir|file> check a provider pack (schema, collisions, secrets,
+#                                       container deps, commands) and exit; nothing runs
 set -euo pipefail
 
 usage() {
@@ -31,6 +33,10 @@ Usage:
   ./run.sh --matrix-config <file> --validate
                                    validate the config and exit — no matrix run,
                                    no ports published (exit 0 = valid, 1 = invalid)
+  ./run.sh --validate-pack <dir|file>
+                                   check a provider pack folder (with pack.json) or
+                                   single-file pack inside the image and exit — nothing
+                                   is scaffolded or installed (exit 0 = OK, 1 = problems)
   ./run.sh -h | --help | help      show this help
 
 Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app dev server
@@ -41,22 +47,27 @@ Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app 
   - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
   - MCP_CMD_<CLASS> (any class) / IGNITEUI_MCP_DOCS_BACKEND_URL / IGNITEUI_MCP_DEBUG
     (an already-exported value wins)
+  - SECRET_<NAME> (any name): provider-pack secrets, handed only to that pack's
+    scaffold / install / dev-server steps, never to the agent
 
 MCP_CMD_<CLASS> swaps that class's MCP server for a locally-built one packed into
 ./local-mcp/ and installed at build time, e.g.
   MCP_CMD_IGNITEUI=/opt/local-mcp/bin/igniteui-mcp ./run.sh --matrix-config ./m.json
   MCP_CMD_THEMING=/opt/local-mcp/bin/my-theming-mcp ./run.sh
-Any class works (igniteui, theming, angular, custom, or one a provider pack declares);
-a hyphen in a class name becomes an underscore (mui-docs -> MCP_CMD_MUI_DOCS). Unset,
+Any class works: a pack's class is <pack>/<class> (Ignite UI's igniteui/igniteui is
+MCP_CMD_IGNITEUI_IGNITEUI), and the bare MCP_CMD_<CLASS> also works while only one
+loaded pack declares that class, so MCP_CMD_IGNITEUI still means Ignite UI's server.
+Non-alphanumerics become underscores (mui/mui-docs -> MCP_CMD_MUI_MUI_DOCS). Unset,
 runs use the released server. One image serves every arm. IGNITEUI_MCP_CMD is still
 accepted as an alias for MCP_CMD_IGNITEUI.
 
 Session artifacts land in ./sessions/<timestamp>/; run history, matrix reports, and
 screenshots persist in ./sessions/history/ across containers.
 
-Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./providers-data ·
-./prompt-images (read-write — reference images attached to the agent's prompt; the UI's
-image uploads land here).
+Host folders bind-mounted in: ./local-skills (ro) · ./tests (ro) · ./secrets (ro, pack
+secret files as ./secrets/<pack>/<file>) · ./providers-data · ./prompt-images
+(read-write — reference images attached to the agent's prompt; the UI's image uploads
+land here).
 
 Package versions are PINNED in the Containerfile (IGNITEUI_CLI_VERSION,
 IGNITEUI_THEMING_VERSION, OPENCODE_VERSION) rather than tracking "latest", because the
@@ -72,6 +83,7 @@ Examples:
   ./run.sh
   ./run.sh --matrix-config ./matrix.example.json
   ./run.sh --matrix-config ./matrix.json --validate
+  ./run.sh --validate-pack ./providers-data/reveal
 EOF
 }
 
@@ -159,8 +171,11 @@ fi
 # Run-mode arguments.
 MATRIX_CONFIG_FILE=""
 VALIDATE=0
+PACK_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --validate-pack)
+      PACK_PATH="${2:?--validate-pack needs a pack folder or .json file}"; shift 2 ;;
     --matrix-config)
       MATRIX_CONFIG_FILE="${2:?--matrix-config needs a path}"; shift 2 ;;
     --validate)
@@ -182,6 +197,14 @@ if [[ "$VALIDATE" == 1 && -z "$MATRIX_CONFIG_FILE" ]]; then
   echo "--validate requires --matrix-config <file>" >&2
   exit 2
 fi
+if [[ -n "$PACK_PATH" ]]; then
+  [[ -n "$MATRIX_CONFIG_FILE" ]] && { echo "--validate-pack can't be combined with --matrix-config" >&2; exit 2; }
+  [[ -e "$PACK_PATH" ]] || { echo "pack not found: $PACK_PATH" >&2; exit 2; }
+  PACK_PATH="$(cd "$(dirname "$PACK_PATH")" && pwd)/$(basename "$PACK_PATH")"
+fi
+# Either validate mode: report and exit, no ports, no session left behind.
+CHECK_ONLY=0
+[[ "$VALIDATE" == 1 || -n "$PACK_PATH" ]] && CHECK_ONLY=1
 
 # Provider API keys: read them from .env (the same file the build reads) and forward
 # any set key vars into the container so a matrix config's apiKeyEnv — or the provider
@@ -254,8 +277,18 @@ for v in "${MCP_FIXED[@]}" ${!MCP_CMD_@}; do
   [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
 done
 
+# Provider-pack secrets: any SECRET_<NAME>, from the environment or .env. Forwarded by
+# name so the value stays off the podman command line; the wizard takes them out of its
+# own env at startup and hands them only to the pack's scaffold/install/dev steps.
+read_env_keys "SECRET_[A-Za-z0-9_]+"
+for v in ${!SECRET_@}; do
+  [[ -n "${!v:-}" ]] && ENVFLAGS+=(-e "$v")
+done
+
 [[ -n "$MATRIX_CONFIG_FILE" ]] && ENVFLAGS+=(-e "MATRIX_CONFIG=/matrix-config.json")
 [[ "$VALIDATE" == 1 ]] && ENVFLAGS+=(-e "MATRIX_VALIDATE=1")
+# The pack is mounted under its own name, since a folder pack's name must match it.
+[[ -n "$PACK_PATH" ]] && ENVFLAGS+=(-e "PACK_VALIDATE=/validate-pack/$(basename "$PACK_PATH")")
 
 mkdir -p "$OUT"
 # Run history persists across containers, so it lives in a stable shared dir
@@ -283,7 +316,13 @@ mkdir -p "$TESTS"
 # images persist on the host and can be reused by a terminal-driven matrix config.
 IMAGES="$PWD/prompt-images"
 mkdir -p "$IMAGES"
-if [[ "$VALIDATE" == 1 ]]; then
+# Provider-pack secret files (license keys), ./secrets/<pack>/<file>, mounted read-only
+# at /secrets — outside the app dir, so the agent's project never contains them.
+SECRETS="$PWD/secrets"
+mkdir -p "$SECRETS"
+if [[ -n "$PACK_PATH" ]]; then
+  echo "Validating provider pack: $PACK_PATH"
+elif [[ "$VALIDATE" == 1 ]]; then
   echo "Validating matrix config: $MATRIX_CONFIG_FILE"
 else
   echo "Session artifacts -> $OUT"
@@ -325,18 +364,25 @@ case "$(uname -s)" in
     PROV_HOST="$(cygpath -m "$PROVIDERS")"
     TESTS_HOST="$(cygpath -m "$TESTS")"
     IMAGES_HOST="$(cygpath -m "$IMAGES")"
-    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro" "-v" "${IMAGES_HOST}:/prompt-images")
+    SECRETS_HOST="$(cygpath -m "$SECRETS")"
+    VOL=("-v" "${OUT_HOST}:/work" "-v" "${HIST_HOST}:/history" "-v" "${SKILLS_HOST}:/local-skills:ro" "-v" "${PROV_HOST}:/providers" "-v" "${TESTS_HOST}:/tests:ro" "-v" "${IMAGES_HOST}:/prompt-images" "-v" "${SECRETS_HOST}:/secrets:ro")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       MC_HOST="$(cygpath -m "$MATRIX_CONFIG_FILE")"
       VOL+=("-v" "${MC_HOST}:/matrix-config.json:ro")
+    fi
+    if [[ -n "$PACK_PATH" ]]; then
+      VOL+=("-v" "$(cygpath -m "$PACK_PATH"):/validate-pack/$(basename "$PACK_PATH"):ro")
     fi
     USERNS=()
     ;;
   *)
     # Linux / macOS: SELinux relabel + keep host UID for writable bind mount.
-    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z")
+    VOL=("-v" "${OUT}:/work:Z" "-v" "${HIST}:/history:Z" "-v" "${SKILLS}:/local-skills:ro,Z" "-v" "${PROVIDERS}:/providers:Z" "-v" "${TESTS}:/tests:ro,Z" "-v" "${IMAGES}:/prompt-images:Z" "-v" "${SECRETS}:/secrets:ro,Z")
     if [[ -n "$MATRIX_CONFIG_FILE" ]]; then
       VOL+=("-v" "${MATRIX_CONFIG_FILE}:/matrix-config.json:ro,Z")
+    fi
+    if [[ -n "$PACK_PATH" ]]; then
+      VOL+=("-v" "${PACK_PATH}:/validate-pack/$(basename "$PACK_PATH"):ro,Z")
     fi
     USERNS=("--userns=keep-id")
     ;;
@@ -349,13 +395,13 @@ PORTS=(
 )
 # Validate mode publishes no ports (it exits immediately and must not conflict with a
 # testbed that is already running).
-[[ "$VALIDATE" == 1 ]] && PORTS=()
+[[ "$CHECK_ONLY" == 1 ]] && PORTS=()
 
 # Allocate a TTY only when we actually have one, so CI / piped invocations
 # (e.g. a matrix-config run driven from a script) don't fail on `-t`.
 if [[ -t 0 ]]; then TTY=(-it); else TTY=(-i); fi
 
-if [[ "$VALIDATE" == 1 ]]; then
+if [[ "$CHECK_ONLY" == 1 ]]; then
   # Not exec: reap the (empty) session dir the mount needed, then forward the exit code.
   podman run --rm "${TTY[@]}" \
     --name "igniteui-testbed-validate-$SESSION" \

@@ -2,9 +2,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic } from './types.ts';
-import { mcpOverrideFor } from './config.ts';
+import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord, PackProvenance } from './types.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
+import { getPackForFramework, providerFor, mcpOverrideFor, canonicalMcpClasses } from './provider-registry.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -45,6 +45,8 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
   const c = cfg || {};
   return {
     framework: c.framework || null,
+    ...(c.framework && providerFor(c.framework) ? { provider: providerFor(c.framework) } : {}),
+    ...(c.options && Object.keys(c.options).length ? { options: { ...c.options } } : {}),
     projectType: c.projectType || '',
     theme: c.theme || '',
     enabledMcps: Array.isArray(c.enabledMcps) ? c.enabledMcps.slice() : [],
@@ -53,7 +55,8 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     excludedSkills: Array.isArray(c.excludedSkills) ? c.excludedSkills.slice() : [],
     overrideSkills: !!c.overrideSkills,
     localSkillsOnly: !!c.localSkillsOnly,
-    selectedTests: Array.isArray(c.selectedTests) ? c.selectedTests.slice() : [],
+    // Absent = "run all discovered"; [] = "run none". Never collapse the two.
+    ...(Array.isArray(c.selectedTests) ? { selectedTests: c.selectedTests.slice() } : {}),
     promptImages: Array.isArray(c.promptImages) ? c.promptImages.slice() : [],
     models: c.model ? [c.model] : [],
     customBaseUrl: c.customBaseUrl || null,
@@ -65,11 +68,18 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     // entirely when nothing is overridden, so the field's presence is itself the signal.
     ...(() => {
       const cmds: Record<string, string> = {};
-      for (const cls of Array.isArray(c.enabledMcps) ? c.enabledMcps : []) {
-        const cmd = mcpOverrideFor(cls);
+      const own = Array.isArray(c.enabledMcps) ? c.enabledMcps : [];
+      const qualified = c.framework ? canonicalMcpClasses(c.framework, own) : own;
+      own.forEach((cls: string, i: number) => {
+        const cmd = mcpOverrideFor(qualified[i]);
         if (cmd) cmds[cls] = cmd;
-      }
+      });
       return Object.keys(cmds).length ? { mcpCommands: cmds } : {};
+    })(),
+    // Packs are loaded at startup, so this is the pack the run will actually use.
+    ...(() => {
+      const p = c.framework ? getPackForFramework(c.framework) : undefined;
+      return p ? { pack: { name: p.name, ...(p.version ? { version: p.version } : {}), hash: p.hash, origin: p.origin } } : {};
     })(),
     ...(opencodeVersion() !== 'unknown' ? { opencodeVersion: opencodeVersion() } : {}),
     ...(codemodeEnabled() != null ? { codemode: !!codemodeEnabled() } : {}),
@@ -193,6 +203,24 @@ export function updateStats(id: string | null, snapshot: Stats | null): HistoryR
 export function updateTools(id: string | null, usage: ToolUsage | null): HistoryRecord | null {
   if (!id || !usage) return null;
   return update(id, (r) => { r.tools = usage; });
+}
+
+// Set by the pipeline once a pack's skills are installed, which is after the record exists.
+export function updateSkillSources(id: string | null, sources: SkillSourceRecord[] | null): HistoryRecord | null {
+  if (!id || !Array.isArray(sources)) return null;
+  return update(id, (r) => { r.config.skillSources = sources.map((x) => ({ ...x, skills: x.skills.slice() })); });
+}
+
+// The pack's `versions` probes run after install, so (like skill sources) they land on a
+// record that already exists.
+export function updatePack(id: string | null, pack: PackProvenance | null): HistoryRecord | null {
+  if (!id || !pack) return null;
+  return update(id, (r) => { r.config.pack = { ...pack }; });
+}
+
+export function updateToolVersions(id: string | null, versions: Record<string, string> | null): HistoryRecord | null {
+  if (!id || !versions || !Object.keys(versions).length) return null;
+  return update(id, (r) => { r.config.toolVersions = { ...versions }; });
 }
 
 // Diagnostics accrue while an interactive session runs — a provider 429 can land on the
