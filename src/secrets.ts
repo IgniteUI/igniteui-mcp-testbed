@@ -43,12 +43,16 @@ const registeredFiles = new Set<string>();
 function registerFileSecret(abs: string): void {
   if (registeredFiles.has(abs)) return;
   registeredFiles.add(abs);
+  let fd: number | undefined;
   try {
-    if (fs.statSync(abs).size > MAX_SECRET_FILE_BYTES) return;
-    const text = fs.readFileSync(abs, 'utf8');
+    // Size check and read go through one descriptor, so they see the same file.
+    fd = fs.openSync(abs, 'r');
+    if (fs.fstatSync(fd).size > MAX_SECRET_FILE_BYTES) return;
+    const text = fs.readFileSync(fd, 'utf8');
     addMask(text.trim());
     for (const line of text.split(/\r?\n/)) addMask(line.trim());
   } catch { /* unreadable: secretFile already said it is set, the step will fail on it */ }
+  finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } } }
 }
 
 

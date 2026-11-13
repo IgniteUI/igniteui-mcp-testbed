@@ -211,13 +211,14 @@ export function updateSkillSources(id: string | null, sources: SkillSourceRecord
   return update(id, (r) => { r.config.skillSources = sources.map((x) => ({ ...x, skills: x.skills.slice() })); });
 }
 
-// The pack's `versions` probes run after install, so (like skill sources) they land on a
-// record that already exists.
+// A folder pack edited on the host is reloaded when its run starts, after the record exists.
 export function updatePack(id: string | null, pack: PackProvenance | null): HistoryRecord | null {
   if (!id || !pack) return null;
   return update(id, (r) => { r.config.pack = { ...pack }; });
 }
 
+// The pack's `versions` probes run after install, so (like skill sources) they land on a
+// record that already exists.
 export function updateToolVersions(id: string | null, versions: Record<string, string> | null): HistoryRecord | null {
   if (!id || !versions || !Object.keys(versions).length) return null;
   return update(id, (r) => { r.config.toolVersions = { ...versions }; });

@@ -695,23 +695,28 @@ export function frameworkIds(): string[] {
 /** Read a pack from a `<name>.json` file or a folder holding `pack.json`. */
 export function readPackFrom(p: string, folderOrigin: 'folder' | 'builtin' = 'folder'): ProviderPack {
   const abs = path.resolve(p);
-  const st = fs.statSync(abs);
-  if (st.isDirectory()) {
-    let text: string;
-    try {
-      text = fs.readFileSync(path.join(abs, PACK_MANIFEST), 'utf8');
-    } catch (e: any) {
-      throw new Error(e?.code === 'ENOENT' ? `folder has no ${PACK_MANIFEST}` : String(e?.message ?? e));
-    }
-    const pack = validatePack(JSON.parse(text), { origin: folderOrigin, dir: abs });
-    // The folder name is the pack's identity on disk (deletePack, matrix references),
-    // so it must agree with the manifest.
-    if (path.basename(abs) !== pack.name) {
-      throw new Error(`folder "${path.basename(abs)}" holds pack "${pack.name}" — rename one so they match`);
-    }
-    return pack;
+  // Read first and let EISDIR say "folder": a stat-then-read would race the host mount.
+  let fileText: string | undefined;
+  try {
+    fileText = fs.readFileSync(abs, 'utf8');
+  } catch (e: any) {
+    if (e?.code !== 'EISDIR') throw e;
   }
-  return validatePack(JSON.parse(fs.readFileSync(abs, 'utf8')), { origin: 'file' });
+  if (fileText !== undefined) return validatePack(JSON.parse(fileText), { origin: 'file' });
+
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(abs, PACK_MANIFEST), 'utf8');
+  } catch (e: any) {
+    throw new Error(e?.code === 'ENOENT' ? `folder has no ${PACK_MANIFEST}` : String(e?.message ?? e));
+  }
+  const pack = validatePack(JSON.parse(text), { origin: folderOrigin, dir: abs });
+  // The folder name is the pack's identity on disk (deletePack, matrix references),
+  // so it must agree with the manifest.
+  if (path.basename(abs) !== pack.name) {
+    throw new Error(`folder "${path.basename(abs)}" holds pack "${pack.name}" — rename one so they match`);
+  }
+  return pack;
 }
 
 /** Load the packs that ship with the testbed. Called before loadAll(), so their names
