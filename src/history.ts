@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { RunConfig, StoredConfig, HistoryRecord, Stats, Screenshot, TestResult, ToolUsage, Diagnostic, SkillSourceRecord, PackProvenance } from './types.ts';
 import { codemodeEnabled, opencodeVersion } from './pipeline/opencode-cli.ts';
-import { getPackForFramework, providerFor, mcpOverrideFor, canonicalMcpClasses } from './provider-registry.ts';
+import { getPackForFramework, providerFor, mcpOverrideFor, canonicalMcpClasses, packProvenance } from './provider-registry.ts';
 
 // Persistent, cross-container run store. This lives OUTSIDE /work (which is a fresh
 // per-session bind mount) so records survive container teardown — see run.sh's second
@@ -79,7 +79,7 @@ export function redact(cfg?: Partial<RunConfig> | null): StoredConfig {
     // Packs are loaded at startup, so this is the pack the run will actually use.
     ...(() => {
       const p = c.framework ? getPackForFramework(c.framework) : undefined;
-      return p ? { pack: { name: p.name, ...(p.version ? { version: p.version } : {}), hash: p.hash, origin: p.origin } } : {};
+      return p ? { pack: packProvenance(p) } : {};
     })(),
     ...(opencodeVersion() !== 'unknown' ? { opencodeVersion: opencodeVersion() } : {}),
     ...(codemodeEnabled() != null ? { codemode: !!codemodeEnabled() } : {}),
@@ -211,9 +211,12 @@ export function updateSkillSources(id: string | null, sources: SkillSourceRecord
   return update(id, (r) => { r.config.skillSources = sources.map((x) => ({ ...x, skills: x.skills.slice() })); });
 }
 
-// A folder pack edited on the host is reloaded when its run starts, after the record exists.
+// The pack a run actually used, reported when it starts. A folder pack edited on the host
+// is reloaded then, after the record (and, in a matrix, every later record) exists.
 export function updatePack(id: string | null, pack: PackProvenance | null): HistoryRecord | null {
   if (!id || !pack) return null;
+  const cur = read(id)?.config.pack;
+  if (cur && cur.hash === pack.hash && cur.version === pack.version) return null;
   return update(id, (r) => { r.config.pack = { ...pack }; });
 }
 

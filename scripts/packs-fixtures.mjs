@@ -449,6 +449,11 @@ const v2 = {
     ['@reveal/a.spec.ts', '@reveal/sub/b.spec.ts', 'a.spec.ts']);
   check('tests: file pack has none of its own', frameworkTests('mat-ng'), []);
 
+  const { normalizeMatrixRequest } = await import('../src/matrix/request.ts');
+  const mixed = { platforms: ['angular', 'mat-ng'], variants: [{ mcps: [], skills: false }], model: 'm/x', prompt: 'p' };
+  check('matrix: options across two providers', normalizeMatrixRequest({ ...mixed, options: { type: 'igx-ts' } }).ok, true);
+  check('matrix: option no provider declares', normalizeMatrixRequest({ ...mixed, options: { nope: 'x' } }).error, 'option "nope" is not declared by any selected platform\'s provider');
+
   throws('versions: unknown framework', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: [], frameworks: ['nope'] }] }), /framework ids/);
   throws('versions: secret in argv', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: ['{{secret:A}}'] }] }), /must not reference a secret/);
   throws('versions: duplicate', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'a', argv: [] }, { name: 'x', cmd: 'b', argv: [] }] }), /declared twice/);
@@ -462,10 +467,19 @@ const v2 = {
   check('hash: any file in the pack folder counts', reg.hashPackFolder(revealDir) === h1, false);
   fs.mkdirSync(path.join(revealDir, 'node_modules'));
   fs.writeFileSync(path.join(revealDir, 'node_modules', 'x'), 'y');
-  fs.writeFileSync(path.join(revealDir, '.DS_Store'), 'y');
+  fs.mkdirSync(path.join(revealDir, '.git'));
+  fs.writeFileSync(path.join(revealDir, '.git', 'HEAD'), 'y');
   const h2 = reg.hashPackFolder(revealDir);
   fs.rmSync(path.join(revealDir, 'node_modules'), { recursive: true });
-  check('hash: node_modules and dot files ignored', reg.hashPackFolder(revealDir), h2);
+  fs.rmSync(path.join(revealDir, '.git'), { recursive: true });
+  check('hash: node_modules and .git ignored', reg.hashPackFolder(revealDir), h2);
+  fs.writeFileSync(path.join(revealDir, '.npmrc'), 'registry=x');
+  check('hash: dot files count', reg.hashPackFolder(revealDir) === h2, false);
+  fs.rmSync(path.join(revealDir, '.npmrc'));
+  const revealPack = reg.getPack('reveal');
+  fs.writeFileSync(path.join(revealDir, 'tests', 'reveal-node', 'a.spec.ts'), 'edited again');
+  check('hash: current hash sees an unreloaded edit', reg.currentPackHash(revealPack) === revealPack.hash, false);
+  check('hash: built-in keeps its load hash', reg.currentPackHash(reg.getPack('igniteui')), reg.getPack('igniteui').hash);
 
   const stored = history.redact({ framework: 'reveal-node', enabledMcps: [] });
   check('redact: pack provenance', stored.pack, { name: 'reveal', hash: reg.getPack('reveal').hash, origin: 'folder' });
@@ -686,7 +700,13 @@ const v2 = {
   reg.unregisterPack('live');
   reg.unregisterPack('scoped');
 
-  const { probeVersion } = await import('../src/pipeline/pipeline.ts');
+  check('overrides: prototype names are not classes', [reg.mcpOverrideFor('constructor'), reg.resolveMcpCommand('toString')], [undefined, undefined]);
+  check('options: only the provider\'s own ids', reg.optionsDeclaredFor('angular', { type: 'x', flavour: 'y' }), { type: 'x' });
+
+  const { probeVersion, runVars } = await import('../src/pipeline/pipeline.ts');
+  const ngFw = reg.getFramework('angular');
+  check('runVars: no type/theme unless given', ['type', 'theme'].map((k) => k in runVars(ngFw, { framework: 'angular', options: {} }, '/a')), [false, false]);
+  check('runVars: legacy type kept', runVars(ngFw, { framework: 'angular', projectType: 'igx-ts' }, '/a').type, 'igx-ts');
   check('versions: banner skipped', probeVersion(' _____  _ _\r\n|_   _|\r\n\r\nIgnite UI CLI version: 15.8.2\nOS: Linux\n'), '15.8.2');
   check('versions: v-prefixed', probeVersion('v20.11.1\n'), '20.11.1');
   check('versions: prerelease kept', probeVersion('my-lib 2.0.0-beta.3'), '2.0.0-beta.3');

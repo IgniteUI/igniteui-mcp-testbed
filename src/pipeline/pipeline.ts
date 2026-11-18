@@ -25,7 +25,7 @@ import { stageImages } from '../prompt-images.ts';
 import { pruneSkills, overlaySkills, stripGeneratedAgentConfig } from './skills.ts';
 import { runVerification } from '../verify/tests.ts';
 import { cleanupAppDir } from '../matrix/cleanup.ts';
-import { getPackForFramework, getFramework, resolvePackPath, refreshFolderPack } from '../provider-registry.ts';
+import { getPackForFramework, getFramework, resolvePackPath, refreshFolderPack, packProvenance } from '../provider-registry.ts';
 import type { FrameworkDef, RunConfig, Emit, InteractiveResult, HeadlessResult, Stats, ToolContext, Diagnostic, AgentRunError, ToolUsage, SkillSourceRecord, PackProvenance } from '../types.ts';
 import { installPackSkills } from './pack-skills.ts';
 import { copyTemplate } from './template.ts';
@@ -68,8 +68,8 @@ export interface PipelineOpts {
   onSkillSources?: ((sources: SkillSourceRecord[]) => void) | null;
   /** Output of the pack's `versions` probes, by name, for the history record. */
   onToolVersions?: ((versions: Record<string, string>) => void) | null;
-  /** The pack was edited on disk since it loaded and has been reloaded for this run. */
-  onPackReloaded?: ((pack: PackProvenance) => void) | null;
+  /** The pack this run actually uses (reloaded first if it was edited on disk). */
+  onPack?: ((pack: PackProvenance) => void) | null;
 }
 
 // Servers opencode will actually expose tools from: `translate` keeps deselected
@@ -95,7 +95,10 @@ export function probeVersion(out: string): string {
 export function runVars(fw: FrameworkDef, cfg: RunConfig, appDir: string): Record<string, string | number> {
   const fwVars = Object.fromEntries(Object.entries(fw.vars || {}).map(([k, v]) => [k, expandEnvRefs(v)]));
   return {
-    type: cfg.projectType || '', theme: cfg.theme || '',
+    // Only when given: a template fills every var it is handed, so an always-present empty
+    // `type`/`theme` would blank another pack's own {{type}}/{{theme}} text.
+    ...(cfg.projectType ? { type: cfg.projectType } : {}),
+    ...(cfg.theme ? { theme: cfg.theme } : {}),
     ...fwVars,
     ...(cfg.options || {}),
     name: 'app', dir: appDir, port: APP_PORT, agents: cfg.skills ? 'generic' : 'none',
@@ -114,14 +117,16 @@ export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless?: fa
 export function runPipeline(cfg: RunConfig, opts: PipelineOpts & { headless: true }): Promise<HeadlessResult>;
 export async function runPipeline(
   cfg: RunConfig,
-  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null, onPackReloaded = null }: PipelineOpts,
+  { emit: rawEmit, headless = false, prompt = null, dataDir = null, artifactDir = null, onChild = null, appDir = APP_DIR, onToolContext = null, isCancelled = null, onAgentOutput = null, onAgentClose = null, onSkillSources = null, onToolVersions = null, onPack = null }: PipelineOpts,
 ): Promise<InteractiveResult | HeadlessResult> {
   const loaded = getPackForFramework(cfg.framework);
   const refreshed = loaded && refreshFolderPack(loaded.name);
   if (refreshed && loaded && refreshed.hash !== loaded.hash) {
     rawEmit('log', `pack "${refreshed.name}" changed on disk since it loaded — reloaded (hash ${loaded.hash} → ${refreshed.hash})`);
-    onPackReloaded?.({ name: refreshed.name, ...(refreshed.version ? { version: refreshed.version } : {}), hash: refreshed.hash, origin: refreshed.origin });
   }
+  // Every run, not only the one that reloaded: a matrix pre-creates all its records, so
+  // the later entries' records still carry the hash from before the edit.
+  if (refreshed) onPack?.(packProvenance(refreshed));
   const fw = getFramework(cfg.framework);
   if (!fw) throw new Error(`unknown framework: ${cfg.framework}`);
 

@@ -117,7 +117,8 @@ const MCP_CMD_PREFIX = 'MCP_CMD_';
 const splitCmd = (v: string | undefined): string[] => (v || '').trim().split(/\s+/).filter(Boolean);
 
 function collectOverrides(): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+  // No prototype: a class folded to `constructor`/`tostring` must not find Object's members.
+  const out: Record<string, string[]> = Object.create(null);
   // Back-compat alias, applied first so an explicit MCP_CMD_IGNITEUI wins over it.
   const legacy = splitCmd(process.env.IGNITEUI_MCP_CMD);
   if (legacy.length) out.igniteui = legacy;

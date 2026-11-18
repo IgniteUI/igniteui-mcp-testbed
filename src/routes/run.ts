@@ -59,7 +59,7 @@ export default function registerRunRoutes(app: Express): void {
         onAgentClose: agent.onClose,
         onSkillSources: (s) => history.updateSkillSources(runId, s),
         onToolVersions: (v) => history.updateToolVersions(runId, v),
-        onPackReloaded: (p) => history.updatePack(runId, p),
+        onPack: (p) => history.updatePack(runId, p),
       });
       // Begin gathering live stats (messages / tokens / cost) into /work/stats.json,
       // plus the MCP-tool / skill usage the tool context above scopes to this run.

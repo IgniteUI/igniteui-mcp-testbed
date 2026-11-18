@@ -20,7 +20,7 @@ import { secretStatus, type SecretStatus } from './secrets.ts';
 import { packDepsStatus, type PackDepsStatus } from './pack-deps.ts';
 import type {
   FrameworkDef, PackConfigureStep, PackMcpClass, PackMcpServer, PackMcpSource, PackOption, PackOrigin,
-  PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack,
+  PackProvenance, PackSecretDecl, PackSkillSource, PackVersionProbe, ProviderPack,
 } from './types.ts';
 
 // Packs that ship with the testbed: the repo's packs/ folder (copied to /app/packs in
@@ -604,13 +604,15 @@ export function hashJson(body: unknown): string {
 }
 
 // Every file under the pack folder (template, tests and skills included), by relative
-// path + content. Dot-entries and node_modules are skipped; symlinks aren't followed.
+// path + content. Dot-files count, since the template and skill copies carry them
+// (`template/.npmrc` changes the run); only `.git` and node_modules are skipped.
+// Symlinks aren't followed.
 export function hashPackFolder(dir: string): string {
   const h = crypto.createHash('sha256');
   const files: string[] = [];
   const walk = (d: string) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      if (e.name === '.git' || e.name === 'node_modules') continue;
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full);
       else if (e.isFile()) files.push(full);
@@ -784,6 +786,17 @@ export function refreshFolderPack(name: string): ProviderPack | undefined {
 /** Persist an uploaded single-file pack as PROVIDERS_DIR/<name>.json and register it.
  * Writes the body as authored, not the normalized form: re-loading normalizes again,
  * and the user's v1 file stays a v1 file. */
+/** The hash a run started now would record: a folder pack is re-hashed from disk (without
+ * reloading it), every other pack keeps its load-time hash. */
+export function currentPackHash(pack: ProviderPack): string {
+  if (pack.origin !== 'folder' || !pack.dir) return pack.hash;
+  try { return hashPackFolder(pack.dir); } catch { return pack.hash; }
+}
+
+export function packProvenance(pack: ProviderPack): PackProvenance {
+  return { name: pack.name, ...(pack.version ? { version: pack.version } : {}), hash: pack.hash, origin: pack.origin };
+}
+
 export function savePack(raw: unknown, pack: ProviderPack): void {
   assertSafeId(pack.name, 'pack name');
   const existing = packs.get(pack.name);
@@ -865,6 +878,15 @@ export function resolveRunOptions(frameworkId: string, raw: unknown, legacy: Rec
     out[d.id] = v;
   }
   return out;
+}
+
+/** The subset of a shared option set (a matrix's) that a framework's provider declares,
+ * so one matrix can span providers with different options. Non-objects pass through for
+ * resolveRunOptions to reject. */
+export function optionsDeclaredFor(frameworkId: string, raw: unknown): unknown {
+  if (!isObj(raw)) return raw;
+  const ids = new Set(optionsFor(frameworkId).map((d) => d.id));
+  return Object.fromEntries(Object.entries(raw).filter(([k]) => ids.has(k)));
 }
 
 /** Every provider as the browser sees it: built-in packs first (they load first). */

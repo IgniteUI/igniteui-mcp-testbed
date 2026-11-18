@@ -1,7 +1,7 @@
 'use strict';
 
 import { MATRIX_MAX_ENTRIES, MATRIX_MAX_PASSES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
-import { getFramework, resolveRunOptions } from '../provider-registry.ts';
+import { getFramework, optionsDeclaredFor, optionsFor, resolveRunOptions } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, MatrixPass, Variant } from '../types.ts';
@@ -101,11 +101,16 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     }
   }
 
-  // One set of option values for every entry, checked against each platform's provider.
+  // One set of option values for every entry. Each platform takes the ones its provider
+  // declares; an id no selected provider declares is still an error.
   let options: Record<string, string> | undefined;
   if (body.options != null) {
+    if (typeof body.options !== 'object' || Array.isArray(body.options)) return { ok: false, error: 'options must be an object' };
+    const declared = new Set(platforms.flatMap((p) => optionsFor(p).map((d) => d.id)));
+    const stray = Object.keys(body.options).find((k) => !declared.has(k));
+    if (stray) return { ok: false, error: `option "${stray}" is not declared by any selected platform's provider` };
     for (const p of platforms) {
-      try { resolveRunOptions(p, body.options); } catch (e: any) { return { ok: false, error: e.message }; }
+      try { resolveRunOptions(p, optionsDeclaredFor(p, body.options)); } catch (e: any) { return { ok: false, error: e.message }; }
     }
     options = { ...body.options };
   }

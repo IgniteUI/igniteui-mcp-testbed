@@ -1,6 +1,6 @@
 'use strict';
 
-import { listPacks, mcpOverridesForStatus } from '../provider-registry.ts';
+import { currentPackHash, listPacks, mcpOverridesForStatus } from '../provider-registry.ts';
 import * as fs from 'fs';
 import type { Express } from 'express';
 import { APP_PORT } from '../frameworks.ts';
@@ -61,8 +61,9 @@ export default function registerStatsRoutes(app: Express): void {
       // the stored run's config.mcpCommands: a re-run is a POST into the already-running
       // container, so it inherits this and cannot reproduce a different arm.
       mcpOverrides: mcpOverridesForStatus(),
-      // Same purpose for packs: the re-run check compares the record's config.pack.
-      packs: Object.fromEntries(listPacks().map((p) => [p.name, { version: p.version ?? null, hash: p.hash }])),
+      // Same purpose for packs: the re-run check compares the record's config.pack. A
+      // folder pack is re-hashed, since the next run reloads it if it was edited.
+      packs: Object.fromEntries(listPacks().map((p) => [p.name, { version: p.version ?? null, hash: currentPackHash(p) }])),
     });
   });
 }
