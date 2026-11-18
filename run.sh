@@ -47,8 +47,9 @@ Ports (published on 127.0.0.1): 8080 wizard UI · 4096 opencode web · 5000 app 
   - IG_NPM_TOKEN / IG_NPM_USERNAME / IG_NPM_EMAIL (build only: licensed History grid)
   - MCP_CMD_<CLASS> (any class) / IGNITEUI_MCP_DOCS_BACKEND_URL / IGNITEUI_MCP_DEBUG
     (an already-exported value wins)
-  - SECRET_<NAME> (any name): provider-pack secrets, handed only to that pack's
-    scaffold / install / dev-server steps, never to the agent
+  - SECRET_<PACK>__<NAME> (or SECRET_<NAME> while only one pack declares <NAME>):
+    provider-pack secrets, handed only to that pack's scaffold / install / dev-server
+    steps, not to the agent (not isolation: see PROVIDER-PACKS.md, Secrets)
 
 MCP_CMD_<CLASS> swaps that class's MCP server for a locally-built one packed into
 ./local-mcp/ and installed at build time, e.g.

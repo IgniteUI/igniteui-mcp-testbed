@@ -17,6 +17,9 @@ process.env.SECRETS_DIR = path.join(root, 'secrets');
 process.env.TESTS_DIR = path.join(root, 'tests');
 process.env.SECRET_REVEAL_KEY = 'sk-reveal-0123456789';
 process.env.SECRET_SHORT = 'abc';
+process.env.SECRET_LIC_B__REVEAL_KEY = 'sk-scoped-b-0123';
+// Read once at import (src/config.ts): pack `fold-x` class `docs` and pack `fold` class `x-docs` both fold to it.
+process.env.MCP_CMD_FOLD_X_DOCS = '/bin/fold';
 
 const reg = await import('../src/provider-registry.ts');
 // The built-in Ignite UI pack, as server.ts loads it before anything else.
@@ -269,7 +272,7 @@ const v2 = {
   const { writeOpencodeConfig } = await import('../src/pipeline/opencode-config.ts');
 
   check('scrub: SECRET_* gone from process.env', ['SECRET_REVEAL_KEY', 'SECRET_SHORT'].map((k) => k in process.env), [false, false]);
-  check('scrub: kept privately', sec.envSecretNames().sort(), ['REVEAL_KEY', 'SHORT']);
+  check('scrub: kept privately', sec.envSecretNames().sort(), ['LIC_B__REVEAL_KEY', 'REVEAL_KEY', 'SHORT']);
 
   const secretsPack = (secrets, fwOverride = {}) => ({
     ...structuredClone(v2), name: 'lic', frameworks: [{ ...fw('lic-fw'), ...fwOverride }], secrets,
@@ -359,16 +362,39 @@ const v2 = {
   writeOpencodeConfig(cfgFor('lic-fw'), {}, app);
   const denies = read().permissions.filter((r) => r.effect === 'deny' && r.action !== 'websearch');
   check('opencode 2.x: secrets denied', denies.map((r) => `${r.action} ${r.resource}`).sort(),
-    ['edit', 'external_directory', 'read'].flatMap((a) => [`${a} ${sd}/*`, `${a} ${sd}/**`]).sort());
+    [...['edit', 'external_directory', 'read'].flatMap((a) => [`${a} ${sd}/*`, `${a} ${sd}/**`]), `bash *${sd}*`].sort());
   check('opencode 2.x: allow-all stays first', read().permissions[0], { action: '*', resource: '*', effect: 'allow' });
   writeOpencodeConfig(cfgFor('angular'), {}, app);
-  check('opencode 2.x: no secrets ⇒ unchanged rules', read().permissions.length, 2);
+  check('opencode 2.x: another pack\'s run is denied too', read().permissions.length, 2 + denies.length);
   process.env.OPENCODE_MAJOR = '1';
   writeOpencodeConfig(cfgFor('lic-fw'), {}, app);
   check('opencode 1.x: pattern maps', read().permission.read, { '*': 'allow', [`${sd}/*`]: 'deny', [`${sd}/**`]: 'deny' });
+  check('opencode 1.x: bash pattern', read().permission.bash, { '*': 'allow', [`*${sd}*`]: 'deny' });
+  reg.unregisterPack('lic');
+  // No pack declares secrets and the mount is empty: the config is exactly as before.
+  fs.renameSync(sd, `${sd}.off`);
   writeOpencodeConfig(cfgFor('angular'), {}, app);
   check('opencode 1.x: no secrets ⇒ plain allow', read().permission, 'allow');
+  process.env.OPENCODE_MAJOR = '2';
+  writeOpencodeConfig(cfgFor('angular'), {}, app);
+  check('opencode 2.x: no secrets ⇒ unchanged rules', read().permissions.length, 2);
+  fs.renameSync(`${sd}.off`, sd);
+  writeOpencodeConfig(cfgFor('angular'), {}, app);
+  check('opencode 2.x: a file in the mount is enough', read().permissions.length > 2, true);
   delete process.env.OPENCODE_MAJOR;
+
+  // Two packs declaring one env secret: the shared SECRET_<NAME> belongs to neither,
+  // the scoped SECRET_<PACK>__<NAME> to its own pack only.
+  const twin = (name) => ({ ...structuredClone(ok), name, frameworks: [{ ...structuredClone(ok.frameworks[0]), id: `${name}-fw` }] });
+  reg.registerPack(twin('lic'));
+  check('secrets: shared name, one declarer', sec.secretStatus(reg.getPack('lic'))[0].set, true);
+  reg.registerPack(twin('lic-b'));
+  check('secrets: shared name, two declarers ⇒ unset', sec.secretStatus(reg.getPack('lic'))[0], {
+    name: 'REVEAL_KEY', kind: 'env', required: true, set: false, source: 'SECRET_LIC__REVEAL_KEY' });
+  check('secrets: scoped value reaches its pack only', [sec.secretEnv(reg.getPack('lic-b')).REVEAL_KEY, sec.secretEnv(reg.getPack('lic')).REVEAL_KEY],
+    ['sk-scoped-b-0123', undefined]);
+  reg.unregisterPack('lic-b');
+  check('secrets: back to one declarer', sec.secretStatus(reg.getPack('lic'))[0].set, true);
   reg.unregisterPack('lic');
 }
 

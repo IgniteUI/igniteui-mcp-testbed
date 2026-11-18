@@ -48,8 +48,9 @@ secret files as .\secrets\<pack>\<file>), .\providers-data, and .\prompt-images
 (read-write — reference images attached to the agent's prompt; the UI's image uploads
 land here).
 
-SECRET_<NAME> (any name, also read from .env) holds a provider-pack secret. It is handed
-only to that pack's scaffold / install / dev-server steps, never to the agent.
+SECRET_<PACK>__<NAME> (or SECRET_<NAME> while only one pack declares <NAME>; also read
+from .env) holds a provider-pack secret. It is handed only to that pack's scaffold /
+install / dev-server steps, not to the agent (not isolation: see PROVIDER-PACKS.md, Secrets).
 
 .PARAMETER Command
 'build' to build the image; 'help' to show this help; omit to run a session container.

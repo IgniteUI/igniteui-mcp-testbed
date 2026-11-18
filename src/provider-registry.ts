@@ -16,7 +16,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { PROVIDERS_DIR, MCP_COMMAND_OVERRIDES } from './config.ts';
 import { bareMcpClass, normMcpClass, qualifyMcpClass } from './mcp-class.ts';
-import { secretStatus, type SecretStatus } from './secrets.ts';
+import { declarePackSecrets, forgetPackSecrets, secretStatus, type SecretStatus } from './secrets.ts';
 import { packDepsStatus, type PackDepsStatus } from './pack-deps.ts';
 import type {
   FrameworkDef, PackConfigureStep, PackMcpClass, PackMcpServer, PackMcpSource, PackOption, PackOrigin,
@@ -674,11 +674,14 @@ export function registerPack(pack: ProviderPack): void {
     externalFrameworks.set(fw.id, packFwToDef(fw));
   }
   packs.set(pack.name, pack);
+  declarePackSecrets(pack.name, (pack.secrets || []).filter((s) => !s.file).map((s) => s.name));
+  warnAmbiguousOverrides();
 }
 
 export function unregisterPack(name: string): void {
   const pack = packs.get(name);
   if (!pack) return;
+  forgetPackSecrets(name);
   for (const fw of pack.frameworks) {
     externalFrameworks.delete(fw.id);
     externalFrameworkOwner.delete(fw.id);

@@ -181,7 +181,8 @@ recorded one.
 - **Secrets are not isolation.** They stay out of the project, the logs and the agent's
   environment, and `opencode.json` denies reads of `/secrets`. But the agent runs as the
   same user with a shell, so a determined agent could still find them (for example in
-  the dev server's `/proc/<pid>/environ`).
+  `/proc/1/environ`, which holds every env secret the container started with). Use test
+  or trial keys; see [PROVIDER-PACKS.md §8](PROVIDER-PACKS.md#8-secrets) for exactly what is and isn't covered.
 - **`{{secret:…}}` only works in `env` values**, never in a command line: command lines
   are written to the run log, which is saved in history.
 - **MCP override env vars** are `MCP_CMD_<PACK>_<CLASS>`, e.g.

@@ -70,7 +70,16 @@ export function copySkills(root: string, include: string[] | undefined, skillsDi
       emit('log', `skill "${e.name}" from ${rec.source} replaces an earlier copy`);
       fs.rmSync(dest, { recursive: true, force: true });
     }
-    fs.cpSync(path.join(root, e.name), dest, { recursive: true });
+    // Symlinks are skipped, like in templates: a copied link could point the agent at
+    // /secrets (or anywhere) from inside the project.
+    fs.cpSync(path.join(root, e.name), dest, {
+      recursive: true,
+      filter: (src) => {
+        if (!fs.lstatSync(src).isSymbolicLink()) return true;
+        emit('log', `warning: skill symlink skipped: ${path.relative(root, src)}`);
+        return false;
+      },
+    });
     rec.skills.push(e.name);
   }
   if (include && !rec.skills.length) emit('log', `warning: no skill in ${rec.source} matches include ${include.join(', ')}`);

@@ -1,8 +1,9 @@
 'use strict';
 
 // Provider-pack secrets (license keys and the like). Two kinds:
-//   env   SECRET_<NAME>, forwarded into the container by run.sh/run.ps1. Taken OUT of
-//         process.env the moment this module loads, so no child inherits it by default.
+//   env   SECRET_<PACK>__<NAME>, or SECRET_<NAME> while only one pack declares <NAME>;
+//         forwarded into the container by run.sh/run.ps1. Taken OUT of process.env the
+//         moment this module loads, so no child inherits it by default.
 //   file  <SECRETS_DIR>/<pack>/<file>, a read-only mount of ./secrets/ on the host.
 // Either is handed only to the pack's own scaffold / install / dev-server steps, under
 // the secret's name (an env secret's value, a file secret's path), and through
@@ -10,7 +11,8 @@
 // into history. Never copied into the app dir, and denied to the agent in opencode.json.
 //
 // This stops the accidental read and the obvious `cat`, not an agent that goes looking:
-// it runs as the same user and could read the dev server's /proc/<pid>/environ.
+// it runs as the same user and can read /proc/1/environ (the wizard's original env,
+// which the delete below does not change) or the dev server's /proc/<pid>/environ.
 //
 // Dependency-free on purpose and imported first by server.ts, so the scrub runs before
 // any other module can copy process.env.
@@ -67,7 +69,7 @@ export interface SecretStatus {
   required: boolean;
   description?: string;
   set: boolean;
-  /** Where to put it — `SECRET_<NAME>` or the host path under ./secrets/. */
+  /** Where to put it — the env var name to set, or the host path under ./secrets/. */
   source: string;
 }
 
@@ -91,14 +93,39 @@ function secretFile(pack: PackLike, s: PackSecretDecl): string | null {
   }
 }
 
+// Which loaded packs declare each env secret name, kept by the provider registry. The
+// shared SECRET_<NAME> belongs to a pack only while no other pack declares that name;
+// SECRET_<PACK>__<NAME> always belongs to its pack and wins over the shared one.
+const declarers = new Map<string, Set<string>>();
+
+export function declarePackSecrets(pack: string, names: string[]): void {
+  forgetPackSecrets(pack);
+  for (const n of names) {
+    if (!declarers.has(n)) declarers.set(n, new Set());
+    declarers.get(n)!.add(pack);
+  }
+}
+
+export function forgetPackSecrets(pack: string): void {
+  for (const set of declarers.values()) set.delete(pack);
+}
+
+const scopedKey = (pack: string, name: string) => `${pack.toUpperCase().replace(/[^A-Z0-9]/g, '_')}__${name}`;
+const sharedIsOwn = (pack: string, name: string) => [...(declarers.get(name) || [])].every((p) => p === pack);
+
+function envSecret(pack: string, name: string): string | undefined {
+  return envSecrets.get(scopedKey(pack, name)) ?? (sharedIsOwn(pack, name) ? envSecrets.get(name) : undefined);
+}
+
 export function secretStatus(pack: PackLike): SecretStatus[] {
   return (pack.secrets || []).map((s) => ({
     name: s.name,
     kind: s.file ? 'file' : 'env',
     required: s.required !== false,
     ...(s.description ? { description: s.description } : {}),
-    set: s.file ? !!secretFile(pack, s) : envSecrets.has(s.name),
-    source: s.file ? `./secrets/${pack.name}/${s.file}` : `${SECRET_ENV_PREFIX}${s.name}`,
+    set: s.file ? !!secretFile(pack, s) : envSecret(pack.name, s.name) !== undefined,
+    source: s.file ? `./secrets/${pack.name}/${s.file}`
+      : `${SECRET_ENV_PREFIX}${sharedIsOwn(pack.name, s.name) ? s.name : scopedKey(pack.name, s.name)}`,
   }));
 }
 
@@ -110,7 +137,7 @@ export function missingSecrets(pack: PackLike): SecretStatus[] {
 function resolved(pack: PackLike): Map<string, string> {
   const out = new Map<string, string>();
   for (const s of pack.secrets || []) {
-    const v = s.file ? secretFile(pack, s) : envSecrets.get(s.name);
+    const v = s.file ? secretFile(pack, s) : envSecret(pack.name, s.name);
     if (!v) continue;
     if (s.file) registerFileSecret(v);
     out.set(s.name, v);
