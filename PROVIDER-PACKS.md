@@ -262,9 +262,11 @@ MCP_CMD_MY_LIB_DOCS=/opt/local-mcp/bin/my-docs-mcp ./run.sh   # full name: MCP_C
 MCP_CMD_DOCS=/opt/local-mcp/bin/my-docs-mcp ./run.sh          # short form, while no other pack has a `docs` class
 ```
 
-Non-alphanumerics become `_`. If the short form matches several packs, it applies to
-none, and the server warns at startup. The override is recorded on every run, and History
-shows it as `docs (local)`.
+Non-alphanumerics become `_`, so `docs-x` and `docs_x` are the same name: one pack may
+not declare both. If a name matches classes in several packs (the short form, or two
+full names that fold together, like pack `a-b` class `c` and pack `a` class `b-c`), it
+applies to none of them, and the server warns, including when the second pack is added
+at runtime. The override is recorded on every run, and History shows it as `docs (local)`.
 
 ---
 
@@ -365,6 +367,9 @@ Tools the steps need that aren't in the image:
   and put on `PATH` for that pack's runs only (steps, dev server, opencode, MCP servers).
 - **Failures:** the first run waits for the install. A failed install fails the run
   before scaffold, and the next run retries.
+- **Reinstalls:** only when the `npmGlobal` list changes (editing a test or template
+  doesn't trigger one), and never while an earlier install into the same prefix is
+  still running.
 - **Allowed specs:** registry package names only, optionally `@version`. Git, URL and
   file specs are rejected.
 - **Pin versions.** The install happens per container, and the versions it got are
@@ -432,7 +437,7 @@ Tools the steps need that aren't in the image:
 | `--agents=` / empty argument errors | A `{{var}}` your command uses isn't defined. |
 | Entry ends `build-error` with no app | The dev server didn't bind `0.0.0.0:{{port}}`, or a `buildFailed` pattern matched. |
 | MCP class selected but no server | No `servers` entry or `source` rule produces that class; `--validate-pack` warns about it. |
-| `MCP_CMD_X` seems ignored | Two packs share class `x`; use `MCP_CMD_<PACK>_<CLASS>`. |
-| `missing required secret(s)` | Put the file under `./secrets/<pack>/` or set `SECRET_<NAME>`. |
+| `MCP_CMD_X` seems ignored | Two packs share class `x` (or fold to the same name); use a distinct `MCP_CMD_<PACK>_<CLASS>`. |
+| `missing required secret(s)` | Put the file under `./secrets/<pack>/` or set `SECRET_<PACK>__<NAME>` (the Configuration tab shows the name). |
 | `could not install … for pack` | A `containerDeps` name/version doesn't exist, or npm can't be reached. |
 | No screenshots of inner pages | Set `routes` (e.g. `static` paths, or a `state-nav` fallback). |

@@ -58,18 +58,21 @@ async function installedVersions(prefix: string): Promise<Record<string, string>
   }
 }
 
-/** Install (once per pack content) and resolve to package → version. Repeated calls for
- * the same pack share one install; a changed pack (new hash) installs again. */
+/** Install (once per dependency list) and resolve to package → version. Repeated calls
+ * for the same pack share one install. Keyed on the deps, not the pack hash, so editing
+ * a spec or a template doesn't reinstall; a changed list installs again, and only after
+ * the previous install into the same prefix has finished. */
 export function ensurePackDeps(pack: ProviderPack): Promise<Record<string, string>> {
   const deps = depsOf(pack);
   if (!deps.length) return Promise.resolve({});
-  const key = `${pack.hash}|${deps.join(' ')}`;
+  const key = deps.join(' ');
   const prior = jobs.get(pack.name);
   if (prior && prior.key === key && prior.status.state !== 'failed') return prior.promise;
 
   const prefix = packDepsDir(pack.name);
   const status: PackDepsStatus = { state: 'installing' };
-  const promise = (async () => {
+  const previous = prior ? prior.promise.catch(() => {}) : Promise.resolve();
+  const promise = previous.then(async () => {
     try {
       fs.mkdirSync(prefix, { recursive: true });
       await capture('npm', ['install', '-g', '--prefix', prefix, '--no-fund', '--no-audit', ...deps], prefix, null, INSTALL_TIMEOUT_MS);
@@ -81,7 +84,7 @@ export function ensurePackDeps(pack: ProviderPack): Promise<Record<string, strin
       status.error = String(e?.message ?? e).split('\n').slice(-3).join(' ').slice(0, 400);
       throw new Error(`could not install ${deps.join(', ')} for pack "${pack.name}": ${status.error}`);
     }
-  })();
+  });
   // Nobody may be awaiting yet (it starts at load); don't let that be an unhandled rejection.
   promise.catch(() => {});
   jobs.set(pack.name, { key, status, promise });

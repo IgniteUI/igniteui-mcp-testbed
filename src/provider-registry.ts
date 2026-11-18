@@ -497,6 +497,8 @@ function parseV2(body: any, origin: PackOrigin): Omit<ProviderPack, 'origin' | '
       assertSafeId(c.id, `mcp.classes[${i}].id`);
       if (c.id === 'custom') throw new Error(`mcp.classes[${i}].id "custom" is reserved for pasted MCP servers`);
       if (classes.some((x) => x.id === c.id)) throw new Error(`mcp.classes[${i}].id "${c.id}" is declared twice`);
+      const twin = classes.find((x) => normMcpClass(x.id) === normMcpClass(c.id));
+      if (twin) throw new Error(`mcp.classes[${i}].id "${c.id}" and "${twin.id}" would share one MCP_CMD_ override name`);
       if (!isStr(c.label)) throw new Error(`mcp.classes[${i}].label is required`);
       if (c.default !== undefined && typeof c.default !== 'boolean') throw new Error(`mcp.classes[${i}].default must be a boolean`);
       const fwIds = (Array.isArray(body.frameworks) ? body.frameworks : []).map((f: any) => f?.id);
@@ -808,8 +810,33 @@ export function savePack(raw: unknown, pack: ProviderPack): void {
     throw new Error(`pack "${pack.name}" is a folder pack — edit ${pack.name}/${PACK_MANIFEST} on the host instead`);
   }
   fs.mkdirSync(PROVIDERS_DIR, { recursive: true });
+  const target = path.join(PROVIDERS_DIR, `${pack.name}.json`);
+  const holder = fileNamedPack(target);
+  if (holder !== undefined && holder !== pack.name) {
+    throw new Error(`${pack.name}.json already holds pack "${holder}" — rename that file on the host first`);
+  }
   registerPack({ ...pack, origin: 'file' });
-  fs.writeFileSync(path.join(PROVIDERS_DIR, `${pack.name}.json`), JSON.stringify(raw, null, 2));
+  fs.writeFileSync(target, JSON.stringify(raw, null, 2));
+  // An older copy under another file name would win (or clash) on the next restart.
+  for (const f of packFilesFor(pack.name)) if (f !== target) fs.unlinkSync(f);
+}
+
+// The `name` a single-file pack declares, or undefined when the file is missing or unreadable.
+function fileNamedPack(file: string): string | undefined {
+  try {
+    const body = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return isObj(body) && typeof body.name === 'string' ? body.name : undefined;
+  } catch { return undefined; }
+}
+
+// Every single-file pack in PROVIDERS_DIR that declares `name`, whatever the file is called.
+function packFilesFor(name: string): string[] {
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(PROVIDERS_DIR, { withFileTypes: true }); } catch { return []; }
+  return entries
+    .filter((e) => e.isFile() && e.name.endsWith('.json') && !e.name.startsWith('.'))
+    .map((e) => path.join(PROVIDERS_DIR, e.name))
+    .filter((f) => fileNamedPack(f) === name);
 }
 
 /** Remove a single-file pack from disk and memory. Folder packs are left to the host. */
@@ -821,8 +848,9 @@ export function deletePack(name: string): void {
     throw new Error(`pack "${name}" is a folder pack — remove the ${name}/ folder on the host instead`);
   }
   unregisterPack(name);
-  const f = path.join(PROVIDERS_DIR, `${name}.json`);
-  if (fs.existsSync(f)) fs.unlinkSync(f);
+  // By declared name, not file name: `foo.json` holding pack "bar" would otherwise
+  // survive the delete and come back on the next restart.
+  for (const f of packFilesFor(name)) fs.unlinkSync(f);
 }
 
 export function listPacks(): ProviderPack[] {
@@ -905,14 +933,22 @@ export function listProvidersForUi(): unknown[] {
 // keeps meaning Ignite UI's server). A bare class with no pack (`custom`, or a record
 // written before classes were qualified) is looked up as-is.
 
+// Compared folded, as the env var sees them: `docs-x` and `docs_x` are one MCP_CMD_ name.
 function packsDeclaringBare(bare: string): number {
-  const b = bare.toLowerCase();
-  return listPacks().filter((p) => p.mcp.classes.some((c) => bareMcpClass(c.id).toLowerCase() === b)).length;
+  const b = normMcpClass(bare);
+  return listPacks().filter((p) => p.mcp.classes.some((c) => normMcpClass(bareMcpClass(c.id)) === b)).length;
+}
+
+// Qualified ids can fold together across packs too (pack `a-b` class `c`, pack `a`
+// class `b-c` → MCP_CMD_A_B_C), and then the override can't say which one it meant.
+function qualifiedClassesFoldingTo(key: string): number {
+  return listPacks().reduce((n, p) => n + p.mcp.classes.filter((c) => normMcpClass(c.id) === key).length, 0);
 }
 
 function envOverride(cls: string): string[] | undefined {
-  const exact = MCP_COMMAND_OVERRIDES[normMcpClass(cls)];
-  if (exact) return exact;
+  const key = normMcpClass(cls);
+  const exact = MCP_COMMAND_OVERRIDES[key];
+  if (exact) return cls.includes('/') && qualifiedClassesFoldingTo(key) > 1 ? undefined : exact;
   if (!cls.includes('/')) return undefined;
   const bare = bareMcpClass(cls);
   return packsDeclaringBare(bare) === 1 ? MCP_COMMAND_OVERRIDES[normMcpClass(bare)] : undefined;
@@ -957,14 +993,27 @@ export function mcpOverridesForStatus(): Record<string, string> {
   return out;
 }
 
-// An MCP_CMD_<CLS> that matches the bare class of several packs applies to none of them,
-// which would otherwise look exactly like "released" — say so once at startup.
-function warnAmbiguousOverrides(): void {
+// An MCP_CMD_* that several loaded classes could mean applies to none of them, which
+// would otherwise look exactly like "released". Checked whenever the set of packs
+// changes (a pack added at runtime can make a working override ambiguous), and each
+// override is reported once.
+const warnedAmbiguous = new Set<string>();
+export function ambiguousOverrides(): string[] {
+  const out: string[] = [];
   for (const key of Object.keys(MCP_COMMAND_OVERRIDES)) {
-    const owners = listPacks().filter((p) => p.mcp.classes.some((c) => normMcpClass(bareMcpClass(c.id)) === key));
-    const qualifiedMatch = listPacks().some((p) => p.mcp.classes.some((c) => normMcpClass(c.id) === key));
-    if (owners.length > 1 && !qualifiedMatch) {
-      console.warn(`provider-registry: MCP_CMD_${key.toUpperCase()} matches class "${bareMcpClass(owners[0].mcp.classes.find((c) => normMcpClass(bareMcpClass(c.id)) === key)!.id)}" in ${owners.map((o) => o.name).join(', ')} and applies to none — use MCP_CMD_<PACK>_<CLASS>`);
-    }
+    const qualified = qualifiedClassesFoldingTo(key);
+    const bareOwners = listPacks().filter((p) => p.mcp.classes.some((c) => normMcpClass(bareMcpClass(c.id)) === key));
+    if (qualified > 1 || (qualified === 0 && bareOwners.length > 1)) out.push(key);
+  }
+  return out;
+}
+
+function warnAmbiguousOverrides(): void {
+  for (const key of ambiguousOverrides()) {
+    if (warnedAmbiguous.has(key)) continue;
+    warnedAmbiguous.add(key);
+    const owners = listPacks().filter((p) => p.mcp.classes.some((c) =>
+      normMcpClass(c.id) === key || normMcpClass(bareMcpClass(c.id)) === key)).map((p) => p.name);
+    console.warn(`provider-registry: MCP_CMD_${key.toUpperCase()} matches classes in ${owners.join(', ')} and applies to none — use MCP_CMD_<PACK>_<CLASS> with distinct names`);
   }
 }

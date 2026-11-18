@@ -108,6 +108,7 @@ const v2 = {
   throws('v2: unsupported schemaVersion', () => reg.validatePack(mut((b) => { b.schemaVersion = 3; })), /unsupported schemaVersion/);
   throws('v2: server class must be declared', () => reg.validatePack(mut((b) => { b.mcp.servers[0].class = 'other'; })), /not declared in mcp\.classes/);
   throws('v2: duplicate class', () => reg.validatePack(mut((b) => { b.mcp.classes.push({ id: 'docs', label: 'again' }); })), /declared twice/);
+  throws('v2: classes folding to one MCP_CMD_ name', () => reg.validatePack(mut((b) => { b.mcp.classes.push({ id: 'DOCS', label: 'again' }); })), /share one MCP_CMD_/);
   throws('v2: duplicate server name', () => reg.validatePack(mut((b) => { b.mcp.servers.push({ ...b.mcp.servers[0] }); })), /declared twice/);
   throws('v2: "custom" class is reserved', () => reg.validatePack(mut((b) => { b.mcp.classes[0].id = 'custom'; b.mcp.servers[0].class = 'custom'; })), /reserved/);
   throws('v2: class id must be a safe id', () => reg.validatePack(mut((b) => { b.mcp.classes[0].id = 'a/b'; })), /disallowed characters/);
@@ -184,6 +185,18 @@ const v2 = {
   check('savePack registers as a file pack', reg.getPack('saved').origin, 'file');
   reg.deletePack('saved');
   check('deletePack removes the file', fs.existsSync(path.join(providersDir, 'saved.json')), false);
+
+  // A hand-dropped file whose name doesn't match the pack it holds.
+  const oddFile = path.join(providersDir, 'odd-file.json');
+  fs.writeFileSync(oddFile, JSON.stringify(authored));
+  reg.savePack(authored, reg.validatePack(structuredClone(authored)));
+  check('savePack drops an older copy under another file name', [fs.existsSync(oddFile), fs.existsSync(path.join(providersDir, 'saved.json'))], [false, true]);
+  fs.renameSync(path.join(providersDir, 'saved.json'), oddFile);
+  reg.deletePack('saved');
+  check('deletePack finds the file by declared name', fs.existsSync(oddFile), false);
+  fs.writeFileSync(path.join(providersDir, 'saved.json'), JSON.stringify({ ...authored, name: 'other' }));
+  throws('savePack won\'t overwrite another pack\'s file', () => reg.savePack(authored, reg.validatePack(structuredClone(authored))), /already holds pack "other"/);
+  fs.rmSync(path.join(providersDir, 'saved.json'));
 
   throws('framework id clash across packs', () => reg.registerPack(reg.validatePack({ ...structuredClone(v2), name: 'thief' })), /already registered by pack "reveal"/);
   throws('built-in framework id clash', () => reg.registerPack(reg.validatePack({ ...structuredClone(v2), name: 'x2', frameworks: [fw('angular')] })), /built-in/);
@@ -727,6 +740,16 @@ const v2 = {
   reg.unregisterPack('scoped');
 
   check('overrides: prototype names are not classes', [reg.mcpOverrideFor('constructor'), reg.resolveMcpCommand('toString')], [undefined, undefined]);
+  const foldPack = (name, cls) => reg.validatePack({ schemaVersion: 2, name, displayName: name, frameworks: [fw(`${name}-fw`)],
+    mcp: { classes: [{ id: cls, label: cls }], servers: [{ name: `${name}-s`, class: cls, command: 'x' }] } });
+  reg.registerPack(foldPack('fold-x', 'docs'));
+  check('overrides: qualified name applies', reg.mcpOverrideFor('fold-x/docs'), '/bin/fold');
+  reg.registerPack(foldPack('fold', 'x-docs'));
+  check('overrides: a runtime pack folding to the same name ⇒ applies to none',
+    [reg.mcpOverrideFor('fold-x/docs'), reg.mcpOverrideFor('fold/x-docs'), reg.ambiguousOverrides().includes('fold_x_docs')], [undefined, undefined, true]);
+  reg.unregisterPack('fold');
+  check('overrides: unambiguous again once it is gone', reg.mcpOverrideFor('fold-x/docs'), '/bin/fold');
+  reg.unregisterPack('fold-x');
   check('options: only the provider\'s own ids', reg.optionsDeclaredFor('angular', { type: 'x', flavour: 'y' }), { type: 'x' });
 
   const { probeVersion, runVars } = await import('../src/pipeline/pipeline.ts');
