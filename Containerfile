@@ -26,8 +26,8 @@ RUN apt-get update \
 # and the `Error: {json}` diagnostics anchor (src/capture/diagnostics.ts) are all
 # version-dependent, so an unannounced bump breaks parsers silently. After changing it,
 # run `npm run diagnostics:replay`.
-ARG IGNITEUI_CLI_VERSION=15.8.2
-ARG IGNITEUI_THEMING_VERSION=29.0.0
+ARG IGNITEUI_CLI_VERSION=16.0.0
+ARG IGNITEUI_THEMING_VERSION=30.2.0
 # OPENCODE_PKG: `@opencode/cli` is the 2.x line; `opencode-ai` is 1.x, still buildable for
 # A/B (`--build-arg OPENCODE_PKG=opencode-ai --build-arg OPENCODE_VERSION=1.19.3`).
 # src/pipeline/opencode-cli.ts picks the CLI shape from `opencode --version` at runtime.
@@ -145,13 +145,13 @@ RUN --mount=type=bind,source=.npmrc,target=/tmp/ig/.npmrc \
       echo "Ignite UI: licensed (@infragistics) build"; \
       export npm_config_userconfig=/tmp/ig/.npmrc; \
       GRID_PKG="@infragistics/igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2 igniteui-i18n-resources@^1.0.5"; \
+      INSTALL="${BASE_PKG}@7.5.0 ${GRID_PKG}@~7.4.0 igniteui-i18n-resources@^2.0.0"; \
       NAMES="${BASE_PKG} ${GRID_PKG} igniteui-i18n-resources"; \
       ALIAS="--alias:igniteui-webcomponents-grids=${GRID_PKG}"; \
     else \
       echo "Ignite UI: trial (watermarked) build — empty .npmrc"; \
       GRID_PKG="igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2"; \
+      INSTALL="${BASE_PKG}@7.5.0 ${GRID_PKG}@~7.4.0"; \
       NAMES="${BASE_PKG} ${GRID_PKG}"; \
       ALIAS=""; \
     fi; \
