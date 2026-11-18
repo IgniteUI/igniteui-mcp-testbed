@@ -315,6 +315,8 @@ export interface Screenshot {
 // One failed Playwright test, surfaced in the run log + History detail.
 export interface TestFailure {
   title: string;
+  /** The enclosing describe() titles, outermost first. */
+  describe?: string;
   file: string;
   error: string;
 }

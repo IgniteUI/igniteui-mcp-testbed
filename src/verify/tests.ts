@@ -119,7 +119,7 @@ function parseReport(reportPath: string): Omit<TestResult, 'ran' | 'ok' | 'files
   const durationMs = stats.duration != null ? Math.round(Number(stats.duration)) : null;
 
   const failures: TestFailure[] = [];
-  const walkSuite = (suite: any, file: string) => {
+  const walkSuite = (suite: any, file: string, describe: string[]) => {
     const suiteFile = suite.file || file;
     for (const spec of suite.specs || []) {
       if (spec.ok) continue;
@@ -133,13 +133,14 @@ function parseReport(reportPath: string): Omit<TestResult, 'ran' | 'ok' | 'files
       }
       failures.push({
         title: spec.title || '(untitled)',
+        ...(describe.length ? { describe: describe.join(' › ') } : {}),
         file: cleanSpecPath(spec.file || suiteFile || ''),
         error: stripAnsi(error).split('\n').slice(0, 6).join('\n'),
       });
     }
-    for (const child of suite.suites || []) walkSuite(child, suiteFile);
+    for (const child of suite.suites || []) walkSuite(child, suiteFile, child.title ? [...describe, child.title] : describe);
   };
-  for (const suite of raw.suites || []) walkSuite(suite, suite.file || '');
+  for (const suite of raw.suites || []) walkSuite(suite, suite.file || '', []);
 
   return { total: passed + failed + flaky + skipped, passed, failed, skipped, flaky, durationMs, failures };
 }

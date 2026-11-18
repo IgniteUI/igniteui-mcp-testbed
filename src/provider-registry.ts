@@ -878,6 +878,15 @@ export function canonicalMcpClasses(frameworkId: string, classes: string[]): str
     pack.mcp.classes.find((k) => bareMcpClass(k.id).toLowerCase() === c.toLowerCase())?.id ?? c);
 }
 
+/** False only for a class of this framework's pack that is limited to other frameworks;
+ * `custom` and unknown names pass. */
+export function mcpClassApplies(frameworkId: string, cls: string): boolean {
+  const pack = getPackForFramework(frameworkId);
+  const k = pack?.mcp.classes.find((c) => c.id.toLowerCase() === cls.toLowerCase()
+    || bareMcpClass(c.id).toLowerCase() === cls.toLowerCase());
+  return !k?.frameworks || k.frameworks.includes(frameworkId);
+}
+
 /** The provider (pack name) that owns a framework id, or undefined for an unknown id. */
 export function providerFor(frameworkId: string): string | undefined {
   return getPackForFramework(frameworkId)?.name;

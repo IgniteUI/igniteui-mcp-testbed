@@ -492,6 +492,10 @@ const v2 = {
   const mixed = { platforms: ['angular', 'mat-ng'], variants: [{ mcps: [], skills: false }], model: 'm/x', prompt: 'p' };
   check('matrix: options across two providers', normalizeMatrixRequest({ ...mixed, options: { type: 'igx-ts' } }).ok, true);
   check('matrix: option no provider declares', normalizeMatrixRequest({ ...mixed, options: { nope: 'x' } }).error, 'option "nope" is not declared by any selected platform\'s provider');
+  const narrowed = normalizeMatrixRequest({ platforms: ['angular', 'react'], variants: [{ mcps: ['igniteui', 'angular'] }, { mcps: ['igniteui'] }], model: 'm/x', prompt: 'p' }).req;
+  check('matrix: class limited to other platforms dropped', narrowed.combos.map((c) => `${c.platform} ${c.variantLabel}`),
+    ['angular igniteui+angular · no-skills', 'angular igniteui · no-skills', 'react igniteui · no-skills']);
+  check('matrix: narrowed duplicate warned', narrowed.warnings.some((w) => /^react: .* skipped$/.test(w)), true);
 
   throws('versions: unknown framework', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: [], frameworks: ['nope'] }] }), /framework ids/);
   throws('versions: secret in argv', () => reg.validatePack({ ...structuredClone(v2), versions: [{ name: 'x', cmd: 'x', argv: ['{{secret:A}}'] }] }), /must not reference a secret/);

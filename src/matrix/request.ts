@@ -1,7 +1,7 @@
 'use strict';
 
 import { MATRIX_MAX_ENTRIES, MATRIX_MAX_PASSES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
-import { getFramework, optionsDeclaredFor, optionsFor, resolveRunOptions } from '../provider-registry.ts';
+import { getFramework, mcpClassApplies, optionsDeclaredFor, optionsFor, resolveRunOptions } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, MatrixPass, Variant } from '../types.ts';
@@ -67,9 +67,19 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   }
   if (!model) return { ok: false, error: 'a model is required for matrix runs' };
 
+  // A class limited to other platforms is dropped from the entry, so its label and
+  // record say what actually ran; an entry that then repeats another is skipped.
   let combos: Combo[] = [];
-  for (const platform of platforms) for (const variant of variants) {
-    combos.push({ platform, variant, variantLabel: variantLabel(variant) });
+  const seen = new Set<string>();
+  for (const platform of platforms) for (const v of variants) {
+    const variant = { ...v, mcps: v.mcps.filter((c) => mcpClassApplies(platform, c)) };
+    const label = variantLabel(variant);
+    if (seen.has(`${platform}|${label}`)) {
+      warnings.push(`${platform}: '${variantLabel(v)}' is the same as '${label}' there, skipped`);
+      continue;
+    }
+    seen.add(`${platform}|${label}`);
+    combos.push({ platform, variant, variantLabel: label });
   }
   let dropped = 0;
   if (combos.length > MATRIX_MAX_ENTRIES) {
