@@ -5,7 +5,8 @@
   "displayName": "Ignite UI",
   "description": "Built in. Projects scaffolded by the Ignite UI CLI (Angular, React, Web Components) or the IgniteUI.Blazor.Templates dotnet template.",
   "versions": [
-    { "name": "igniteui-cli", "cmd": "ig", "argv": ["--version"] }
+    { "name": "igniteui-cli", "cmd": "ig", "argv": ["--version"] },
+    { "name": "IgniteUI.Blazor.Templates", "cmd": "dotnet", "argv": ["new", "uninstall"], "frameworks": ["blazor"] }
   ],
   "options": [
     { "id": "type", "label": "Project type (optional)", "placeholder": "e.g. igx-ts / sidenav", "default": "" },

@@ -89,7 +89,10 @@ RUN printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/xdg-open \
  && chmod +x /usr/local/bin/xdg-open
 
 # --- Blazor template package (replace with your NuGet template's short name/id) ---
-RUN dotnet new install IgniteUI.Blazor.Templates
+# Pinned for the same reason as the npm tools above: a template release changes the app
+# every Blazor run starts from (and the pack passes `--Empty true`, which needs >= 1.0.0).
+ARG IGNITEUI_BLAZOR_TEMPLATES_VERSION=1.0.0
+RUN dotnet new install IgniteUI.Blazor.Templates::${IGNITEUI_BLAZOR_TEMPLATES_VERSION}
 
 # --- Wizard backend ---
 WORKDIR /app
