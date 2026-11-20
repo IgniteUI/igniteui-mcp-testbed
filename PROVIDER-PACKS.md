@@ -330,7 +330,7 @@ For license keys and similar:
 **What protects them:**
 - They're never in the project or in `opencode.json`, and opencode never inherits them.
 - `opencode.json` denies the agent `read`, `edit` and out-of-project access to `/secrets`,
-  and `bash` commands that mention it. This is written for **every** run once any loaded
+  and shell commands that mention it (`shell` on opencode 2.x, `bash` on 1.x). This is written for **every** run once any loaded
   pack declares a secret or `./secrets/` holds anything, since all packs share the mount.
 - Symlinks in a pack's template or skill folders are skipped, so none can point into
   `/secrets` from inside the project.
@@ -341,10 +341,11 @@ not stop an agent that goes looking, which runs as the same user with a shell:
 - `/proc/1/environ` still holds every env secret passed to the container, for every pack
   (the server removes them from its own env, but the kernel's copy of the original can't
   be changed). The dev server's `/proc/<pid>/environ` holds its own pack's.
-- The `bash` rule matches the command text, so a command that builds the path at
+- The shell rule matches the command text, so a command that builds the path at
   runtime (`cd / && cat sec*/…`) gets through.
-- The permission action names and the 1.x pattern form are unverified against a real
-  opencode.
+- The 2.x `shell` rule was checked in the container (it blocks `cat /secrets/…` and
+  allows other commands); the other action names and the 1.x pattern form are
+  unverified against a real opencode.
 
 Use secrets you'd be comfortable seeing in a test log: a trial or test-tier license key,
 not a production credential.

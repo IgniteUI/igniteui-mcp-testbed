@@ -35,8 +35,8 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
   // folder sits in the same mount; a container with no secrets keeps the plain config.
   const denySecrets = secretsPresent();
   const secretGlobs = [`${SECRETS_DIR}/*`, `${SECRETS_DIR}/**`];
-  // bash matches the command line: catches `cat /secrets/...`, not a command that
-  // builds the path at runtime.
+  // The shell tool (2.x `shell`, 1.x `bash`) matches the command line: catches
+  // `cat /secrets/...`, not a command that builds the path at runtime.
   const bashGlob = `*${SECRETS_DIR}*`;
   if (v2) {
     // websearch always fails here and fails the run; last match wins, so deny after the allow.
@@ -45,7 +45,7 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
       { action: 'websearch', resource: '*', effect: 'deny' },
       ...(denySecrets ? [
         ...SECRET_ACTIONS.flatMap((action) => secretGlobs.map((resource) => ({ action, resource, effect: 'deny' }))),
-        { action: 'bash', resource: bashGlob, effect: 'deny' },
+        { action: 'shell', resource: bashGlob, effect: 'deny' },
       ] : []),
     ];
     doc.mcp = { servers: toV2Servers(mcp) };

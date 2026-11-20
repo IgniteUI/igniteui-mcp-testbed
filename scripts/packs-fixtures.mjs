@@ -375,7 +375,7 @@ const v2 = {
   writeOpencodeConfig(cfgFor('lic-fw'), {}, app);
   const denies = read().permissions.filter((r) => r.effect === 'deny' && r.action !== 'websearch');
   check('opencode 2.x: secrets denied', denies.map((r) => `${r.action} ${r.resource}`).sort(),
-    [...['edit', 'external_directory', 'read'].flatMap((a) => [`${a} ${sd}/*`, `${a} ${sd}/**`]), `bash *${sd}*`].sort());
+    [...['edit', 'external_directory', 'read'].flatMap((a) => [`${a} ${sd}/*`, `${a} ${sd}/**`]), `shell *${sd}*`].sort());
   check('opencode 2.x: allow-all stays first', read().permissions[0], { action: '*', resource: '*', effect: 'allow' });
   writeOpencodeConfig(cfgFor('angular'), {}, app);
   check('opencode 2.x: another pack\'s run is denied too', read().permissions.length, 2 + denies.length);
