@@ -5,6 +5,8 @@ import * as path from 'path';
 import type { HistoryRecord } from './types.ts';
 import { ARTIFACT_DIR } from './config.ts';
 import { PILL_STATUSES } from './status-meta.ts';
+import { providerOf } from './provider-of.ts';
+import { bareMcpClass } from './mcp-class.ts';
 
 // Read a screenshot file and return a base64 data-URL, or null on any error.
 async function toDataUrl(runId: string, filename: string): Promise<string | null> {
@@ -205,7 +207,9 @@ function stars(n){if(!n)return'\u2014';return'\u2605'.repeat(n)+'\u2606'.repeat(
 /* Mirrors mcpSummary() in web/history.ts: a class whose launch command was overridden
    (MCP_CMD_<CLASS>) is marked, else the two arms of a local-vs-released A/B export
    identically. Keep the two in step. */
-function mcpSummary(c){const o=c.mcpCommands||{};return (c.enabledMcps||[]).map(m=>o[m]?m+' (local)':m).join(', ')||'\u2014'}
+${providerOf.toString()}
+${bareMcpClass.toString()}
+function mcpSummary(c){const o=c.mcpCommands||{};return (c.enabledMcps||[]).map(m=>o[m]?bareMcpClass(m)+' (local)':bareMcpClass(m)).join(', ')||'\u2014'}
 function skillSummary(c){const xs=(c.excludedSkills||[]).length;const gen=c.skills?(xs?'default (-'+xs+')':'default'):null;if(c.overrideSkills){if(c.localSkillsOnly||!c.skills)return'local';return gen+' + local'}return gen||'off'}
 /* The token split is recorded for every run; the grid has room only for the total, so
    the breakdown goes in the cell tooltip and the detail panel. */
@@ -278,7 +282,7 @@ let sortField='startedAt', sortDir=-1, filterText='';
 
 const COLS=[
   {field:'startedAt',     label:'When',     val:r=>r.startedAt||'',           cell:r=>'<span style="font-weight:600">'+esc(fmtWhen(r.startedAt))+'</span>'},
-  {field:'_fw',           label:'Framework',val:r=>r.config.framework||'',    cell:r=>esc(r.config.framework||'\u2014')},
+  {field:'_fw',           label:'Framework',val:r=>r.config.framework||'',    cell:r=>esc(r.config.framework?r.config.framework+' \u00b7 '+providerOf(r.config):'\u2014')},
   {field:'_model',        label:'Model',    val:r=>(r.config.models||[])[0]||'',cell:r=>esc((r.config.models||[]).join(', ')||'\u2014')},
   {field:'_mcps',         label:'MCPs',     val:r=>(r.config.enabledMcps||[]).join(','),cell:r=>esc(mcpSummary(r.config))},
   {field:'status',        label:'Status',   val:r=>r.status||'',              cell:r=>'<span class="pill '+esc(PILL_SET.has(r.status)?r.status:'other')+'">'+esc(r.status)+'</span>'},
@@ -315,10 +319,15 @@ function renderDetail(r){
     '<div><h4>Config</h4><dl>'+
     '<dt>Mode</dt><dd>'+esc(r.mode||'interactive')+'</dd>'+
     '<dt>Framework</dt><dd>'+esc(c.framework||'\u2014')+'</dd>'+
-    '<dt>Project type</dt><dd>'+esc(c.projectType||'\u2014')+'</dd>'+
-    '<dt>Theme</dt><dd>'+esc(c.theme||'\u2014')+'</dd>'+
+    '<dt>Provider</dt><dd>'+esc(providerOf(c))+'</dd>'+
+    (c.options&&Object.keys(c.options).length
+      ?Object.entries(c.options).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v||'\u2014')+'</dd>').join('')
+      :'<dt>Project type</dt><dd>'+esc(c.projectType||'\u2014')+'</dd><dt>Theme</dt><dd>'+esc(c.theme||'\u2014')+'</dd>')+
     '<dt>Skills</dt><dd>'+esc(skillSummary(c))+'</dd>'+
+    (c.pack?'<dt>Pack</dt><dd>'+esc(c.pack.name+(c.pack.version?' v'+c.pack.version:'')+' #'+c.pack.hash)+'</dd>':'')+
+    Object.entries(c.toolVersions||{}).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+
     (c.excludedSkills?.length?'<dt>Excl. skills</dt><dd>'+esc(c.excludedSkills.join(', '))+'</dd>':'')+
+    (c.skillSources||[]).map(s=>'<dt>Skill source</dt><dd>'+esc(s.source+(s.commit?' @ '+s.commit.slice(0,12):s.hash?' #'+s.hash:'')+' · '+(s.skills||[]).length+' skills'+(s.error?' · failed: '+s.error:''))+'</dd>').join('')+
     '<dt>MCPs</dt><dd>'+esc(mcpSummary(c))+'</dd>'+
     '<dt>Run id</dt><dd style="font-size:.68rem">'+esc(r.id)+'</dd>'+
     '</dl></div>'+

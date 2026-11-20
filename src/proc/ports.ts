@@ -60,6 +60,11 @@ function tailLines(s: string, n: number): string {
 
 // Terminal build-failure markers per dev server. Post-agent the source is static,
 // so the first build is final: a failed build never recovers, no point waiting.
+/** One case-insensitive regex from a framework's `buildFailed` sources, or null. */
+export function buildFailedRe(sources: string[] | undefined): RegExp | null {
+  return sources?.length ? new RegExp(sources.map((s) => `(?:${s})`).join('|'), 'i') : null;
+}
+
 export const BUILD_FAILED_RE = /(Application bundle generation failed|The build failed|dotnet watch ❌|Waiting for a file to change before restarting|is already in use|address already in use|EADDRINUSE|error when starting dev server)/i;
 
 // Wait until the dev server is actually serving, or it's clear the build failed —
@@ -72,6 +77,9 @@ export function waitForAppReady(
   startOffset: number,
   child: ChildProcess | null,
   emit?: Emit,
+  // A framework's own failure markers (FrameworkDef.buildFailed), checked alongside
+  // BUILD_FAILED_RE so a pack can describe its toolchain without editing this file.
+  extraFailed: RegExp | null = null,
 ): Promise<AppReady> {
   const logPath = path.join(LOG_DIR, `${logName}.log`);
   const deadline = Date.now() + timeoutMs;
@@ -88,7 +96,7 @@ export function waitForAppReady(
         if (child && child.exitCode !== null) {
           return resolve({ ready: false, reason: `dev server exited (code ${child.exitCode})`, tail: tailLines(fresh, 40) });
         }
-        if (BUILD_FAILED_RE.test(fresh)) {
+        if (BUILD_FAILED_RE.test(fresh) || (extraFailed && extraFailed.test(fresh))) {
           return resolve({ ready: false, reason: 'build failed', tail: tailLines(fresh, 40) });
         }
         if (Date.now() > deadline) {

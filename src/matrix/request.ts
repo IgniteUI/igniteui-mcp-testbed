@@ -1,7 +1,7 @@
 'use strict';
 
 import { MATRIX_MAX_ENTRIES, MATRIX_MAX_PASSES, PROMPT_IMAGES_DIR, PROMPT_IMAGE_MAX_COUNT } from '../config.ts';
-import { getFramework } from '../provider-registry.ts';
+import { getFramework, mcpClassApplies, optionsDeclaredFor, optionsFor, resolveRunOptions } from '../provider-registry.ts';
 import { resolveSelection } from '../prompt-images.ts';
 import { parseVariants, variantLabel } from './variants.ts';
 import type { Combo, MatrixFixed, MatrixPass, Variant } from '../types.ts';
@@ -67,9 +67,19 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
   }
   if (!model) return { ok: false, error: 'a model is required for matrix runs' };
 
+  // A class limited to other platforms is dropped from the entry, so its label and
+  // record say what actually ran; an entry that then repeats another is skipped.
   let combos: Combo[] = [];
-  for (const platform of platforms) for (const variant of variants) {
-    combos.push({ platform, variant, variantLabel: variantLabel(variant) });
+  const seen = new Set<string>();
+  for (const platform of platforms) for (const v of variants) {
+    const variant = { ...v, mcps: v.mcps.filter((c) => mcpClassApplies(platform, c)) };
+    const label = variantLabel(variant);
+    if (seen.has(`${platform}|${label}`)) {
+      warnings.push(`${platform}: '${variantLabel(v)}' is the same as '${label}' there, skipped`);
+      continue;
+    }
+    seen.add(`${platform}|${label}`);
+    combos.push({ platform, variant, variantLabel: label });
   }
   let dropped = 0;
   if (combos.length > MATRIX_MAX_ENTRIES) {
@@ -101,8 +111,23 @@ export function normalizeMatrixRequest(raw: any): MatrixRequestResult {
     }
   }
 
+  // One set of option values for every entry. Each platform takes the ones its provider
+  // declares; an id no selected provider declares is still an error.
+  let options: Record<string, string> | undefined;
+  if (body.options != null) {
+    if (typeof body.options !== 'object' || Array.isArray(body.options)) return { ok: false, error: 'options must be an object' };
+    const declared = new Set(platforms.flatMap((p) => optionsFor(p).map((d) => d.id)));
+    const stray = Object.keys(body.options).find((k) => !declared.has(k));
+    if (stray) return { ok: false, error: `option "${stray}" is not declared by any selected platform's provider` };
+    for (const p of platforms) {
+      try { resolveRunOptions(p, optionsDeclaredFor(p, body.options)); } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+    options = { ...body.options };
+  }
+
   const fixed: MatrixFixed = {
     model,
+    ...(options ? { options } : {}),
     apiKey: body.apiKey || undefined,
     customBaseUrl: body.customBaseUrl || undefined,
     customMcp: body.customMcp || undefined,

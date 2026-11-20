@@ -7,7 +7,9 @@ import { $, fmt, fmtWhen, fmtDur } from './util.ts';
 import { getJSON, postJSON, del } from './api.ts';
 import type { IgcCarouselComponent, IgcDialogComponent } from 'igniteui-webcomponents';
 import { pillClass } from '../src/status-meta.ts';
-import { normMcpClass } from '../src/mcp-class.ts';
+import { normMcpClass, bareMcpClass } from '../src/mcp-class.ts';
+import { providerOf } from '../src/provider-of.ts';
+import { getPacks } from './providers.ts';
 import type { Diagnostic } from '../src/types.ts';
 
 interface HistoryGridRow {
@@ -111,13 +113,32 @@ const gridHtml = (...args: any[]) => {
 // artifact store) — a thumbnail simply breaks if the file was later removed there.
 const promptImageUrl = (name: string) => `/api/prompt-images/file?name=${encodeURIComponent(name)}`;
 
-const IGNITEUI_FRAMEWORK_IDS = new Set(['angular', 'react', 'webcomponents', 'blazor']);
-function fmtFramework(fw: string | undefined): string {
-  if (!fw) return '—';
-  return IGNITEUI_FRAMEWORK_IDS.has(fw) ? `${fw} - Ignite UI` : fw;
+// A provider's display name when it is loaded here, else its id (a run recorded against
+// a pack this container doesn't have).
+const providerLabel = (c: any): string => {
+  const name = providerOf(c);
+  return getPacks().find((p) => p.name === name)?.displayName || name;
+};
+
+function fmtFramework(c: any): string {
+  return c?.framework ? `${c.framework} - ${providerLabel(c)}` : '—';
+}
+
+// Old records carry projectType/theme; newer ones the provider's options map.
+function optionRows(c: any): Array<[string, string]> {
+  if (c.options && Object.keys(c.options).length) return Object.entries(c.options) as Array<[string, string]>;
+  return [['type', c.projectType || ''], ['theme', c.theme || '']];
 }
 
 // One-word summary of a run's skill mode for the grid (matches the matrix 4-way axis).
+// `github:owner/repo@main` → `… @ 1a2b3c4d5e6f · 3 skills`; the commit/hash is what makes
+// two runs of the same pack comparable.
+function skillSourceSummary(s: { source: string; commit?: string; hash?: string; skills?: string[]; error?: string }): string {
+  const id = s.commit ? `@ ${s.commit.slice(0, 12)}` : s.hash ? `#${s.hash}` : '';
+  const n = (s.skills || []).length;
+  return [s.source, id, `${n} skill${n === 1 ? '' : 's'}`, s.error ? `failed: ${s.error}` : ''].filter(Boolean).join(' · ');
+}
+
 function skillSummary(c: any): string {
   const xs = (c.excludedSkills || []).length;
   const gen = c.skills ? (xs ? `default (-${xs})` : 'default') : null;
@@ -135,7 +156,8 @@ function skillSummary(c: any): string {
 // every ordinary run and every record predating the field.
 function mcpSummary(c: any): string {
   const overrides = c.mcpCommands || {};
-  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${m} (local)` : m));
+  // One run is one provider, so `igniteui/theming` shows as `theming`.
+  const list = (c.enabledMcps || []).map((m: string) => (overrides[m] ? `${bareMcpClass(m)} (local)` : bareMcpClass(m)));
   return list.join(', ') || '—';
 }
 
@@ -282,7 +304,7 @@ function rowVals(r: any): HistoryGridRow {
     whenDisplay: fmtWhen(r.startedAt || ''),
     matrixId: r.matrixId || '',
     matrixName: r.matrixName || '',
-    framework: fmtFramework(r.config.framework),
+    framework: fmtFramework(r.config),
     model: (r.config.models || []).join(', ') || '—',
     skills: skillSummary(r.config),
     mcps: mcpSummary(r.config),
@@ -357,15 +379,19 @@ function bindGridTemplates() {
       <div class="detail" data-run-id=${row.id}>
         <div><h4>Config</h4><dl>
           <dt>Mode</dt><dd>${r.mode || 'interactive'}</dd>
-          <dt>Project type</dt><dd>${c.projectType || '—'}</dd>
-          <dt>Theme</dt><dd>${c.theme || '—'}</dd>
+          <dt>Provider</dt><dd>${providerLabel(c)}</dd>
+          ${optionRows(c).map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${v || '—'}</dd>`)}
           <dt>Base URL</dt><dd>${c.customBaseUrl || '—'}</dd>
           <dt>Skills</dt><dd>${skillSummary(c)}</dd>
+          ${c.pack ? gridHtml`<dt>Pack</dt><dd>${c.pack.name}${c.pack.version ? ` v${c.pack.version}` : ''} · #${c.pack.hash}</dd>` : gridHtml``}
+          ${Object.entries(c.toolVersions || {}).map(([k, v]) => gridHtml`<dt>${k}</dt><dd>${v}</dd>`)}
           <dt>Excluded skills</dt><dd>${(c.excludedSkills || []).join(', ') || '—'}</dd>
+          ${(c.skillSources || []).map((s: any) =>
+            gridHtml`<dt>Skill source</dt><dd>${skillSourceSummary(s)}</dd>`)}
           ${Object.entries(c.mcpCommands || {}).map(([cls, cmd]) =>
             gridHtml`<dt>${cls} binary</dt><dd>${cmd}</dd>`)}
           <dt>opencode</dt><dd>${opencodeSummary(c)}</dd>
-          <dt>Tests selected</dt><dd>${(c.selectedTests || []).length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
+          <dt>Tests selected</dt><dd>${!Array.isArray(c.selectedTests) ? 'all discovered' : c.selectedTests.length ? `${c.selectedTests.length} file(s)` : 'none'}</dd>
           <dt>Prompt images</dt><dd>${(c.promptImages || []).length ? `${c.promptImages.length} attached` : 'none'}</dd>
           <dt>Run id</dt><dd>${r.id}</dd>
           ${r.matrixId ? gridHtml`<dt>Matrix</dt><dd>${r.matrixName ? `${r.matrixName} · ` : ''}${r.matrixId}</dd>` : gridHtml``}
@@ -738,6 +764,20 @@ function rerunMcpWarning(cfg: any, live: Record<string, string> | null): string 
     : '';
 }
 
+// A re-run uses whatever pack this container loaded. The hash covers the whole pack, so
+// a matching version with a different hash means the pack was edited without a bump.
+function rerunPackWarning(cfg: any, live: Record<string, { version: string | null; hash: string }> | null): string {
+  const p = cfg.pack;
+  if (!p || !live) return '';
+  const now = live[p.name];
+  if (!now) return `Pack "${p.name}" is not loaded in this container.`;
+  if (now.hash === p.hash) return '';
+  const ver = (v: string | null | undefined) => (v ? `v${v}` : 'no version');
+  return now.version === (p.version ?? null)
+    ? `Pack "${p.name}" changed since the recorded run (same ${ver(now.version)}, different content).`
+    : `Pack "${p.name}" differs: recorded run used ${ver(p.version)}, this container has ${ver(now.version)}.`;
+}
+
 async function rerunRun(id: string) {
   const r = runById.get(id);
   if (!r || !r.matrixId) return;
@@ -752,7 +792,8 @@ async function rerunRun(id: string) {
   st.rerunWarn = '';
   try {
     const s = await getJSON('/api/status');
-    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s)]
+    st.rerunWarn = [rerunMcpWarning(c, s && s.mcpOverrides ? s.mcpOverrides : null), rerunOpencodeWarning(c, s),
+      rerunPackWarning(c, s && s.packs ? s.packs : null)]
       .filter(Boolean).join(' ');
   } catch { /* leave the warning empty */ }
   update();
@@ -768,6 +809,8 @@ async function confirmRerun() {
   const body = {
     platforms: [c.framework],
     variants: [{ mcps: c.enabledMcps || [], skills: !!c.skills, localSkills: !!c.overrideSkills }],
+    // Older records stored the Ignite UI options as projectType/theme.
+    options: c.options || (c.projectType || c.theme ? { type: c.projectType || '', theme: c.theme || '' } : undefined),
     model: (c.models || [])[0],
     prompt: r.prompt,
     apiKey,

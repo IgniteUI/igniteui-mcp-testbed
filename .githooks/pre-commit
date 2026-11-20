@@ -1,5 +1,6 @@
 #!/bin/sh
-# Pre-commit gate: block commits that don't type-check or fail the diagnostics fixtures.
+# Pre-commit gate: block commits that don't type-check or fail the diagnostics / pack fixtures.
 # One-time setup per clone:  git config core.hooksPath .githooks
 npm run --silent typecheck || exit 1
-exec npm run --silent diagnostics:test
+npm run --silent diagnostics:test || exit 1
+exec npm run --silent packs:test

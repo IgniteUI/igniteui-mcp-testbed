@@ -1045,6 +1045,48 @@ const NET_LINE = 'connect ECONNREFUSED 127.0.0.1:443';
   fsx.rmSync(dir, { recursive: true, force: true });
 }
 
+{
+  const { repairTrigger, repairPrompt, failureKey, overlayError } = await import('../src/pipeline/repair.ts');
+  const fatal = { severity: 'fatal', kind: 'rate-limited' };
+  const broken = { appReady: false, appError: 'exited', buildTail: 'ERROR x', tests: null };
+  check('repair: broken build', repairTrigger('build-error', broken), 'build-error');
+  check('repair: provider failure blocks it', repairTrigger('build-error', broken, [fatal]), null);
+  check('repair: resolved diagnostic does not', repairTrigger('build-error', broken, [{ ...fatal, resolvedAt: 'x' }]), 'build-error');
+
+  const overlay = { appReady: true, buildFailed: overlayError('\x1b[31m[vite] Internal server error: Failed to resolve import "x"\x1b[0m'), buildTail: 'Failed to resolve import "x"', tests: { ran: true, failed: 1, failures: [] } };
+  check('repair: vite overlay detected', overlay.buildFailed, true);
+  check('repair: overlay is a build error', repairTrigger('test-failed', overlay), 'build-error');
+  check('repair: overlay prompt carries the output', /error overlay[\s\S]*Failed to resolve import/.test(repairPrompt(overlay, [])), true);
+
+  const f = (title, describe) => ({ file: 'a.spec.ts', title, ...(describe ? { describe } : {}), error: 'expect(locator).toHaveText(expected) failed\nLocator: h1\nExpected: "Products"\nReceived: "Home"' });
+  check('repair: describe path in key', [failureKey(f('t', 'A')), failureKey(f('t', 'B'))], ['a.spec.ts::A › t', 'a.spec.ts::B › t']);
+  const many = Array.from({ length: 12 }, (_, i) => f(`t${i}`));
+  const text = repairPrompt({ appReady: true, tests: { ran: true, failed: 12, failures: many } }, [failureKey(many[11])]);
+  check('repair: regression listed first', text.split('\n').find((l) => l.startsWith('- ')), '- t11 — this worked before your last change');
+  check('repair: expected/received kept', /Expected: "Products"\n {4}Received: "Home"/.test(text), true);
+  check('repair: cap', /- …and 2 more/.test(text), true);
+}
+
+{
+  const os = await import('os');
+  const fsx = await import('fs');
+  const pathx = await import('path');
+  const { DatabaseSync } = await import('node:sqlite');
+  const { latestSession } = await import('../src/capture/session-store.ts');
+  const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'sess-'));
+  fsx.mkdirSync(pathx.join(dir, 'opencode'));
+  const db = new DatabaseSync(pathx.join(dir, 'opencode', 'opencode.db'));
+  db.exec(`create table session_v2 (id text, parent_id text, time_updated integer);
+    create table session_message (id text, session_id text, type text, seq integer, time_created integer, data text);
+    insert into session_v2 values ('top', null, 200), ('child', 'top', 300), ('old', null, 50);
+    insert into session_message values ('1','top','user',1,0,'{}'), ('2','top','assistant',2,0,'{}'), ('3','top','idle',3,0,'{}'), ('4','top','compaction',4,0,'{}');`);
+  db.close();
+  check('session-store: 2.x top-level session', await latestSession(dir, 100), { id: 'top', messages: 2, compactions: 1 });
+  check('session-store: none since', await latestSession(dir, 1000), null);
+  check('session-store: no store', await latestSession(pathx.join(dir, 'nope'), 0), null);
+  fsx.rmSync(dir, { recursive: true, force: true });
+}
+
 // ---------------------------------------------------------------------------
 
 if (failures.length) {

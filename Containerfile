@@ -26,8 +26,8 @@ RUN apt-get update \
 # and the `Error: {json}` diagnostics anchor (src/capture/diagnostics.ts) are all
 # version-dependent, so an unannounced bump breaks parsers silently. After changing it,
 # run `npm run diagnostics:replay`.
-ARG IGNITEUI_CLI_VERSION=15.8.2
-ARG IGNITEUI_THEMING_VERSION=29.0.0
+ARG IGNITEUI_CLI_VERSION=16.0.0
+ARG IGNITEUI_THEMING_VERSION=30.2.0
 # OPENCODE_PKG: `@opencode/cli` is the 2.x line; `opencode-ai` is 1.x, still buildable for
 # A/B (`--build-arg OPENCODE_PKG=opencode-ai --build-arg OPENCODE_VERSION=1.19.3`).
 # src/pipeline/opencode-cli.ts picks the CLI shape from `opencode --version` at runtime.
@@ -77,13 +77,10 @@ RUN set -e; \
     rm -rf /tmp/local-mcp
 
 # --- 3rd-party provider dependencies ---
-# If a provider pack (loaded via the Configuration tab) lists containerDeps.npmGlobal
-# packages, add them to the RUN line below and rebuild the image:
-#   Windows  : .\run.ps1 build
-#   Linux/macOS: ./run.sh build
-# Example: RUN npm install -g some-tool-lib
-# (Remove the leading '#' and replace the placeholder with the actual package names.)
-# RUN npm install -g <provider-packages-here>
+# A provider pack's containerDeps.npmGlobal are installed at runtime, when the pack loads,
+# into /opt/pack-deps/<pack> (src/pack-deps.ts) — no rebuild needed. World-writable
+# because the container may run as the host user (--userns=keep-id).
+RUN mkdir -p /opt/pack-deps && chmod 1777 /opt/pack-deps
 
 # `opencode web` always tries to open a browser via xdg-open; in a headless
 # container that throws ENOENT. A no-op stub on PATH makes the open silently
@@ -92,7 +89,10 @@ RUN printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/xdg-open \
  && chmod +x /usr/local/bin/xdg-open
 
 # --- Blazor template package (replace with your NuGet template's short name/id) ---
-RUN dotnet new install IgniteUI.Blazor.Templates
+# Pinned for the same reason as the npm tools above: a template release changes the app
+# every Blazor run starts from (and the pack passes `--Empty true`, which needs >= 1.0.0).
+ARG IGNITEUI_BLAZOR_TEMPLATES_VERSION=1.0.0
+RUN dotnet new install IgniteUI.Blazor.Templates::${IGNITEUI_BLAZOR_TEMPLATES_VERSION}
 
 # --- Wizard backend ---
 WORKDIR /app
@@ -102,6 +102,8 @@ RUN npm install --omit=dev
 # OS libraries Chromium needs (apt) on the Debian-based SDK image. Adds notable size.
 RUN npx --yes playwright install --with-deps chromium
 COPY src ./src
+# Built-in provider packs (Ignite UI) — read-only, loaded before /providers.
+COPY packs ./packs
 COPY web ./web
 COPY public ./public
 COPY vendor ./vendor
@@ -143,13 +145,13 @@ RUN --mount=type=bind,source=.npmrc,target=/tmp/ig/.npmrc \
       echo "Ignite UI: licensed (@infragistics) build"; \
       export npm_config_userconfig=/tmp/ig/.npmrc; \
       GRID_PKG="@infragistics/igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2 igniteui-i18n-resources@^1.0.5"; \
+      INSTALL="${BASE_PKG}@7.5.0 ${GRID_PKG}@~7.4.0 igniteui-i18n-resources@^2.0.0"; \
       NAMES="${BASE_PKG} ${GRID_PKG} igniteui-i18n-resources"; \
       ALIAS="--alias:igniteui-webcomponents-grids=${GRID_PKG}"; \
     else \
       echo "Ignite UI: trial (watermarked) build — empty .npmrc"; \
       GRID_PKG="igniteui-webcomponents-grids"; \
-      INSTALL="${BASE_PKG}@7.4.1 ${GRID_PKG}@~7.3.2"; \
+      INSTALL="${BASE_PKG}@7.5.0 ${GRID_PKG}@~7.4.0"; \
       NAMES="${BASE_PKG} ${GRID_PKG}"; \
       ALIAS=""; \
     fi; \
