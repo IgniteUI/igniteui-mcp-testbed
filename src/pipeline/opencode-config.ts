@@ -5,6 +5,17 @@ import * as path from 'path';
 import { PROVIDER_ENV } from '../config.ts';
 import type { RunConfig, Emit } from '../types.ts';
 import { codemodeEnabled, opencodeMajor } from './opencode-cli.ts';
+import { listPacks } from '../provider-registry.ts';
+import { SECRETS_DIR } from '../secrets.ts';
+
+// What the agent could use to reach a secret file: reading it, writing over it, and the
+// out-of-project access check that guards both.
+const SECRET_ACTIONS = ['read', 'edit', 'external_directory'];
+
+function secretsPresent(): boolean {
+  if (listPacks().some((p) => (p.secrets || []).length > 0)) return true;
+  try { return fs.readdirSync(SECRETS_DIR).some((n) => !n.startsWith('.')); } catch { return false; }
+}
 
 export function providerEnvFor(model: string, apiKey?: string): Record<string, string> {
   const prefix = String(model).split('/')[0];
@@ -20,15 +31,34 @@ export function writeOpencodeConfig(cfg: RunConfig, mcp: Record<string, any>, ap
     model: cfg.model,
   };
   // Allow everything: headless opencode blocks on a permission prompt instead of failing.
+  // /secrets is denied to every run once any secret could be there, since each pack's
+  // folder sits in the same mount; a container with no secrets keeps the plain config.
+  const denySecrets = secretsPresent();
+  const secretGlobs = [`${SECRETS_DIR}/*`, `${SECRETS_DIR}/**`];
+  // The shell tool (2.x `shell`, 1.x `bash`) matches the command line: catches
+  // `cat /secrets/...`, not a command that builds the path at runtime.
+  const bashGlob = `*${SECRETS_DIR}*`;
   if (v2) {
     // websearch always fails here and fails the run; last match wins, so deny after the allow.
     doc.permissions = [
       { action: '*', resource: '*', effect: 'allow' },
       { action: 'websearch', resource: '*', effect: 'deny' },
+      ...(denySecrets ? [
+        ...SECRET_ACTIONS.flatMap((action) => secretGlobs.map((resource) => ({ action, resource, effect: 'deny' }))),
+        { action: 'shell', resource: bashGlob, effect: 'deny' },
+      ] : []),
     ];
     doc.mcp = { servers: toV2Servers(mcp) };
   } else {
-    doc.permission = 'allow';
+    // 1.x: per-permission pattern maps, last match wins.
+    doc.permission = denySecrets
+      ? {
+        '*': 'allow',
+        ...Object.fromEntries(SECRET_ACTIONS.map((a) =>
+          [a, { '*': 'allow', ...Object.fromEntries(secretGlobs.map((g) => [g, 'deny'])) }])),
+        bash: { '*': 'allow', [bashGlob]: 'deny' },
+      }
+      : 'allow';
     doc.mcp = mcp;
   }
   // Custom OpenAI-compatible endpoint; 2.x normalizes the 1.x spelling.

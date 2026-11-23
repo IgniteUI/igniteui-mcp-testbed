@@ -74,7 +74,7 @@ export function classifyTool(
   if (BUILTIN_TOOLS.has(tool)) return { kind: 'builtin', server: null, name: tool };
 
   // Namespaced but not from a server we know about (a server renamed since the run,
-  // or one classify() left disabled that opencode loaded anyway). Still MCP — record
+  // or one the configure stage left disabled that opencode loaded anyway). Still MCP — record
   // it under the inferred server rather than silently calling it a built-in.
   const us = tool.indexOf('_');
   if (us > 0) return { kind: 'mcp', server: tool.slice(0, us), name: tool.slice(us + 1) };

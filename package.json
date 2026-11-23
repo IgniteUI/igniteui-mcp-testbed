@@ -8,6 +8,7 @@
     "start": "node src/server.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "diagnostics:test": "node scripts/diagnostics-fixtures.mjs && node scripts/loop-store-check.mjs",
+    "packs:test": "node scripts/packs-fixtures.mjs && node scripts/pack-golden.mjs",
     "diagnostics:replay": "node scripts/replay-diagnostics.mjs",
     "exec:smoke": "node scripts/exec-smoke.mjs",
     "compare": "node scripts/compare-runs.mjs",
@@ -23,7 +24,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.1",
-    "igniteui-webcomponents": "^7.4.1",
+    "igniteui-webcomponents": "^7.5.0",
     "lit": "^3.3.0",
     "typescript": "^5.6.2"
   }

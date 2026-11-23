@@ -3,7 +3,7 @@
 import { html, render, nothing, repeat, classMap } from './lit.ts';
 import { $, fmt, validateMcpJson, syncTestsCombo } from './util.ts';
 import { getJSON, postJSON } from './api.ts';
-import { getPacks, type ProviderPack } from './providers.ts';
+import { getPacks, classesFor, type ProviderPack } from './providers.ts';
 import type { Diagnostic } from '../src/types.ts';
 import { createImagePicker } from './prompt-images.ts';
 
@@ -20,8 +20,7 @@ const STEPS: Array<[string, string]> = [
 const ORDER = STEPS.map(([k]) => k);
 
 interface WizardState {
-  provider: string;       // 'igniteui' or an external pack name
-  framework: string;      // active IgniteUI framework (external ones live in extFramework)
+  provider: string;       // selected provider (pack) name; '' until /api/providers loads
   busy: boolean;          // a launch is streaming
   sessionLive: boolean;
   matrixLock: boolean;    // a matrix run owns the ports
@@ -45,8 +44,7 @@ interface WizardState {
 }
 
 const st: WizardState = {
-  provider: 'igniteui',
-  framework: 'angular',
+  provider: '',
   busy: false,
   sessionLive: false,
   matrixLock: false,
@@ -69,8 +67,8 @@ const st: WizardState = {
   usageText: 'No stats yet — run the agent, then Refresh.',
 };
 
-// Per-pack selected framework id, so switching back to a pack retains the last choice.
-const extFramework = new Map<string, string>();
+// Per-provider selected framework id, so switching back to a provider keeps its choice.
+const fwByPack = new Map<string, string>();
 
 // Reference images the session starts with. Interactive mode has no prompt box (the
 // prompting happens in opencode), so these are staged into the project's
@@ -89,12 +87,12 @@ export function setMatrixLock(on: boolean) {
 
 const launchDisabled = () => st.busy || st.sessionLive || st.matrixLock;
 
-// The currently active framework id (depends on the selected provider).
-const activeFramework = () =>
-  st.provider === 'igniteui' ? st.framework : (extFramework.get(st.provider) || '');
-
 const activePack = (): ProviderPack | undefined =>
   getPacks().find((p) => p.name === st.provider);
+
+// The currently active framework id (depends on the selected provider).
+const activeFramework = () =>
+  fwByPack.get(st.provider) || activePack()?.frameworks[0]?.id || '';
 
 function logLine(msg: string, cls = '') {
   st.logs.push({ msg, cls });
@@ -115,19 +113,20 @@ function collect() {
   // Collect MCPs only from the active provider's container (igc-checkbox exposes
   // `.checked` as a property, not the CSS :checked pseudo). Custom MCP is
   // provider-agnostic and collected independently.
-  const ig = st.provider === 'igniteui';
-  const mcpContainer = document.getElementById(ig ? 'mcpsIg' : `mcps-${st.provider}`);
+  const mcpContainer = document.getElementById(`mcps-${st.provider}`);
   const mcps = mcpContainer
     ? [...mcpContainer.querySelectorAll<any>('[data-mcp]')].filter((c) => c.checked).map((c) => c.dataset.mcp)
     : [];
+  const options: Record<string, string> = {};
+  for (const o of activePack()?.options || []) {
+    const el = document.getElementById(optionElId(st.provider, o.id)) as any;
+    options[o.id] = String(el?.value ?? o.default ?? '').trim();
+  }
   if ($('#customMcpEnable').checked) mcps.push('custom');
-  const excl = ig
-    ? $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean)
-    : [];
+  const excl = $('#excl').value.split(',').map((s: string) => s.trim()).filter(Boolean);
   return {
     framework: activeFramework(),
-    projectType: ig ? $('#ptype').value.trim() : '',
-    theme: ig ? $('#theme').value.trim() : '',
+    options,
     enabledMcps: mcps,
     customMcp: $('#customMcp').value.trim() || undefined,
     skills: $('#skills').checked,
@@ -192,17 +191,18 @@ async function refreshTestFiles() {
   update();
 }
 
-/** Called by main.ts whenever the provider pack list changes (pack loaded / removed). */
+/** Called by main.ts whenever the provider list changes (pack loaded / removed). */
 export function applyExternalProviders(packs: ProviderPack[]): void {
-  // Seed each pack's default framework selection once.
+  // Seed each provider's default framework selection once.
   for (const pack of packs) {
-    if (!extFramework.has(pack.name) && pack.frameworks.length > 0) {
-      extFramework.set(pack.name, pack.frameworks[0].id);
+    if (!fwByPack.has(pack.name) && pack.frameworks.length > 0) {
+      fwByPack.set(pack.name, pack.frameworks[0].id);
     }
   }
-  // If the currently selected provider was removed, revert to igniteui.
-  if (st.provider !== 'igniteui' && !packs.some((p) => p.name === st.provider)) {
-    st.provider = 'igniteui';
+  // First load, or the selected provider was removed: fall back to the first one (the
+  // server lists the built-in provider first).
+  if (!packs.some((p) => p.name === st.provider)) {
+    st.provider = packs[0]?.name || '';
     refreshLocalSkills();
     refreshTestFiles();
   }
@@ -218,15 +218,8 @@ function onProviderSelect(e: any) {
   update();
 }
 
-function onFrameworkSelect(e: any) {
-  st.framework = e.detail || st.framework;
-  refreshLocalSkills();
-  refreshTestFiles();
-  update();
-}
-
-function onExtFrameworkSelect(pack: ProviderPack, e: any) {
-  extFramework.set(pack.name, e.detail || extFramework.get(pack.name) || '');
+function onFrameworkSelect(pack: ProviderPack, e: any) {
+  fwByPack.set(pack.name, e.detail || fwByPack.get(pack.name) || '');
   refreshLocalSkills();
   refreshTestFiles();
   update();
@@ -483,13 +476,21 @@ const statsUpdated = () => st.stats?.updatedAt
   ? `Updated ${new Date(st.stats.updatedAt).toLocaleTimeString()} · model ${st.stats.model || '—'}`
   : 'Waiting for activity — run the agent in opencode.';
 
-const skillsLabel = () => {
-  if (st.provider === 'igniteui') return 'Install Ignite UI skills';
-  return activePack()?.configure?.skills?.label || 'Install skills';
-};
+const skillsLabel = () => activePack()?.skills?.label || 'Install skills';
+
+const optionElId = (pack: string, id: string) => `opt-${pack}-${id}`;
+
+// A provider's options: a select when the option lists choices, free text otherwise.
+// Uncontrolled like the other text inputs, so a re-render never clobbers typing.
+const optionInputs = (pack: ProviderPack) => (pack.options || []).map((o) => o.choices
+  ? html`<igc-select outlined id=${optionElId(pack.name, o.id)} label=${o.label} value=${o.default ?? o.choices[0]}>
+      ${o.choices.map((c) => html`<igc-select-item value=${c}>${c}</igc-select-item>`)}
+    </igc-select>`
+  : html`<igc-input outlined id=${optionElId(pack.name, o.id)} label=${o.label} placeholder=${o.placeholder || ''}
+      value=${o.default || ''}></igc-input>`);
 
 function tpl() {
-  const ig = st.provider === 'igniteui';
+  const fw = activeFramework();
   return html`
   <!-- left: flight plan -->
   <section class="panel">
@@ -498,7 +499,6 @@ function tpl() {
       <fieldset>
         <legend>Provider</legend>
         <igc-button-group id="provider" selection="single-required" .disabled=${launchDisabled()} @igcSelect=${onProviderSelect}>
-          <igc-toggle-button value="igniteui" .selected=${ig}>Ignite UI</igc-toggle-button>
           ${repeat(getPacks(), (p) => p.name, (p) => html`
             <igc-toggle-button value=${p.name} .selected=${st.provider === p.name}>${p.displayName}</igc-toggle-button>`)}
         </igc-button-group>
@@ -506,34 +506,21 @@ function tpl() {
 
       <fieldset>
         <legend>Framework</legend>
-        <igc-button-group id="fw" selection="single-required" ?hidden=${!ig} .disabled=${launchDisabled()} @igcSelect=${onFrameworkSelect}>
-          <igc-toggle-button value="angular" .selected=${st.framework === 'angular'}>Angular</igc-toggle-button>
-          <igc-toggle-button value="blazor" .selected=${st.framework === 'blazor'}>Blazor</igc-toggle-button>
-          <igc-toggle-button value="react" .selected=${st.framework === 'react'}>React</igc-toggle-button>
-          <igc-toggle-button value="webcomponents" .selected=${st.framework === 'webcomponents'}>Web Comps</igc-toggle-button>
-        </igc-button-group>
         ${repeat(getPacks(), (p) => p.name, (pack) => html`
           <igc-button-group id="fw-${pack.name}" selection="single-required" ?hidden=${st.provider !== pack.name}
-            .disabled=${launchDisabled()} @igcSelect=${(e: any) => onExtFrameworkSelect(pack, e)}>
-            ${pack.frameworks.map((fw) => html`
-              <igc-toggle-button value=${fw.id} .selected=${(extFramework.get(pack.name) || pack.frameworks[0]?.id) === fw.id}>${fw.label}</igc-toggle-button>`)}
-          </igc-button-group>`)}
-        <!-- Project type + theme: only meaningful for ig new (IgniteUI) -->
-        <igc-input outlined id="ptype" label="Project type (optional)" placeholder="e.g. igx-ts / sidenav" ?hidden=${!ig}></igc-input>
-        <igc-input outlined id="theme" label="Theme (optional)" placeholder="e.g. default" ?hidden=${!ig}></igc-input>
+            .disabled=${launchDisabled()} @igcSelect=${(e: any) => onFrameworkSelect(pack, e)}>
+            ${pack.frameworks.map((f) => html`
+              <igc-toggle-button value=${f.id} .selected=${(fwByPack.get(pack.name) || pack.frameworks[0]?.id) === f.id}>${f.label}</igc-toggle-button>`)}
+          </igc-button-group>
+          <div ?hidden=${st.provider !== pack.name}>${optionInputs(pack)}</div>`)}
       </fieldset>
 
       <fieldset>
         <legend>MCP servers</legend>
-        <div id="mcpsIg" ?hidden=${!ig}>
-          <igc-checkbox data-mcp="igniteui" checked>Ignite UI CLI MCP<small>Live component docs &amp; API lookup</small></igc-checkbox>
-          <igc-checkbox data-mcp="theming" checked>Theming MCP<small>Palette / theming queries</small></igc-checkbox>
-          <igc-checkbox data-mcp="angular" id="ngMcp" ?hidden=${!(ig && st.framework === 'angular')}>Angular CLI MCP<small>Registered alongside on Angular projects</small></igc-checkbox>
-        </div>
         ${repeat(getPacks(), (p) => p.name, (pack) => html`
           <div id="mcps-${pack.name}" ?hidden=${st.provider !== pack.name}>
-            ${pack.configure?.mcpServers?.map((s) => html`
-              <igc-checkbox data-mcp=${s.class} checked>${s.label}${s.description ? html`<small>${s.description}</small>` : nothing}</igc-checkbox>`)}
+            ${repeat(classesFor(pack, st.provider === pack.name ? fw : undefined), (c) => c.id, (c) => html`
+              <igc-checkbox data-mcp=${c.id} ?checked=${c.default !== false}>${c.label}${c.description ? html`<small>${c.description}</small>` : nothing}</igc-checkbox>`)}
           </div>`)}
         <!-- Custom MCP: provider-agnostic, available alongside any provider's servers -->
         <igc-checkbox data-mcp="custom" id="customMcpEnable" @igcChange=${onCustomMcpToggle}>Custom MCP server<small>Paste a server definition below — use alone or alongside the servers above</small></igc-checkbox>
@@ -548,8 +535,7 @@ function tpl() {
       <fieldset>
         <legend>Agent skills</legend>
         <igc-checkbox id="skills" checked>${skillsLabel()}<small>Written to <code>.agents/skills/</code>, auto-loaded by opencode</small></igc-checkbox>
-        <!-- Exclude: only relevant for IgniteUI (individual skill folders) -->
-        <igc-input outlined id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming" ?hidden=${!ig}></igc-input>
+        <igc-input outlined id="excl" label="Exclude skills (comma-separated folder names)" placeholder="e.g. charting, theming"></igc-input>
         <igc-checkbox id="overrideSkills" @igcChange=${onOverrideSkillsToggle}>Use local skills<small>Overlay your own skills from <code>./local-skills/&lt;framework&gt;/</code> onto <code>.agents/skills/</code></small></igc-checkbox>
         <igc-checkbox id="localSkillsOnly" .disabled=${!st.overrideSkills}>Replace generated skills<small>Wipe the generated set first — use only your local skills</small></igc-checkbox>
         <p class="note" id="localSkillsList" ?hidden=${!st.localSkillsNote}>${st.localSkillsNote || ''}</p>
